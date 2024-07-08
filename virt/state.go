@@ -1,11 +1,17 @@
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
 
-package hello
+package virt
 
 import (
 	"sync"
 )
+
+type Storage interface {
+	Set(id string, handle *taskHandle)
+	Get(id string) (*taskHandle, bool)
+	Delete(id string)
+}
 
 // taskStore provides a mechanism to store and retrieve
 // task handles given a string identifier. The ID should

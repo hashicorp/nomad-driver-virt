@@ -10,8 +10,10 @@ replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.3
 require (
 	github.com/hashicorp/consul-template v0.37.4
 	github.com/hashicorp/go-hclog v1.6.3
+	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-plugin v1.6.0
 	github.com/hashicorp/nomad v1.8.0
+	libvirt.org/go/libvirt v1.10003.0
 )
 
 require (
@@ -55,7 +57,6 @@ require (
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/go-immutable-radix/v2 v2.1.0 // indirect
 	github.com/hashicorp/go-msgpack/v2 v2.1.2 // indirect
-	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/hashicorp/go-retryablehttp v0.7.7 // indirect
 	github.com/hashicorp/go-rootcerts v1.0.2 // indirect
 	github.com/hashicorp/go-secure-stdlib/listenerutil v0.1.4 // indirect

@@ -652,5 +652,7 @@ honnef.co/go/tools v0.0.0-20190102054323-c2f93a96b099/go.mod h1:rf3lG4BRIbNafJWh
 honnef.co/go/tools v0.0.0-20190523083050-ea95bdfd59fc/go.mod h1:rf3lG4BRIbNafJWhAfAdb/ePZxsR/4RtNHQocxwk9r4=
 kernel.org/pub/linux/libs/security/libcap/psx v1.2.69 h1:IdrOs1ZgwGw5CI+BH6GgVVlOt+LAXoPyh7enr8lfaXs=
 kernel.org/pub/linux/libs/security/libcap/psx v1.2.69/go.mod h1:+l6Ee2F59XiJ2I6WR5ObpC1utCQJZ/VLsEbQCD8RG24=
+libvirt.org/go/libvirt v1.10003.0 h1:LEoawzuggD6IL5R/XtnBE8wWJx49i7UZ1HcB7p9glwE=
+libvirt.org/go/libvirt v1.10003.0/go.mod h1:1WiFE8EjZfq+FCVog+rvr1yatKbKZ9FaFMZgEqxEJqQ=
 oss.indeed.com/go/libtime v1.6.0 h1:XQyczJihse/wQGo59OfPF3f4f+Sywv4R8vdGB3S9BfU=
 oss.indeed.com/go/libtime v1.6.0/go.mod h1:B2sdEcuzB0zhTKkAuHy4JInKRc7Al3tME4qWam6R7mA=
