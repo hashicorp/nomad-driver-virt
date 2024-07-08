@@ -1,11 +1,15 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package main
 
 import (
 	"context"
 	"fmt"
-	"github/juanadelacuesta/heraclitus/libvirt"
-	"github/juanadelacuesta/heraclitus/virt"
 	"time"
+
+	"github/hashicorp/nomad-driver-virt/libvirt"
+	"github/hashicorp/nomad-driver-virt/virt"
 
 	"github.com/hashicorp/go-hclog"
 )
