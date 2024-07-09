@@ -4,8 +4,6 @@
 package virt
 
 import (
-	"context"
-	"strconv"
 	"sync"
 	"time"
 
@@ -35,15 +33,13 @@ func (h *taskHandle) TaskStatus() *drivers.TaskStatus {
 	defer h.stateLock.RUnlock()
 
 	return &drivers.TaskStatus{
-		ID:          h.taskConfig.ID,
-		Name:        h.taskConfig.Name,
-		State:       h.procState,
-		StartedAt:   h.startedAt,
-		CompletedAt: h.completedAt,
-		ExitResult:  h.exitResult,
-		DriverAttributes: map[string]string{
-			"pid": strconv.Itoa(h.pid),
-		},
+		ID:               h.taskConfig.ID,
+		Name:             h.taskConfig.Name,
+		State:            h.procState,
+		StartedAt:        h.startedAt,
+		CompletedAt:      h.completedAt,
+		ExitResult:       h.exitResult,
+		DriverAttributes: map[string]string{},
 	}
 }
 
@@ -60,19 +56,21 @@ func (h *taskHandle) run() {
 	}
 	h.stateLock.Unlock()
 
-	// TODO: wait for your task to complete and upate its state.
-	ps, err := h.exec.Wait(context.Background())
-	h.stateLock.Lock()
-	defer h.stateLock.Unlock()
+	/*
+		 	// TODO: wait for your task to complete and upate its state.
+			ps, err := h.exec.Wait(context.Background())
+			h.stateLock.Lock()
+			defer h.stateLock.Unlock()
 
-	if err != nil {
-		h.exitResult.Err = err
-		h.procState = drivers.TaskStateUnknown
-		h.completedAt = time.Now()
-		return
-	}
-	h.procState = drivers.TaskStateExited
-	h.exitResult.ExitCode = ps.ExitCode
-	h.exitResult.Signal = ps.Signal
-	h.completedAt = ps.Time
+			if err != nil {
+				h.exitResult.Err = err
+				h.procState = drivers.TaskStateUnknown
+				h.completedAt = time.Now()
+				return
+			}
+			h.procState = drivers.TaskStateExited
+			h.exitResult.ExitCode = ps.ExitCode
+			h.exitResult.Signal = ps.Signal
+			h.completedAt = ps.Time
+	*/
 }

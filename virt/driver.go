@@ -8,10 +8,8 @@ import (
 	"errors"
 	"fmt"
 	"github/hashicorp/nomad-driver-virt/libvirt"
-	"os"
 	"time"
 
-	"github.com/hashicorp/consul-template/signals"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
 	"github.com/hashicorp/nomad/plugins/base"
@@ -293,7 +291,6 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 	*/
 	h := &taskHandle{
 		//	exec:         execImpl,
-		pid: taskState.Pid,
 		//	pluginClient: pluginClient,
 		taskConfig: taskState.TaskConfig,
 		procState:  drivers.TaskStateRunning,
@@ -333,17 +330,17 @@ func (d *VirtDriverPlugin) handleWait(ctx context.Context, handle *taskHandle, c
 	// In the example below we block and wait until the executor finishes
 	// running, at which point we send the exit code and signal in the result
 	// channel.
-	ps, err := handle.exec.Wait(ctx)
-	if err != nil {
-		result = &drivers.ExitResult{
-			Err: fmt.Errorf("executor: error waiting on process: %v", err),
-		}
-	} else {
-		result = &drivers.ExitResult{
-			ExitCode: ps.ExitCode,
-			Signal:   ps.Signal,
-		}
-	}
+	/* 	ps, err := handle.exec.Wait(ctx)
+	   	if err != nil {
+	   		result = &drivers.ExitResult{
+	   			Err: fmt.Errorf("executor: error waiting on process: %v", err),
+	   		}
+	   	} else {
+	   		result = &drivers.ExitResult{
+	   			ExitCode: ps.ExitCode,
+	   			Signal:   ps.Signal,
+	   		}
+	   	} */
 
 	for {
 		select {
@@ -356,7 +353,7 @@ func (d *VirtDriverPlugin) handleWait(ctx context.Context, handle *taskHandle, c
 
 // StopTask stops a running task with the given signal and within the timeout window.
 func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal string) error {
-	handle, ok := d.tasks.Get(taskID)
+	_, ok := d.tasks.Get(taskID)
 	if !ok {
 		return drivers.ErrTaskNotFound
 	}
@@ -370,13 +367,13 @@ func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal
 	// In the example below we let the executor handle the task shutdown
 	// process for us, but you might need to customize this for your own
 	// implementation.
-	if err := handle.exec.Shutdown(signal, timeout); err != nil {
-		if handle.pluginClient.Exited() {
-			return nil
-		}
-		return fmt.Errorf("executor Shutdown failed: %v", err)
-	}
-
+	/* 	if err := handle.exec.Shutdown(signal, timeout); err != nil {
+	   		if handle.pluginClient.Exited() {
+	   			return nil
+	   		}
+	   		return fmt.Errorf("executor Shutdown failed: %v", err)
+	   	}
+	*/
 	return nil
 }
 
@@ -399,13 +396,13 @@ func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
 	//
 	// In the example below we use the executor to force shutdown the task
 	// (timeout equals 0).
-	if !handle.pluginClient.Exited() {
+	/* 	if !handle.pluginClient.Exited() {
 		if err := handle.exec.Shutdown("", 0); err != nil {
 			handle.logger.Error("destroying executor failed", "err", err)
 		}
 
 		handle.pluginClient.Kill()
-	}
+	} */
 
 	d.tasks.Delete(taskID)
 	return nil
@@ -423,7 +420,7 @@ func (d *VirtDriverPlugin) InspectTask(taskID string) (*drivers.TaskStatus, erro
 
 // TaskStats returns a channel which the driver should send stats to at the given interval.
 func (d *VirtDriverPlugin) TaskStats(ctx context.Context, taskID string, interval time.Duration) (<-chan *drivers.TaskResourceUsage, error) {
-	handle, ok := d.tasks.Get(taskID)
+	_, ok := d.tasks.Get(taskID)
 	if !ok {
 		return nil, drivers.ErrTaskNotFound
 	}
@@ -436,7 +433,8 @@ func (d *VirtDriverPlugin) TaskStats(ctx context.Context, taskID string, interva
 	//
 	// In the example below we use the Stats function provided by the executor,
 	// but you can build a set of functions similar to the fingerprint process.
-	return handle.exec.Stats(ctx, interval)
+	//return handle.exec.Stats(ctx, interval)
+	return nil, nil
 }
 
 // TaskEvents returns a channel that the plugin can use to emit task related events.
@@ -447,7 +445,7 @@ func (d *VirtDriverPlugin) TaskEvents(ctx context.Context) (<-chan *drivers.Task
 // SignalTask forwards a signal to a task.
 // This is an optional capability.
 func (d *VirtDriverPlugin) SignalTask(taskID string, signal string) error {
-	handle, ok := d.tasks.Get(taskID)
+	_, ok := d.tasks.Get(taskID)
 	if !ok {
 		return drivers.ErrTaskNotFound
 	}
@@ -457,14 +455,16 @@ func (d *VirtDriverPlugin) SignalTask(taskID string, signal string) error {
 	// The given signal must be forwarded to the target taskID. If this plugin
 	// doesn't support receiving signals (capability SendSignals is set to
 	// false) you can just return nil.
-	sig := os.Interrupt
+	/* sig := os.Interrupt
 	if s, ok := signals.SignalLookup[signal]; ok {
 		sig = s
 	} else {
 		d.logger.Warn("unknown signal to send to task, using SIGINT instead", "signal", signal, "task_id", handle.taskConfig.ID)
 
 	}
-	return handle.exec.Signal(sig)
+	return handle.exec.Signal(sig) */
+	return nil
+
 }
 
 // ExecTask returns the result of executing the given command inside a task.
