@@ -1,4 +1,6 @@
 #cloud-config
+timezone: {{.Timezone.String}}
+
 users:
 {{- if .UsersConfig.IncludeDefault }}
   - default
@@ -16,7 +18,7 @@ users:
     {{- end }}  
   {{- end }}  
   {{- if ne .Sudo "" }} 
-    sudo: ["{{.Sudo}}"]
+    sudo: "{{.Sudo}}"
   {{- end }}  
   {{- $length_groups := len .Groups }} {{- if ne $length_groups 0 }}
     groups:  {{.Groups.Join}}

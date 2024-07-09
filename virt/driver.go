@@ -1,20 +1,19 @@
-package virt
-
 // Copyright (c) HashiCorp, Inc.
 // SPDX-License-Identifier: MPL-2.0
+
+package virt
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"github/hashicorp/nomad-driver-virt/libvirt"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/hashicorp/consul-template/signals"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
-	"github.com/hashicorp/nomad/drivers/shared/executor"
 	"github.com/hashicorp/nomad/plugins/base"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
@@ -22,7 +21,7 @@ import (
 )
 
 const (
-	pluginName = "nomad-virt-plugin"
+	pluginName = "nomad-driver-virt"
 
 	// pluginVersion allows the client to identify and use newer versions of
 	// an installed plugin
@@ -48,101 +47,9 @@ var (
 		Name:              pluginName,
 	}
 
-	configSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-		"emulator": hclspec.NewDefault(
-			hclspec.NewAttr("emulator", "string", false),
-			hclspec.NewLiteral(`"/usr/bin/qemu-system-x86_64"`),
-		),
-		"connect_URI": hclspec.NewDefault(
-			hclspec.NewAttr("connect_URI", "string", false),
-			hclspec.NewLiteral(`"qemu:///system"`),
-		),
-	})
-
-	// taskConfigSpec is the specification of the plugin's configuration for
-	// a task
-	// this is used to validated the configuration specified for the plugin
-	// when a job is submitted.
-	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-		"disk": hclspec.NewBlockList("disk", hclspec.NewObject(map[string]*hclspec.Spec{
-			"source": hclspec.NewAttr("source", "string", true),
-			"driver": hclspec.NewBlock("driver", true, hclspec.NewObject(map[string]*hclspec.Spec{
-				"name": hclspec.NewAttr("name", "string", true),
-				"type": hclspec.NewAttr("type", "string", true),
-			})),
-			"target": hclspec.NewAttr("target", "string", true),
-			"device": hclspec.NewAttr("device", "string", true),
-		})),
-		"interface": hclspec.NewBlockList("interface", hclspec.NewObject(map[string]*hclspec.Spec{
-			"type":   hclspec.NewAttr("type", "string", true),
-			"source": hclspec.NewAttr("source", "string", true),
-		})),
-		"vnc": hclspec.NewBlock("vnc", true, hclspec.NewObject(map[string]*hclspec.Spec{
-			"port":      hclspec.NewAttr("port", "number", true),
-			"websocket": hclspec.NewAttr("websocket", "number", true),
-		})),
-	})
-
-	// capabilities indicates what optional features this driver supports
-	// this should be set according to the target run time.
-	capabilities = &drivers.Capabilities{
-		// TODO: set plugin's capabilities
-		//
-		// The plugin's capabilities signal Nomad which extra functionalities
-		// are supported. For a list of available options check the docs page:
-		// https://godoc.org/github.com/hashicorp/nomad/plugins/drivers#Capabilities
-		SendSignals:          true,
-		Exec:                 true,
-		DisableLogCollection: true,
-		//FSIsolation: fsisolation.Mode{},
-		//NetIsolationModes: []NetIsolationMode{},
-		//MustInitiateNetwork: false,
-		//MountConfigs: MountConfigSupport
-		//RemoteTasks: bool
-		//DynamicWorkloadUsers: bool
-	}
-
 	ErrExistingTaks    = errors.New("task is already running")
 	ErrStartingLibvirt = errors.New("unable to start libvirt")
 )
-
-type Virtulizer interface {
-	NewConnect(URI string)
-}
-
-type Driver struct {
-	Name string `codec:"name"`
-	Type string `codec:"type"`
-}
-
-type Disk struct {
-	Source string `codec:"source"`
-	Driver Driver `codec:"driver"`
-	Target string `codec:"target"`
-	Device string `codec:"device"`
-}
-
-type Interface struct {
-	Type   string `codec:"type"`
-	Source string `codec:"source"`
-}
-
-type VNC struct {
-	Port      int `codec:"port"`
-	Websocket int `codec:"websocket"`
-}
-
-// Config contains configuration information for the plugin
-type Config struct {
-	Emulator string `codec:"emulator"`
-}
-
-// Config contains configuration information for the plugin
-type TaskConfig struct {
-	Disk      []Disk      `codec:"disk"`
-	Interface []Interface `codec:"interface"`
-	Vnc       VNC         `codec:"vnc"`
-}
 
 // TaskState is the runtime state which is encoded in the handle returned to
 // Nomad client.
@@ -152,20 +59,19 @@ type TaskState struct {
 	ReattachConfig *structs.ReattachConfig
 	TaskConfig     *drivers.TaskConfig
 	StartedAt      time.Time
+}
 
-	// TODO: add any extra important values that must be persisted in order
-	// to restore a task.
-	//
-	// The plugin keeps track of its running tasks in a in-memory data
-	// structure. If the plugin crashes, this data will be lost, so Nomad
-	// will respawn a new instance of the plugin and try to restore its
-	// in-memory representation of the running tasks using the RecoverTask()
-	// method below.
-	Pid int
+type Virtualizer interface {
+	CreateDomain(config *libvirt.DomainConfig) error
+	StopDomain(name string) error
+	DestroyDomain(name string) error
+	GetInfo() (libvirt.Info, error)
+	GetURI() string
 }
 
 type VirtDriverPlugin struct {
 	eventer        *eventer.Eventer
+	virtualizer    Virtualizer
 	config         *Config
 	nomadConfig    *base.ClientDriverConfig
 	tasks          *taskStore
@@ -178,8 +84,14 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 	ctx, cancel := context.WithCancel(context.Background())
 	logger = logger.Named(pluginName)
 
+	v, err := libvirt.New(ctx, logger)
+	if err != nil {
+		print(err)
+	}
+
 	return &VirtDriverPlugin{
 		eventer:        eventer.NewEventer(ctx, logger),
+		virtualizer:    v,
 		config:         &Config{},
 		tasks:          newTaskStore(),
 		signalShutdown: cancel,
@@ -275,50 +187,28 @@ func (d *VirtDriverPlugin) handleFingerprint(ctx context.Context, ch chan<- *dri
 
 // buildFingerprint returns the driver's fingerprint data
 func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
+
+	virtInfo, err := d.virtualizer.GetInfo()
+	if err != nil {
+		return &drivers.Fingerprint{
+			Attributes:        map[string]*structs.Attribute{},
+			Health:            drivers.HealthStateUndetected,
+			HealthDescription: "",
+		}
+	}
+	attrs := map[string]*structs.Attribute{}
+
+	attrs["driver.virt"] = structs.NewBoolAttribute(true)
+	attrs["driver.virt.libvirt.version"] = structs.NewIntAttribute(int64(virtInfo.LibvirtVersion), "")
+	attrs["driver.virt.emulator.version"] = structs.NewIntAttribute(int64(virtInfo.EmulatorVersion), "")
+	attrs["driver.virt.freememory"] = structs.NewIntAttribute(int64(virtInfo.FreeMemory), "bytes")
+
 	fp := &drivers.Fingerprint{
 		Attributes:        map[string]*structs.Attribute{},
 		Health:            drivers.HealthStateHealthy,
 		HealthDescription: drivers.DriverHealthy,
 	}
 
-	// TODO: implement fingerprinting logic to populate health and driver
-	// attributes.
-	//
-	// Fingerprinting is used by the plugin to relay two important information
-	// to Nomad: health state and node attributes.
-	//
-	// If the plugin reports to be unhealthy, or doesn't send any fingerprint
-	// data in the expected interval of time, Nomad will restart it.
-	//
-	// Node attributes can be used to report any relevant information about
-	// the node in which the plugin is running (specific library availability,
-	// installed versions of a software etc.). These attributes can then be
-	// used by an operator to set job constrains.
-	//
-	// In the example below we check if the shell specified by the user exists
-	// in the node.
-	/* shell := d.config.Shell
-
-	cmd := exec.Command("which", shell)
-	if err := cmd.Run(); err != nil {
-		return &drivers.Fingerprint{
-			Health:            drivers.HealthStateUndetected,
-			HealthDescription: fmt.Sprintf("shell %s not found", shell),
-		}
-	}
-
-	// We also set the shell and its version as attributes
-	cmd = exec.Command(shell, "--version")
-	if out, err := cmd.Output(); err != nil {
-		d.logger.Warn("failed to find shell version: %v", err)
-	} else {
-		re := regexp.MustCompile("[0-9]\\.[0-9]\\.[0-9]")
-		version := re.FindString(string(out))
-
-		fp.Attributes["driver.hello.shell_version"] = structs.NewStringAttribute(version)
-		fp.Attributes["driver.hello.shell"] = structs.NewStringAttribute(shell)
-	}
-	*/
 	return fp
 }
 
@@ -337,61 +227,22 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	handle := drivers.NewTaskHandle(taskHandleVersion)
 	handle.Config = cfg
 
-	// TODO: implement driver specific mechanism to start the task.
-	//
-	// Once the task is started you will need to store any relevant runtime
-	// information in a taskHandle and TaskState. The taskHandle will be
-	// stored in-memory in the plugin and will be used to interact with the
-	// task.
-	//
-	// The TaskState will be returned to the Nomad client inside a
-	// drivers.TaskHandle instance. This TaskHandle will be sent back to plugin
-	// if the task ever needs to be recovered, so the TaskState should contain
-	// enough information to handle that.
-	//
-	// In the example below we use an executor to fork a process to run our
-	// greeter. The executor is then stored in the handle so we can access it
-	// later and the the plugin.Client is used to generate a reattach
-	// configuration that can be used to recover communication with the task.
-	executorConfig := &executor.ExecutorConfig{
-		LogFile:  filepath.Join(cfg.TaskDir().Dir, "executor.out"),
-		LogLevel: "debug",
-	}
-
-	exec, pluginClient, err := executor.CreateExecutor(d.logger, d.nomadConfig, executorConfig)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create executor: %v", err)
-	}
-
-	/* 	echoCmd := fmt.Sprintf(`echo "%s"`, driverConfig.Greeting)
-	   	execCmd := &executor.ExecCommand{
-	   		Cmd:        d.config.Shell,
-	   		Args:       []string{"-c", echoCmd},
-	   		StdoutPath: cfg.StdoutPath,
-	   		StderrPath: cfg.StderrPath,
-	   	}
-
-	   	ps, err := exec.Launch(execCmd)
-	   	if err != nil {
-	   		pluginClient.Kill()
-	   		return nil, nil, fmt.Errorf("failed to launch command with executor: %v", err)
-	   	}
-	*/
 	h := &taskHandle{
-		exec: exec,
-		//pid:          ps.Pid,
-		pluginClient: pluginClient,
-		taskConfig:   cfg,
-		procState:    drivers.TaskStateRunning,
-		startedAt:    time.Now().Round(time.Millisecond),
-		logger:       d.logger,
+		taskConfig: cfg,
+		procState:  drivers.TaskStateRunning,
+		startedAt:  time.Now().Round(time.Millisecond),
+		logger:     d.logger,
+		virtURI:    d.virtualizer.GetURI(),
 	}
 
 	driverState := TaskState{
-		ReattachConfig: structs.ReattachConfigFromGoPlugin(pluginClient.ReattachConfig()),
-		//	Pid:            ps.Pid,
+		//	ReattachConfig: structs.ReattachConfigFromGoPlugin(pluginClient.ReattachConfig()),
 		TaskConfig: cfg,
 		StartedAt:  h.startedAt,
+	}
+
+	if err := d.virtualizer.CreateDomain(&libvirt.DomainConfig{}); err != nil {
+		return nil, nil, fmt.Errorf("failed to start task: %w", err)
 	}
 
 	if err := handle.SetDriverState(&driverState); err != nil {

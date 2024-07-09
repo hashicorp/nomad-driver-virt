@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/hashicorp/go-multierror"
 )
@@ -64,15 +65,7 @@ type DomainConfig struct {
 	Files             []File
 	EnvVariables      map[string]string
 	RemoveConfigFiles bool
-}
-
-func metadataAsString(m map[string]string) string {
-	meta := []string{}
-	for key, value := range m {
-		meta = append(meta, fmt.Sprintf("%s=\"%s\"", key, value))
-	}
-
-	return strings.Join(meta, ",")
+	Timezone          *time.Location
 }
 
 func (d *driver) parceVirtInstallArgs(dc *DomainConfig, ci *cloudinitConfig) []string {

@@ -29,7 +29,8 @@ const (
 )
 
 var (
-	ErrEmptyURI = errors.New("connection URI can't be empty")
+	ErrEmptyURI     = errors.New("connection URI can't be empty")
+	ErrDomainExists = errors.New("the domain exists already")
 )
 
 type driver struct {
@@ -70,7 +71,6 @@ func WithDataDirectory(path string) Option {
 }
 
 func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, error) {
-
 	d := &driver{
 		logger:  logger.Named("nomad-virt-plugin"),
 		uri:     defaultURI,
@@ -97,6 +97,56 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 	go d.monitorCtx(ctx)
 
 	return d, nil
+}
+
+type Info struct {
+	Model           string
+	Memory          uint64
+	FreeMemory      uint64
+	Cpus            uint
+	Cores           uint32
+	EmulatorVersion uint32
+	LibvirtVersion  uint32
+}
+
+func (d *driver) GetURI() string {
+	return d.uri
+}
+
+func (d *driver) GetInfo() (Info, error) {
+	li := Info{}
+
+	ni, err := d.conn.GetNodeInfo()
+	if err != nil {
+		return li, fmt.Errorf("libvirt: unable to get node info: %w", err)
+	}
+
+	ev, err := d.conn.GetVersion()
+	if err != nil {
+		return li, fmt.Errorf("libvirt: unable to get e version: %w", err)
+	}
+
+	lv, err := d.conn.GetLibVersion()
+	if err != nil {
+		return li, fmt.Errorf("libvirt: unable to get lib version: %w", err)
+	}
+
+	fm, err := d.conn.GetFreeMemory()
+	if err != nil {
+		return li, fmt.Errorf("libvirt: unable to free memory: %w", err)
+	}
+
+	p, _ := d.conn.GetNodeInfo()
+	fmt.Println(p)
+	li.Cores = ni.Cores
+	li.Memory = ni.Memory
+	li.Cpus = ni.Cpus
+	li.Model = ni.Model
+	li.EmulatorVersion = ev
+	li.LibvirtVersion = lv
+	li.FreeMemory = fm
+
+	return li, nil
 }
 
 func (d *driver) Close() (int, error) {
@@ -169,32 +219,67 @@ func createCloudInitFilesFromTmpls(config *DomainConfig, domainDir string) (*clo
 	return ci, nil
 }
 
-func (d *driver) CreateDomain(config *DomainConfig) (*libvirt.Domain, error) {
-	domainDir := filepath.Join(d.dataDir, userDataDir, config.Name)
-	err := os.MkdirAll(domainDir, userDataDirPermissions)
+func dirExists(dirname string) bool {
+	info, err := os.Stat(dirname)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return info.IsDir()
+}
+
+func deleteDir(dirname string) error {
+	if dirExists(dirname) {
+		err := os.RemoveAll(dirname)
+		if err != nil {
+			return fmt.Errorf("libvirt: failed to delete directory: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// CreateDomain verifies if the domains exists already, if it does, it returns
+// an error, otherwise it creates a new domain with the provided configuration.
+func (d *driver) CreateDomain(config *DomainConfig) error {
+	dom, err := d.conn.LookupDomainByName(config.Name)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("libvirt: unable to verify exiting domains: %w", err)
+	}
+
+	if dom != nil {
+		return ErrDomainExists
+	}
+
+	domainDir := filepath.Join(d.dataDir, userDataDir, config.Name)
+	err = os.MkdirAll(domainDir, userDataDirPermissions)
+	if err != nil {
+		return err
 	}
 
 	ci, err := createCloudInitFilesFromTmpls(config, domainDir)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	defer func() {
 		if config.RemoveConfigFiles {
-			err = os.RemoveAll(domainDir)
+			err := deleteDir(config.Name)
 			if err != nil {
-				d.logger.Error("unable to discard user data files after domain creation", err)
+				d.logger.Error("libvirt: unable to discard user data files after domain creation", err)
 			}
 		}
 	}()
 
 	err = d.createDomain(config, ci)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return d.conn.LookupDomainByName(config.Name)
+	_, err = d.conn.LookupDomainByName(config.Name)
+	if err != nil {
+		return fmt.Errorf("libvirt: unable to verify domain creation: %w", err)
+	}
+
+	return nil
 }
 
 func (d *driver) GetDomain(name string) (*libvirt.Domain, error) {
@@ -207,6 +292,8 @@ func (d *driver) StopDomain(name string) error {
 		return err
 	}
 
+	d.logger.Debug("stopping domain", name)
+
 	return dom.ShutdownFlags(libvirt.DOMAIN_SHUTDOWN_SIGNAL)
 }
 
@@ -214,6 +301,13 @@ func (d *driver) DestroyDomain(name string) error {
 	dom, err := d.conn.LookupDomainByName(name)
 	if err != nil {
 		return err
+	}
+
+	d.logger.Debug("destroying domain", name)
+
+	err = deleteDir(name)
+	if err != nil {
+		d.logger.Error("unable to discard user data files after domain creation", err)
 	}
 
 	return dom.DestroyFlags(libvirt.DOMAIN_DESTROY_GRACEFUL)
