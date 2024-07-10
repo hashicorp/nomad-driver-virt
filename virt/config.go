@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad/plugins/drivers"
+	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 )
 
@@ -64,10 +65,10 @@ var (
 		// The plugin's capabilities signal Nomad which extra functionalities
 		// are supported. For a list of available options check the docs page:
 		// https://godoc.org/github.com/hashicorp/nomad/plugins/drivers#Capabilities
-		SendSignals:          true,
+		// SendSignals:          false,
 		Exec:                 true,
 		DisableLogCollection: true,
-		//FSIsolation: fsisolation.Mode{},
+		FSIsolation:          fsisolation.Image,
 		//NetIsolationModes: []NetIsolationMode{},
 		//MustInitiateNetwork: false,
 		//MountConfigs: MountConfigSupport
@@ -86,12 +87,11 @@ type Config struct {
 type TaskConfig struct {
 	ImagePath        string             `codec:"image"`
 	Type             string             `codec:"type"`
-	OS               OS                 `codec:"os"`
+	OSVariant        OS                 `codec:"os_variant"`
 	Disk             []Disk             `codec:"disk"`
 	NetworkInterface []NetworkInterface `codec:"network_interface"`
 	VNC              *VNC               `codec:"vnc"`
 	TimeZone         *time.Location     `codec:"timezone"`
-	Name             string             `codec:"name"`
 	WorkloadIdentity string             `codec:"workload_identity"`
 }
 

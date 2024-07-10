@@ -1,4 +1,5 @@
 #cloud-config
+
 timezone: {{.Timezone.String}}
 
 users:
@@ -24,7 +25,8 @@ users:
     groups:  {{.Groups.Join}}
   {{- end}}  
     shell: /bin/bash
-{{- end }}    
+{{- end }}   
+
 write_files:
   - path:  /etc/profile.d/virt.sh
     content: |
@@ -41,3 +43,14 @@ write_files:
     permissions: '{{.Permissions}}'
     owner: root:root
 {{- end}}
+
+mounts:
+{{- range .Mounts}}  
+  - [ {{.Tag}}, {{.Destination}}, "ext4", "defaults", "0", "2" ]
+{{- end }}
+
+runcmd:
+{{- range .Mounts}}  
+  - mkdir -p {{.Destination}}
+  - mount -t virtiofs {{.Tag}} {{.Destination}}
+{{- end }}

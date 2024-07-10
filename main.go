@@ -16,9 +16,10 @@ import (
 
 func main() {
 
-	name := "juana-4"
+	name := "juana-10"
 	appLogger := hclog.New(&hclog.LoggerOptions{
-		Name: "my-app",
+		Name:  "my-app",
+		Level: hclog.Debug,
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -28,6 +29,13 @@ func main() {
 		fmt.Printf("error: %+v\n %+v\n", conn, err)
 		return
 	}
+
+	tz, err := time.LoadLocation("America/Denver")
+	if err != nil {
+		fmt.Println("Timezone is not valid")
+		return
+	}
+
 	users := libvirt.Users{
 		IncludeDefault: true,
 		Users: []libvirt.UserConfig{
@@ -42,13 +50,22 @@ func main() {
 		},
 	}
 
-	tz, err := time.LoadLocation("America/Denver")
-	if err != nil {
-		fmt.Println("Timezone is not valid")
-		return
+	ci := libvirt.CloudInit{
+		Enable:          true,
+		ProvideUserData: false,
+	}
+
+	mounts := []libvirt.MountFileConfig{
+		{
+			Source:      "/home/ubuntu/test/alloc",
+			Destination: "/home/juana/alloc",
+			ReadOnly:    false,
+			Tag:         "blah",
+		},
 	}
 
 	config := &libvirt.DomainConfig{
+		CloudInit:         ci,
 		Timezone:          tz,
 		RemoveConfigFiles: false,
 		Name:              name,
@@ -56,14 +73,15 @@ func main() {
 		CPUs:              4,
 		Cores:             2,
 		OsVariant:         "ubuntufocal",
-		CloudImgPath:      "/home/ubuntu/test/" + name + ".img",
+		CloudImgPath:      "/home/ubuntu/test/demo.img",
 		DiskFmt:           "qcow2",
-		NetworkInterface:  "virbr0",
+		NetworkInterfaces: []string{"virbr0"},
 		HostName:          name,
 		UsersConfig:       users,
 		EnvVariables: map[string]string{
 			"IDENTITY": "identity",
 			"BLAH":     "identity",
+			"DEMO":     "please dont fail",
 		},
 		Files: []libvirt.File{
 			{
@@ -73,14 +91,8 @@ func main() {
 				Owner:       "root",
 				Group:       "root",
 			},
-			{
-				Path:        "/home/ubuntu/text.txt",
-				Content:     ` this is the text we will be putting`,
-				Permissions: "0777",
-				Owner:       "ubuntu",
-				Group:       "ubuntu",
-			},
 		},
+		Mounts: mounts,
 	}
 
 	err = conn.CreateDomain(config)
@@ -89,15 +101,15 @@ func main() {
 	}
 
 	conn.GetVms()
-	cancel()
 
-	time.Sleep(2 * time.Second)
 	info, err := conn.GetInfo()
 	if err != nil {
 		fmt.Println("ups no info", err)
 	}
 
 	fmt.Printf("%+v\n", info)
+	cancel()
+	time.Sleep(1 * time.Second)
 	// Serve the plugin
 	//plugins.Serve(factory)
 }

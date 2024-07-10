@@ -49,16 +49,32 @@ type UserConfig struct {
 	Shell    string
 }
 
+type MountFileConfig struct {
+	Source      string
+	Destination string
+	ReadOnly    bool
+	AccessMode  string
+	Tag         string
+}
+
+type CloudInit struct {
+	Enable          bool
+	ProvideUserData bool
+	UserDataPath    string
+	MetaDataPath    string
+}
+
 type DomainConfig struct {
+	XMLConfig         string
 	Name              string
-	Metadata          map[string]string
 	Memory            int
 	Cores             int
 	CPUs              int
 	OsVariant         string
+	CloudInit         CloudInit
 	CloudImgPath      string
 	DiskFmt           string
-	NetworkInterface  string
+	NetworkInterfaces []string
 	Type              string
 	HostName          string
 	UsersConfig       Users
@@ -66,6 +82,7 @@ type DomainConfig struct {
 	EnvVariables      map[string]string
 	RemoveConfigFiles bool
 	Timezone          *time.Location
+	Mounts            []MountFileConfig
 }
 
 func (d *driver) parceVirtInstallArgs(dc *DomainConfig, ci *cloudinitConfig) []string {
@@ -78,12 +95,39 @@ func (d *driver) parceVirtInstallArgs(dc *DomainConfig, ci *cloudinitConfig) []s
 		fmt.Sprintf("--vcpus=%d,cores=%d", dc.CPUs, dc.Cores),
 		fmt.Sprintf("--os-variant=%s", dc.OsVariant),
 		"--import", "--disk", fmt.Sprintf("path=%s,format=%s", dc.CloudImgPath, dc.DiskFmt),
-		"--network", fmt.Sprintf("bridge=%s,model=virtio", dc.NetworkInterface),
 		"--graphics", "vnc,listen=0.0.0.0",
 		"--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s,disable=on", ci.userDataPath, ci.metadataPath),
 		"--noautoconsole",
 	}
 
+	if dc.CloudInit.Enable {
+		args = append(args, "--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s,disable=on", ci.userDataPath, ci.metadataPath))
+	}
+
+	for _, ni := range dc.NetworkInterfaces {
+		args = append(args, "--network", fmt.Sprintf("bridge=%s,model=virtio", ni))
+	}
+
+	if len(dc.Mounts) > 0 {
+
+		args = append(args, "--memorybacking=source.type=memfd,access.mode=shared")
+
+		for _, m := range dc.Mounts {
+			mArgs := []string{
+				m.Source,
+				m.MountFileTag,
+				"driver.type=virtiofs",
+			}
+
+			if m.AccessMode != "" {
+				mArgs = append(mArgs, fmt.Sprintf("accessmode=%s", m.AccessMode))
+			}
+
+			args = append(args, "--filesystem", strings.Join(mArgs, ","))
+		}
+	}
+
+	fmt.Println(args)
 	return args
 }
 
