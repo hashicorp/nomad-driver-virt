@@ -1,11 +1,18 @@
-PLUGIN_BINARY=hello-driver
-export GO111MODULE=on
+PLUGIN_BINARY=nomad-driver-virt
+
+# CGO is required due to libvirt.
+CGO_ENABLED = 1
+
+# Go modules are used to compile the binary.
+GO111MODULE = on
 
 default: build
 
 .PHONY: clean
 clean: ## Remove build artifacts
-	rm -rf ${PLUGIN_BINARY}
+	@echo "==> Removing build artifact..."
+	@rm -rf ${PLUGIN_BINARY}
 
 build:
-	go build -o ${PLUGIN_BINARY} .
+	@echo "==> Compiling binary..."
+	@go build -race -trimpath -o ${PLUGIN_BINARY} .
