@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"text/template"
 
+	domain "github/hashicorp/nomad-driver-virt/internal/shared"
+
 	"github.com/hashicorp/go-hclog"
 	"libvirt.org/go/libvirt"
 	libvirtxml "libvirt.org/libvirt-go-xml"
@@ -100,20 +102,8 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 	return d, nil
 }
 
-type Info struct {
-	Model           string
-	Memory          uint64
-	FreeMemory      uint64
-	Cpus            uint
-	Cores           uint32
-	EmulatorVersion uint32
-	LibvirtVersion  uint32
-	Network         string
-	IP              string
-}
-
-func (d *driver) GetInfo() (Info, error) {
-	li := Info{}
+func (d *driver) GetInfo() (domain.Info, error) {
+	li := domain.Info{}
 
 	ni, err := d.conn.GetNodeInfo()
 	if err != nil {
@@ -150,7 +140,7 @@ func (d *driver) Close() (int, error) {
 	return d.conn.Close()
 }
 
-func (d *driver) createDomain(dc *DomainConfig, ci *cloudinitConfig) error {
+func (d *driver) createDomain(dc *domain.Config, ci *cloudinitConfig) error {
 	var outb, errb bytes.Buffer
 
 	args := d.parceVirtInstallArgs(dc, ci)
@@ -171,7 +161,7 @@ func (d *driver) createDomain(dc *DomainConfig, ci *cloudinitConfig) error {
 	return nil
 }
 
-func executeTemplate(config *DomainConfig, in string, out string) error {
+func executeTemplate(config *domain.Config, in string, out string) error {
 	pwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("libvirt: unable to get path: %w", err)
@@ -196,7 +186,7 @@ func executeTemplate(config *DomainConfig, in string, out string) error {
 	return nil
 }
 
-func createCloudInitFilesFromTmpls(config *DomainConfig, domainDir string) (*cloudinitConfig, error) {
+func createCloudInitFilesFromTmpls(config *domain.Config, domainDir string) (*cloudinitConfig, error) {
 
 	err := executeTemplate(config, metaDataTemplate, domainDir+"/meta-data")
 	if err != nil {
@@ -237,7 +227,7 @@ func deleteDir(dirname string) error {
 
 // CreateDomain verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
-func (d *driver) CreateDomain(config *DomainConfig) error {
+func (d *driver) CreateDomain(config *domain.Config) error {
 	dom, err := d.conn.LookupDomainByName(config.Name)
 	if lverr, ok := err.(*libvirt.Error); ok {
 		if lverr.Code != libvirt.ERR_NO_DOMAIN {

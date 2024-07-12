@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 	"github/hashicorp/nomad-driver-virt/libvirt"
 	"github/hashicorp/nomad-driver-virt/virt"
 
@@ -36,9 +37,9 @@ func main() {
 		return
 	}
 
-	users := libvirt.Users{
+	users := domain.Users{
 		IncludeDefault: true,
-		Users: []libvirt.UserConfig{
+		Users: []domain.UserConfig{
 			{
 				Name:     "juana",
 				Password: "password",
@@ -50,12 +51,12 @@ func main() {
 		},
 	}
 
-	ci := libvirt.CloudInit{
+	ci := domain.CloudInit{
 		Enable:          true,
 		ProvideUserData: false,
 	}
 
-	mounts := []libvirt.MountFileConfig{
+	mounts := []domain.MountFileConfig{
 		{
 			Source:      "/home/ubuntu/test/alloc",
 			Destination: "/home/juana/alloc",
@@ -64,7 +65,7 @@ func main() {
 		},
 	}
 
-	config := &libvirt.DomainConfig{
+	config := &domain.Config{
 		CloudInit:         ci,
 		Timezone:          tz,
 		RemoveConfigFiles: false,
@@ -83,7 +84,7 @@ func main() {
 			"BLAH":     "identity",
 			"DEMO":     "please dont fail",
 		},
-		Files: []libvirt.File{
+		Files: []domain.File{
 			{
 				Path:        "/home/juana/text.txt",
 				Content:     ` this is the text we will be putting`,
