@@ -56,6 +56,7 @@ type CloudInit struct {
 }
 
 type Config struct {
+	RemoveConfigFiles bool
 	XMLConfig         string
 	Name              string
 	Memory            int
@@ -71,7 +72,6 @@ type Config struct {
 	UsersConfig       Users
 	Files             []File
 	EnvVariables      map[string]string
-	RemoveConfigFiles bool
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
 	CMD               []string

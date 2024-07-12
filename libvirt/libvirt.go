@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"text/template"
 
 	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 
@@ -140,10 +139,10 @@ func (d *driver) Close() (int, error) {
 	return d.conn.Close()
 }
 
-func (d *driver) createDomain(dc *domain.Config, ci *cloudinitConfig) error {
+func (d *driver) createDomainWithVirtInstall(dc *domain.Config, ci *cloudinitConfig) error {
 	var outb, errb bytes.Buffer
 
-	args := d.parceVirtInstallArgs(dc, ci)
+	args := d.parceConfiguration(dc, ci)
 
 	cmd := exec.Command("virt-install", args...)
 	cmd.Dir = d.dataDir
@@ -155,72 +154,8 @@ func (d *driver) createDomain(dc *domain.Config, ci *cloudinitConfig) error {
 		return fmt.Errorf("libvirt: %w: %s", err, errb.String())
 	}
 
-	d.logger.Debug("logger", outb.String())
 	d.logger.Debug("logger", errb.String())
-
-	return nil
-}
-
-func executeTemplate(config *domain.Config, in string, out string) error {
-	pwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to get path: %w", err)
-	}
-
-	tmpl, err := template.ParseFiles(pwd + in)
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to parse template: %w", err)
-	}
-
-	f, err := os.Create(out)
-	defer f.Close()
-
-	if err != nil {
-		return fmt.Errorf("libvirt: create file: %w", err)
-	}
-
-	err = tmpl.Execute(f, config)
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to execute template: %w", err)
-	}
-	return nil
-}
-
-func createCloudInitFilesFromTmpls(config *domain.Config, domainDir string) (*cloudinitConfig, error) {
-
-	err := executeTemplate(config, metaDataTemplate, domainDir+"/meta-data")
-	if err != nil {
-		return nil, err
-	}
-
-	err = executeTemplate(config, userDataTemplate, domainDir+"/user-data")
-	if err != nil {
-		return nil, err
-	}
-
-	ci := &cloudinitConfig{
-		userDataPath: domainDir + "/user-data",
-		metadataPath: domainDir + "/meta-data",
-	}
-
-	return ci, nil
-}
-
-func dirExists(dirname string) bool {
-	info, err := os.Stat(dirname)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return info.IsDir()
-}
-
-func deleteDir(dirname string) error {
-	if dirExists(dirname) {
-		err := os.RemoveAll(dirname)
-		if err != nil {
-			return fmt.Errorf("libvirt: failed to delete directory: %w", err)
-		}
-	}
+	d.logger.Info("logger", outb.String())
 
 	return nil
 }
@@ -239,34 +174,37 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		return ErrDomainExists
 	}
 
-	var ci *cloudinitConfig
-	if config.CloudInit.Enable {
-		if !config.CloudInit.ProvideUserData {
-			domainDir := filepath.Join(d.dataDir, userDataDir, config.Name)
-			err = os.MkdirAll(domainDir, userDataDirPermissions)
-			if err != nil {
-				return err
-			}
-
-			ci, err = createCloudInitFilesFromTmpls(config, domainDir)
-			if err != nil {
-				return err
-			}
-			defer func() {
-				if config.RemoveConfigFiles {
-					err := deleteDir(config.Name)
-					if err != nil {
-						d.logger.Error("libvirt: unable to discard user data files after domain creation", err)
-					}
-				}
-			}()
-		} else {
-			ci.metadataPath = config.CloudInit.MetaDataPath
-			ci.userDataPath = config.CloudInit.UserDataPath
-		}
+	domainDir := filepath.Join(d.dataDir, userDataDir, config.Name)
+	err = createDomainFolder(domainDir)
+	if err != nil {
+		return fmt.Errorf("libvirt: unable to build domain config: %w", err)
 	}
 
-	err = d.createDomain(config, ci)
+	defer func() {
+		err := cleanUpDomainFolder(domainDir)
+		if err != nil {
+			d.logger.Error("unable to clean up domain folder", err)
+		}
+	}()
+
+	ci := &cloudinitConfig{}
+	if config.CloudInit.Enable {
+		ci.domainDir = domainDir
+
+		err = ci.createAndpopulateFiles(config)
+		if err != nil {
+			return err
+		}
+
+		ci.userdataPath = ci.domainDir + "/user-data"
+		ci.metadataPath = ci.domainDir + "/meta-data"
+
+	} else {
+		ci.metadataPath = config.CloudInit.MetaDataPath
+		ci.userdataPath = config.CloudInit.UserDataPath
+	}
+
+	err = d.createDomainWithVirtInstall(config, ci)
 	if err != nil {
 		return err
 	}
@@ -296,11 +234,6 @@ func (d *driver) DestroyDomain(name string) error {
 	}
 
 	d.logger.Debug("destroying domain", name)
-
-	err = deleteDir(name)
-	if err != nil {
-		d.logger.Error("unable to discard user data files after domain creation", err)
-	}
 
 	return dom.DestroyFlags(libvirt.DOMAIN_DESTROY_GRACEFUL)
 }

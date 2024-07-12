@@ -17,7 +17,7 @@ import (
 
 func main() {
 
-	name := "juana-14"
+	name := "juana-16"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "my-app",
 		Level: hclog.Debug,
@@ -52,8 +52,8 @@ func main() {
 	}
 
 	ci := domain.CloudInit{
-		Enable:          true,
-		ProvideUserData: false,
+		Enable:            true,
+		ProvideUserData:   false,
 	}
 
 	mounts := []domain.MountFileConfig{
@@ -66,9 +66,9 @@ func main() {
 	}
 
 	config := &domain.Config{
+		RemoveConfigFiles: false,
 		CloudInit:         ci,
 		Timezone:          tz,
-		RemoveConfigFiles: false,
 		Name:              name,
 		Memory:            2048,
 		CPUs:              4,
@@ -111,6 +111,7 @@ func main() {
 	fmt.Printf("%+v\n", info)
 	cancel()
 	time.Sleep(1 * time.Second)
+
 	// Serve the plugin
 	//plugins.Serve(factory)
 }
