@@ -64,7 +64,6 @@ type Virtualizer interface {
 	StopDomain(name string) error
 	DestroyDomain(name string) error
 	GetInfo() (libvirt.Info, error)
-	GetURI() string
 }
 
 type VirtDriverPlugin struct {
@@ -230,16 +229,43 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		procState:  drivers.TaskStateRunning,
 		startedAt:  time.Now().Round(time.Millisecond),
 		logger:     d.logger,
-		virtURI:    d.virtualizer.GetURI(),
+		virtURI:    d.config.URI,
 	}
 
 	driverState := TaskState{
-		//	ReattachConfig: structs.ReattachConfigFromGoPlugin(pluginClient.ReattachConfig()),
+		//ReattachConfig: structs.ReattachConfigFromGoPlugin(pluginClient.ReattachConfig()),
 		TaskConfig: cfg,
 		StartedAt:  h.startedAt,
 	}
 
-	if err := d.virtualizer.CreateDomain(&libvirt.DomainConfig{}); err != nil {
+	if err := d.virtualizer.CreateDomain(&libvirt.DomainConfig{
+		Name:   cfg.ID,
+		Memory: int(cfg.Resources.NomadResources.Memory.MemoryMB),
+		//Cores:             int(cfg.Resources.NomadResources.Cpu.ReservedCores[]),
+		CPUs:              int(cfg.Resources.NomadResources.Cpu.CpuShares),
+		OsVariant:         driverConfig.OSVariant.Type,
+		CloudImgPath:      driverConfig.ImagePath,
+		DiskFmt:           "qcow2",
+		NetworkInterfaces: []string{"virbr0"},
+		HostName:          cfg.Name,
+		UsersConfig: libvirt.Users{
+			IncludeDefault: true,
+			Users: []libvirt.UserConfig{
+				{
+					Name:     "juana",
+					Password: "password",
+					SSHKeys:  []string{"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCg6O020792w3AzhdV27gcH0zn6oCGF6JUSzrhRrqdXqFSwkw7kPeArw9uI61ebC2qNjUKOuiU8lkyYFYAMeirG4BPt5yMUzl+tjjdiI1J2IoeDxknMO83eA+4ebJJZ670vUpWYuzwEakPkj2IBiXg5UbIfTIdO0N2NtrXV9nTu7xKrfPXCbnIxPaSUJRVTHlg5hlZIT6tVl+ZsbJhzhVYgvPnIkqFqPj1Owo2XFtgE72A5KZQbYtnBEz+AwAjLmU7GL5JE14fsihD6z5QCD2z0wOHyhdCSP53/n5Tuo9oelDv2hkkTWf5QlAi6i5Z8UcEXuog7HWgqiiZblVIuCw9EGaFgBpMQbI1Q8WOrysOWcsPmoX9a4OjFGOfbE9R7tbwMRI10/nbvpapO1oBOKztF6bS9rHIXBS/9VHQ53GRTQhGGd6Zyk4eZfoEO8QMq2cT4/FA887L84QSvkJ9jCdNdmF8eYK9Z+pRVUBh4qrP8744rMH4fX5NJqnU1+UYTiy0= ubuntu@ip-10-0-1-235"},
+					Sudo:     "ALL=(ALL) NOPASSWD:ALL",
+					Groups:   []string{"sudo"},
+					Shell:    "/bin/bash",
+				},
+			},
+		},
+		/* 	Files:             "",
+		EnvVariables:      "",
+		RemoveConfigFiles: "",
+		Timezone:          "", */
+	}); err != nil {
 		return nil, nil, fmt.Errorf("failed to start task: %w", err)
 	}
 

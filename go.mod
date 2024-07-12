@@ -145,5 +145,6 @@ require (
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.69 // indirect
+	libvirt.org/libvirt-go-xml v7.4.0+incompatible // indirect
 	oss.indeed.com/go/libtime v1.6.0 // indirect
 )

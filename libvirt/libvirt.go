@@ -15,6 +15,7 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"libvirt.org/go/libvirt"
+	libvirtxml "libvirt.org/libvirt-go-xml"
 )
 
 const (
@@ -107,10 +108,8 @@ type Info struct {
 	Cores           uint32
 	EmulatorVersion uint32
 	LibvirtVersion  uint32
-}
-
-func (d *driver) GetURI() string {
-	return d.uri
+	Network         string
+	IP              string
 }
 
 func (d *driver) GetInfo() (Info, error) {
@@ -136,8 +135,6 @@ func (d *driver) GetInfo() (Info, error) {
 		return li, fmt.Errorf("libvirt: unable to free memory: %w", err)
 	}
 
-	p, _ := d.conn.GetNodeInfo()
-	fmt.Println(p)
 	li.Cores = ni.Cores
 	li.Memory = ni.Memory
 	li.Cpus = ni.Cpus
@@ -242,41 +239,46 @@ func deleteDir(dirname string) error {
 // an error, otherwise it creates a new domain with the provided configuration.
 func (d *driver) CreateDomain(config *DomainConfig) error {
 	dom, err := d.conn.LookupDomainByName(config.Name)
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to verify exiting domains: %w", err)
+	if lverr, ok := err.(*libvirt.Error); ok {
+		if lverr.Code != libvirt.ERR_NO_DOMAIN {
+			return fmt.Errorf("libvirt: unable to verify exiting domains: %w", err)
+		}
 	}
 
 	if dom != nil {
 		return ErrDomainExists
 	}
 
-	domainDir := filepath.Join(d.dataDir, userDataDir, config.Name)
-	err = os.MkdirAll(domainDir, userDataDirPermissions)
-	if err != nil {
-		return err
-	}
-
-	ci, err := createCloudInitFilesFromTmpls(config, domainDir)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if config.RemoveConfigFiles {
-			err := deleteDir(config.Name)
+	var ci *cloudinitConfig
+	if config.CloudInit.Enable {
+		if !config.CloudInit.ProvideUserData {
+			domainDir := filepath.Join(d.dataDir, userDataDir, config.Name)
+			err = os.MkdirAll(domainDir, userDataDirPermissions)
 			if err != nil {
-				d.logger.Error("libvirt: unable to discard user data files after domain creation", err)
+				return err
 			}
+
+			ci, err = createCloudInitFilesFromTmpls(config, domainDir)
+			if err != nil {
+				return err
+			}
+			defer func() {
+				if config.RemoveConfigFiles {
+					err := deleteDir(config.Name)
+					if err != nil {
+						d.logger.Error("libvirt: unable to discard user data files after domain creation", err)
+					}
+				}
+			}()
+		} else {
+			ci.metadataPath = config.CloudInit.MetaDataPath
+			ci.userDataPath = config.CloudInit.UserDataPath
 		}
-	}()
+	}
 
 	err = d.createDomain(config, ci)
 	if err != nil {
 		return err
-	}
-
-	_, err = d.conn.LookupDomainByName(config.Name)
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to verify domain creation: %w", err)
 	}
 
 	return nil
@@ -331,4 +333,11 @@ func (d *driver) GetVms() {
 		}
 		dom.Free()
 	}
+}
+
+func cd() {
+	domcfg := &libvirtxml.Domain{Type: "kvm", Name: "demo",
+		UUID: "8f99e332-06c4-463a-9099-330fb244e1b3"}
+	xmldoc, err := domcfg.Marshal()
+	fmt.Println(xmldoc, err)
 }
