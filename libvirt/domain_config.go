@@ -83,6 +83,7 @@ type DomainConfig struct {
 	RemoveConfigFiles bool
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
+	CMD               []string
 }
 
 func (d *driver) parceVirtInstallArgs(dc *DomainConfig, ci *cloudinitConfig) []string {
@@ -115,7 +116,7 @@ func (d *driver) parceVirtInstallArgs(dc *DomainConfig, ci *cloudinitConfig) []s
 		for _, m := range dc.Mounts {
 			mArgs := []string{
 				m.Source,
-				m.MountFileTag,
+				m.Tag,
 				"driver.type=virtiofs",
 			}
 
@@ -123,7 +124,7 @@ func (d *driver) parceVirtInstallArgs(dc *DomainConfig, ci *cloudinitConfig) []s
 				mArgs = append(mArgs, fmt.Sprintf("accessmode=%s", m.AccessMode))
 			}
 
-			args = append(args, "--filesystem", strings.Join(mArgs, ","))
+			args = append(args, fmt.Sprintf("--filesystem=%s", strings.Join(mArgs, ",")))
 		}
 	}
 
