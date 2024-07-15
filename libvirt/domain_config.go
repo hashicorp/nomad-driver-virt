@@ -4,89 +4,98 @@
 package libvirt
 
 import (
-	"errors"
 	"fmt"
+	"html/template"
+	"os"
 	"strings"
-	"time"
 
-	"github.com/hashicorp/go-multierror"
-)
-
-var (
-	ErrEmptyName = errors.New("domain name can't be emtpy")
+	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 )
 
 type cloudinitConfig struct {
-	metadataPath string
-	userDataPath string
+	domainDir           string
+	metadataPath        string
+	userdataPath        string
+	cleanUpAfterInstall bool
 }
 
-type Users struct {
-	IncludeDefault bool
-	Users          []UserConfig
+func dirExists(dirname string) bool {
+	info, err := os.Stat(dirname)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return info.IsDir()
 }
 
-type File struct {
-	Path        string
-	Content     string
-	Permissions string
-	Owner       string
-	Group       string
+func deleteDir(name string) error {
+	if dirExists(name) {
+		err := os.RemoveAll(name)
+		if err != nil {
+			return fmt.Errorf("libvirt: failed to delete directory: %w", err)
+		}
+	}
+
+	return nil
 }
 
-type UserGroups []string
+func (cic *cloudinitConfig) createAndpopulateFiles(config *domain.Config) error {
+	mdf, err := os.Create(cic.domainDir + "/meta-data")
+	defer mdf.Close()
+	if err != nil {
+		return fmt.Errorf("libvirt: create file: %w", err)
+	}
 
-func (ug UserGroups) Join() string {
-	return strings.Join(ug, ", ")
+	err = executeTemplate(config, metaDataTemplate, mdf)
+	if err != nil {
+		return err
+	}
+
+	udf, err := os.Create(cic.domainDir + "/user-data")
+	defer udf.Close()
+	if err != nil {
+		return fmt.Errorf("libvirt: create file: %w", err)
+	}
+
+	err = executeTemplate(config, userDataTemplate, udf)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-type UserConfig struct {
-	Name     string
-	Password string
-	SSHKeys  []string
-	Sudo     string
-	Groups   UserGroups
-	Shell    string
+func executeTemplate(config *domain.Config, in string, out *os.File) error {
+	pwd, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("libvirt: unable to get path: %w", err)
+	}
+
+	tmpl, err := template.ParseFiles(pwd + in)
+	if err != nil {
+		return fmt.Errorf("libvirt: unable to parse template: %w", err)
+	}
+
+	err = tmpl.Execute(out, config)
+	if err != nil {
+		return fmt.Errorf("libvirt: unable to execute template: %w", err)
+	}
+	return nil
 }
 
-type MountFileConfig struct {
-	Source      string
-	Destination string
-	ReadOnly    bool
-	AccessMode  string
-	Tag         string
+func createDomainFolder(path string) error {
+	err := os.MkdirAll(path, userDataDirPermissions)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
-type CloudInit struct {
-	Enable          bool
-	ProvideUserData bool
-	UserDataPath    string
-	MetaDataPath    string
+func cleanUpDomainFolder(path string) error {
+	return deleteDir(path)
 }
 
-type DomainConfig struct {
-	XMLConfig         string
-	Name              string
-	Memory            int
-	Cores             int
-	CPUs              int
-	OsVariant         string
-	CloudInit         CloudInit
-	CloudImgPath      string
-	DiskFmt           string
-	NetworkInterfaces []string
-	Type              string
-	HostName          string
-	UsersConfig       Users
-	Files             []File
-	EnvVariables      map[string]string
-	RemoveConfigFiles bool
-	Timezone          *time.Location
-	Mounts            []MountFileConfig
-	CMD               []string
-}
-
-func (d *driver) parceVirtInstallArgs(dc *DomainConfig, ci *cloudinitConfig) []string {
+func (d *driver) parceConfiguration(dc *domain.Config, ci *cloudinitConfig) []string {
 
 	args := []string{
 		"--debug",
@@ -96,13 +105,12 @@ func (d *driver) parceVirtInstallArgs(dc *DomainConfig, ci *cloudinitConfig) []s
 		fmt.Sprintf("--vcpus=%d,cores=%d", dc.CPUs, dc.Cores),
 		fmt.Sprintf("--os-variant=%s", dc.OsVariant),
 		"--import", "--disk", fmt.Sprintf("path=%s,format=%s", dc.CloudImgPath, dc.DiskFmt),
-		"--graphics", "vnc,listen=0.0.0.0",
-		"--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s,disable=on", ci.userDataPath, ci.metadataPath),
+		"--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s,disable=on", ci.userdataPath, ci.metadataPath),
 		"--noautoconsole",
 	}
 
 	if dc.CloudInit.Enable {
-		args = append(args, "--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s,disable=on", ci.userDataPath, ci.metadataPath))
+		args = append(args, "--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s,disable=on", ci.userdataPath, ci.metadataPath))
 	}
 
 	for _, ni := range dc.NetworkInterfaces {
@@ -128,15 +136,5 @@ func (d *driver) parceVirtInstallArgs(dc *DomainConfig, ci *cloudinitConfig) []s
 		}
 	}
 
-	fmt.Println(args)
 	return args
-}
-
-func (dc *DomainConfig) Validate() error {
-	var mErr multierror.Error
-	if dc.Name == "" {
-		return ErrEmptyName
-	}
-
-	return mErr.ErrorOrNil()
 }

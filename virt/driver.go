@@ -7,8 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github/hashicorp/nomad-driver-virt/libvirt"
 	"time"
+
+	domain "github/hashicorp/nomad-driver-virt/internal/shared"
+	"github/hashicorp/nomad-driver-virt/libvirt"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
@@ -60,10 +62,10 @@ type TaskState struct {
 }
 
 type Virtualizer interface {
-	CreateDomain(config *libvirt.DomainConfig) error
+	CreateDomain(config *domain.Config) error
 	StopDomain(name string) error
 	DestroyDomain(name string) error
-	GetInfo() (libvirt.Info, error)
+	GetInfo() (domain.Info, error)
 }
 
 type VirtDriverPlugin struct {
@@ -238,7 +240,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		StartedAt:  h.startedAt,
 	}
 
-	if err := d.virtualizer.CreateDomain(&libvirt.DomainConfig{
+	if err := d.virtualizer.CreateDomain(&domain.Config{
 		Name:   cfg.ID,
 		Memory: int(cfg.Resources.NomadResources.Memory.MemoryMB),
 		//Cores:             int(cfg.Resources.NomadResources.Cpu.ReservedCores[]),
@@ -248,9 +250,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		DiskFmt:           "qcow2",
 		NetworkInterfaces: []string{"virbr0"},
 		HostName:          cfg.Name,
-		UsersConfig: libvirt.Users{
+		UsersConfig: domain.Users{
 			IncludeDefault: true,
-			Users: []libvirt.UserConfig{
+			Users: []domain.UserConfig{
 				{
 					Name:     "juana",
 					Password: "password",
