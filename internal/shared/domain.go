@@ -49,10 +49,9 @@ type MountFileConfig struct {
 }
 
 type CloudInit struct {
-	Enable          bool
-	ProvideUserData bool
-	UserDataPath    string
-	MetaDataPath    string
+	Enable       bool
+	UserDataPath string
+	MetaDataPath string
 }
 
 type Config struct {
@@ -60,11 +59,12 @@ type Config struct {
 	XMLConfig         string
 	Name              string
 	Memory            int
+	DiskSize          int
 	Cores             int
 	CPUs              int
 	OsVariant         string
+	BaseImage         string
 	CloudInit         CloudInit
-	CloudImgPath      string
 	DiskFmt           string
 	NetworkInterfaces []string
 	Type              string
@@ -96,4 +96,6 @@ type Info struct {
 	LibvirtVersion  uint32
 	Network         string
 	IP              string
+	RunningDomains  uint
+	InactiveDomains uint
 }

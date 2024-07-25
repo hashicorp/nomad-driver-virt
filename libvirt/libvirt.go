@@ -36,10 +36,12 @@ var (
 )
 
 type driver struct {
-	uri     string
-	conn    *libvirt.Connect
-	logger  hclog.Logger
-	dataDir string
+	uri      string
+	conn     *libvirt.Connect
+	logger   hclog.Logger
+	dataDir  string
+	user     string
+	password string
 }
 
 func (d *driver) monitorCtx(ctx context.Context) {
@@ -66,10 +68,45 @@ func WithConnectionURI(URI string) Option {
 	}
 }
 
+func WithAuth(user, password string) Option {
+	return func(d *driver) {
+		d.user = user
+		d.password = password
+	}
+}
+
 func WithDataDirectory(path string) Option {
 	return func(d *driver) {
 		d.dataDir = path
 	}
+}
+
+func newConnection(uri string, user string, pass string) (*libvirt.Connect, error) {
+	if user == "" {
+		return libvirt.NewConnect(uri)
+	}
+
+	callback := func(creds []*libvirt.ConnectCredential) {
+		for _, cred := range creds {
+			if cred.Type == libvirt.CRED_AUTHNAME {
+				cred.Result = user
+				cred.ResultLen = len(cred.Result)
+			} else if cred.Type == libvirt.CRED_PASSPHRASE {
+				cred.Result = pass
+				cred.ResultLen = len(cred.Result)
+			}
+		}
+	}
+
+	auth := &libvirt.ConnectAuth{
+		CredType: []libvirt.ConnectCredentialType{
+			libvirt.CRED_AUTHNAME, libvirt.CRED_PASSPHRASE,
+		},
+		Callback: callback,
+	}
+	virConn, err := libvirt.NewConnectWithAuth(uri, auth, 0)
+
+	return virConn, err
 }
 
 func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, error) {
@@ -89,7 +126,7 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 		return nil, err
 	}
 
-	conn, err := libvirt.NewConnect(d.uri)
+	conn, err := newConnection(d.uri, d.user, d.password)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +158,17 @@ func (d *driver) GetInfo() (domain.Info, error) {
 
 	fm, err := d.conn.GetFreeMemory()
 	if err != nil {
-		return li, fmt.Errorf("libvirt: unable to free memory: %w", err)
+		return li, fmt.Errorf("libvirt: unable to get free memory: %w", err)
+	}
+
+	aDoms, err := d.conn.ListAllDomains(libvirt.CONNECT_LIST_DOMAINS_ACTIVE)
+	if err != nil {
+		return li, fmt.Errorf("libvirt: unable to get active domains: %w", err)
+	}
+
+	iDoms, err := d.conn.ListAllDomains(libvirt.CONNECT_LIST_DOMAINS_INACTIVE)
+	if err != nil {
+		return li, fmt.Errorf("libvirt: unable to get inactive domains: %w", err)
 	}
 
 	li.Cores = ni.Cores
@@ -131,6 +178,8 @@ func (d *driver) GetInfo() (domain.Info, error) {
 	li.EmulatorVersion = ev
 	li.LibvirtVersion = lv
 	li.FreeMemory = fm
+	li.RunningDomains = uint(len(aDoms))
+	li.InactiveDomains = uint(len(iDoms))
 
 	return li, nil
 }
@@ -163,11 +212,9 @@ func (d *driver) createDomainWithVirtInstall(dc *domain.Config, ci *cloudinitCon
 // CreateDomain verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
 func (d *driver) CreateDomain(config *domain.Config) error {
-	dom, err := d.conn.LookupDomainByName(config.Name)
-	if lverr, ok := err.(*libvirt.Error); ok {
-		if lverr.Code != libvirt.ERR_NO_DOMAIN {
-			return fmt.Errorf("libvirt: unable to verify exiting domains: %w", err)
-		}
+	dom, err := d.GetDomain(config.Name)
+	if err != nil {
+		return err
 	}
 
 	if dom != nil {
@@ -181,9 +228,11 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	}
 
 	defer func() {
-		err := cleanUpDomainFolder(domainDir)
-		if err != nil {
-			d.logger.Error("unable to clean up domain folder", err)
+		if config.RemoveConfigFiles {
+			err := cleanUpDomainFolder(domainDir)
+			if err != nil {
+				d.logger.Error("unable to clean up domain folder", err)
+			}
 		}
 	}()
 
@@ -199,9 +248,6 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		ci.userdataPath = ci.domainDir + "/user-data"
 		ci.metadataPath = ci.domainDir + "/meta-data"
 
-	} else {
-		ci.metadataPath = config.CloudInit.MetaDataPath
-		ci.userdataPath = config.CloudInit.UserDataPath
 	}
 
 	err = d.createDomainWithVirtInstall(config, ci)
@@ -209,11 +255,38 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		return err
 	}
 
+	////// TODO: temporary for debugging purposes
+	dom, err = d.GetDomain(config.Name)
+	if err != nil {
+		return err
+	}
+
+	xml, err := dom.GetXMLDesc(libvirt.DOMAIN_XML_MIGRATABLE)
+	if err != nil {
+		return err
+	}
+
+	fmt.Println(domainDir + config.Name + ".xml")
+	err = os.WriteFile(domainDir+config.Name+".xml", []byte(xml), 0644)
+	if err != nil {
+		d.logger.Error("failed to write XML to file: %s", err)
+	}
+	//////////////////////////////////////////////
+
 	return nil
 }
 
 func (d *driver) GetDomain(name string) (*libvirt.Domain, error) {
-	return d.conn.LookupDomainByName(name)
+	dom, err := d.conn.LookupDomainByName(name)
+	if err != nil {
+		if lverr, ok := err.(*libvirt.Error); ok {
+			if lverr.Code != libvirt.ERR_NO_DOMAIN {
+				return nil, fmt.Errorf("libvirt: unable to verify exiting domains: %w", err)
+			}
+		}
+	}
+
+	return dom, nil
 }
 
 func (d *driver) StopDomain(name string) error {

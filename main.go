@@ -17,7 +17,7 @@ import (
 
 func main() {
 
-	name := "juana-16"
+	name := "juana-21"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "my-app",
 		Level: hclog.Debug,
@@ -25,7 +25,7 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
-	conn, err := libvirt.New(ctx, appLogger)
+	conn, err := libvirt.New(ctx, appLogger, libvirt.WithAuth("juana", "juana"))
 	if err != nil {
 		fmt.Printf("error: %+v\n %+v\n", conn, err)
 		return
@@ -52,8 +52,7 @@ func main() {
 	}
 
 	ci := domain.CloudInit{
-		Enable:            true,
-		ProvideUserData:   false,
+		Enable: true,
 	}
 
 	mounts := []domain.MountFileConfig{
@@ -74,10 +73,11 @@ func main() {
 		CPUs:              4,
 		Cores:             2,
 		OsVariant:         "ubuntufocal",
-		CloudImgPath:      fmt.Sprintf("/home/ubuntu/test/%s.img", name),
+		BaseImage:         "/home/ubuntu/test/hal9003.img",
 		DiskFmt:           "qcow2",
+		DiskSize:          1,
 		NetworkInterfaces: []string{"virbr0"},
-		HostName:          name,
+		HostName:          name + "-host",
 		UsersConfig:       users,
 		EnvVariables: map[string]string{
 			"IDENTITY": "identity",
@@ -101,7 +101,7 @@ func main() {
 		fmt.Println(" no vm this time", err)
 	}
 
-	conn.GetVms()
+	//conn.GetVms()
 
 	info, err := conn.GetInfo()
 	if err != nil {

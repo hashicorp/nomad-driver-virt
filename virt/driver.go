@@ -88,6 +88,9 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 		print(err)
 	}
 
+	// Should we check if extentions and kernel modules are there?
+	// grep -E 'svm|vmx' /proc/cpuinfo
+	// lsmod | grep kvm -> kvm_intel, kvm_amd, nvme-tcp
 	return &VirtDriverPlugin{
 		eventer:        eventer.NewEventer(ctx, logger),
 		virtualizer:    v,
@@ -246,7 +249,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		//Cores:             int(cfg.Resources.NomadResources.Cpu.ReservedCores[]),
 		CPUs:              int(cfg.Resources.NomadResources.Cpu.CpuShares),
 		OsVariant:         driverConfig.OSVariant.Type,
-		CloudImgPath:      driverConfig.ImagePath,
+		BaseImage:         driverConfig.ImagePath,
 		DiskFmt:           "qcow2",
 		NetworkInterfaces: []string{"virbr0"},
 		HostName:          cfg.Name,

@@ -13,10 +13,9 @@ import (
 )
 
 type cloudinitConfig struct {
-	domainDir           string
-	metadataPath        string
-	userdataPath        string
-	cleanUpAfterInstall bool
+	domainDir    string
+	metadataPath string
+	userdataPath string
 }
 
 func dirExists(dirname string) bool {
@@ -96,7 +95,6 @@ func cleanUpDomainFolder(path string) error {
 }
 
 func (d *driver) parceConfiguration(dc *domain.Config, ci *cloudinitConfig) []string {
-
 	args := []string{
 		"--debug",
 		fmt.Sprintf("--connect=%s", d.uri),
@@ -104,13 +102,12 @@ func (d *driver) parceConfiguration(dc *domain.Config, ci *cloudinitConfig) []st
 		fmt.Sprintf("--ram=%d", dc.Memory),
 		fmt.Sprintf("--vcpus=%d,cores=%d", dc.CPUs, dc.Cores),
 		fmt.Sprintf("--os-variant=%s", dc.OsVariant),
-		"--import", "--disk", fmt.Sprintf("path=%s,format=%s", dc.CloudImgPath, dc.DiskFmt),
-		"--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s,disable=on", ci.userdataPath, ci.metadataPath),
+		"--import", "--disk", fmt.Sprintf("path=%s,format=%s", dc.BaseImage, dc.DiskFmt),
 		"--noautoconsole",
 	}
 
 	if dc.CloudInit.Enable {
-		args = append(args, "--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s,disable=on", ci.userdataPath, ci.metadataPath))
+		args = append(args, "--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s", ci.userdataPath, ci.metadataPath))
 	}
 
 	for _, ni := range dc.NetworkInterfaces {
@@ -118,7 +115,6 @@ func (d *driver) parceConfiguration(dc *domain.Config, ci *cloudinitConfig) []st
 	}
 
 	if len(dc.Mounts) > 0 {
-
 		args = append(args, "--memorybacking=source.type=memfd,access.mode=shared")
 
 		for _, m := range dc.Mounts {
