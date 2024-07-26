@@ -21,7 +21,7 @@ import (
 
 const (
 	defaultURI             = "qemu:///system"
-	defaultDataDir         = "/home/ubuntu"
+	defaultDataDir         = "/usr/local"
 	dataDirPermissions     = 0777
 	userDataDir            = "/virt"
 	userDataDirPermissions = 0777
@@ -31,7 +31,6 @@ const (
 )
 
 var (
-	ErrEmptyURI     = errors.New("connection URI can't be empty")
 	ErrDomainExists = errors.New("the domain exists already")
 )
 
@@ -50,14 +49,6 @@ func (d *driver) monitorCtx(ctx context.Context) {
 		d.conn.Close()
 		return
 	}
-}
-
-func validURI(uri string) error {
-	if uri == "" {
-		return ErrEmptyURI
-	}
-
-	return nil
 }
 
 type Option func(*driver)

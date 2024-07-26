@@ -17,7 +17,7 @@ import (
 
 func main() {
 
-	name := "juana-21"
+	name := "juana-23"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "my-app",
 		Level: hclog.Debug,
@@ -73,7 +73,7 @@ func main() {
 		CPUs:              4,
 		Cores:             2,
 		OsVariant:         "ubuntufocal",
-		BaseImage:         "/home/ubuntu/test/hal9003.img",
+		BaseImage:         "/home/ubuntu/test/juana23.img",
 		DiskFmt:           "qcow2",
 		DiskSize:          1,
 		NetworkInterfaces: []string{"virbr0"},
