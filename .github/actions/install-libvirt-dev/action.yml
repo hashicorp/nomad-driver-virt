@@ -1,0 +1,13 @@
+name: install-libvirt-dev
+description: install libvirt-dev package
+runs:
+  using: composite
+  steps:
+  - name: install libvirt-dev
+    run: |-
+      set -x
+      
+      sudo apt-get update
+      sudo apt-get install libvirt-dev
+
+    shell: bash
