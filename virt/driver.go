@@ -203,7 +203,8 @@ func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 	attrs["driver.virt"] = structs.NewBoolAttribute(true)
 	attrs["driver.virt.libvirt.version"] = structs.NewIntAttribute(int64(virtInfo.LibvirtVersion), "")
 	attrs["driver.virt.emulator.version"] = structs.NewIntAttribute(int64(virtInfo.EmulatorVersion), "")
-	attrs["driver.virt.freememory"] = structs.NewIntAttribute(int64(virtInfo.FreeMemory), "bytes")
+	attrs["driver.virt.active"] = structs.NewIntAttribute(int64(virtInfo.FreeMemory), "")
+	attrs["driver.virt.inactive"] = structs.NewIntAttribute(int64(virtInfo.FreeMemory), "bytes")
 
 	fp := &drivers.Fingerprint{
 		Attributes:        map[string]*structs.Attribute{},

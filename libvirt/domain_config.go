@@ -101,13 +101,20 @@ func (d *driver) parceConfiguration(dc *domain.Config, ci *cloudinitConfig) []st
 		fmt.Sprintf("--name=%s", dc.Name),
 		fmt.Sprintf("--ram=%d", dc.Memory),
 		fmt.Sprintf("--vcpus=%d,cores=%d", dc.CPUs, dc.Cores),
-		fmt.Sprintf("--os-variant=%s", dc.OsVariant),
-		"--import", "--disk", fmt.Sprintf("path=%s,format=%s", dc.BaseImage, dc.DiskFmt),
+
 		"--noautoconsole",
 	}
 
+	if dc.OsVariant != "" {
+		args = append(args, fmt.Sprintf("--os-variant=%s", dc.OsVariant))
+	}
+
 	if dc.CloudInit.Enable {
+		args = append(args, "--import", "--disk", fmt.Sprintf("path=%s,format=%s,size=%d", dc.BaseImage, dc.DiskFmt, dc.DiskSize))
 		args = append(args, "--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s", ci.userdataPath, ci.metadataPath))
+	} else {
+		args = append(args, fmt.Sprintf("location=%s", dc.BaseImage))
+		args = append(args, "--disk", fmt.Sprintf("path=%s,format=%s,size=%d", dc.BaseImage, dc.DiskFmt, dc.DiskSize))
 	}
 
 	for _, ni := range dc.NetworkInterfaces {

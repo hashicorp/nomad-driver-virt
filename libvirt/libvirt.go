@@ -16,7 +16,6 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"libvirt.org/go/libvirt"
-	libvirtxml "libvirt.org/libvirt-go-xml"
 )
 
 const (
@@ -31,7 +30,8 @@ const (
 )
 
 var (
-	ErrDomainExists = errors.New("the domain exists already")
+	ErrDomainExists   = errors.New("the domain exists already")
+	ErrDomainNotFound = errors.New("the domain does not exist")
 )
 
 type driver struct {
@@ -41,14 +41,6 @@ type driver struct {
 	dataDir  string
 	user     string
 	password string
-}
-
-func (d *driver) monitorCtx(ctx context.Context) {
-	select {
-	case <-ctx.Done():
-		d.conn.Close()
-		return
-	}
 }
 
 type Option func(*driver)
@@ -98,6 +90,14 @@ func newConnection(uri string, user string, pass string) (*libvirt.Connect, erro
 	virConn, err := libvirt.NewConnectWithAuth(uri, auth, 0)
 
 	return virConn, err
+}
+
+func (d *driver) monitorCtx(ctx context.Context) {
+	select {
+	case <-ctx.Done():
+		d.conn.Close()
+		return
+	}
 }
 
 func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, error) {
@@ -179,27 +179,6 @@ func (d *driver) Close() (int, error) {
 	return d.conn.Close()
 }
 
-func (d *driver) createDomainWithVirtInstall(dc *domain.Config, ci *cloudinitConfig) error {
-	var outb, errb bytes.Buffer
-
-	args := d.parceConfiguration(dc, ci)
-
-	cmd := exec.Command("virt-install", args...)
-	cmd.Dir = d.dataDir
-	cmd.Stdout = &outb
-	cmd.Stderr = &errb
-
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("libvirt: %w: %s", err, errb.String())
-	}
-
-	d.logger.Debug("logger", errb.String())
-	d.logger.Info("logger", outb.String())
-
-	return nil
-}
-
 // CreateDomain verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
 func (d *driver) CreateDomain(config *domain.Config) error {
@@ -246,23 +225,26 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		return err
 	}
 
-	////// TODO: temporary for debugging purposes
-	dom, err = d.GetDomain(config.Name)
+	return nil
+}
+
+func (d *driver) createDomainWithVirtInstall(dc *domain.Config, ci *cloudinitConfig) error {
+	var outb, errb bytes.Buffer
+
+	args := d.parceConfiguration(dc, ci)
+
+	cmd := exec.Command("virt-install", args...)
+	cmd.Dir = d.dataDir
+	cmd.Stdout = &outb
+	cmd.Stderr = &errb
+
+	err := cmd.Run()
 	if err != nil {
-		return err
+		return fmt.Errorf("libvirt: %w: %s", err, errb.String())
 	}
 
-	xml, err := dom.GetXMLDesc(libvirt.DOMAIN_XML_MIGRATABLE)
-	if err != nil {
-		return err
-	}
-
-	fmt.Println(domainDir + config.Name + ".xml")
-	err = os.WriteFile(domainDir+config.Name+".xml", []byte(xml), 0644)
-	if err != nil {
-		d.logger.Error("failed to write XML to file: %s", err)
-	}
-	//////////////////////////////////////////////
+	d.logger.Debug("logger", errb.String())
+	d.logger.Info("logger", outb.String())
 
 	return nil
 }
@@ -281,9 +263,13 @@ func (d *driver) GetDomain(name string) (*libvirt.Domain, error) {
 }
 
 func (d *driver) StopDomain(name string) error {
-	dom, err := d.conn.LookupDomainByName(name)
+	dom, err := d.GetDomain(name)
 	if err != nil {
 		return err
+	}
+
+	if dom == nil {
+		return ErrDomainNotFound
 	}
 
 	d.logger.Debug("stopping domain", name)
@@ -292,9 +278,13 @@ func (d *driver) StopDomain(name string) error {
 }
 
 func (d *driver) DestroyDomain(name string) error {
-	dom, err := d.conn.LookupDomainByName(name)
+	dom, err := d.GetDomain(name)
 	if err != nil {
 		return err
+	}
+
+	if dom == nil {
+		return ErrDomainNotFound
 	}
 
 	d.logger.Debug("destroying domain", name)
@@ -320,11 +310,4 @@ func (d *driver) GetVms() {
 		}
 		dom.Free()
 	}
-}
-
-func cd() {
-	domcfg := &libvirtxml.Domain{Type: "kvm", Name: "demo",
-		UUID: "8f99e332-06c4-463a-9099-330fb244e1b3"}
-	xmldoc, err := domcfg.Marshal()
-	fmt.Println(xmldoc, err)
 }
