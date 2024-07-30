@@ -11,7 +11,7 @@ users:
   {{- end }}
   {{- range .UsersConfig.Users}}  
   - name: {{.Name}}
-    {{ if ne .Password ""}}
+    {{- if ne .Password ""}}
     plain_text_passwd: {{.Password}}
     lock_passwd: false
     {{- end}}

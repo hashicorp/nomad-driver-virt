@@ -32,12 +32,13 @@ func (ug UserGroups) Join() string {
 }
 
 type UserConfig struct {
-	Name     string
-	Password string
-	SSHKeys  []string
-	Sudo     string
-	Groups   UserGroups
-	Shell    string
+	Name           string
+	Password       string
+	PathToPassword string
+	SSHKeys        []string
+	Sudo           string
+	Groups         UserGroups
+	Shell          string
 }
 
 type MountFileConfig struct {
@@ -58,12 +59,13 @@ type Config struct {
 	RemoveConfigFiles bool
 	XMLConfig         string
 	Name              string
-	Memory            int
+	Memory            uint
 	DiskSize          int
-	Cores             int
+	Cores             uint
 	CPUs              int
 	OsVariant         string
 	BaseImage         string
+	OriginalImage     string
 	CloudInit         CloudInit
 	DiskFmt           string
 	NetworkInterfaces []string

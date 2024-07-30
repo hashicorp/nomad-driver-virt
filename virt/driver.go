@@ -207,7 +207,7 @@ func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 	attrs["driver.virt.inactive"] = structs.NewIntAttribute(int64(virtInfo.FreeMemory), "bytes")
 
 	fp := &drivers.Fingerprint{
-		Attributes:        map[string]*structs.Attribute{},
+		Attributes:        attrs,
 		Health:            drivers.HealthStateHealthy,
 		HealthDescription: drivers.DriverHealthy,
 	}
@@ -246,7 +246,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	if err := d.virtualizer.CreateDomain(&domain.Config{
 		Name:   cfg.ID,
-		Memory: int(cfg.Resources.NomadResources.Memory.MemoryMB),
+		Memory: uint(cfg.Resources.NomadResources.Memory.MemoryMB),
 		//Cores:             int(cfg.Resources.NomadResources.Cpu.ReservedCores[]),
 		CPUs:              int(cfg.Resources.NomadResources.Cpu.CpuShares),
 		OsVariant:         driverConfig.OSVariant.Type,
@@ -390,22 +390,11 @@ func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal
 		return drivers.ErrTaskNotFound
 	}
 
-	// TODO: implement driver specific logic to stop a task.
-	//
-	// The StopTask function is expected to stop a running task by sending the
-	// given signal to it. If the task does not stop during the given timeout,
-	// the driver must forcefully kill the task.
-	//
-	// In the example below we let the executor handle the task shutdown
-	// process for us, but you might need to customize this for your own
-	// implementation.
-	/* 	if err := handle.exec.Shutdown(signal, timeout); err != nil {
-	   		if handle.pluginClient.Exited() {
-	   			return nil
-	   		}
-	   		return fmt.Errorf("executor Shutdown failed: %v", err)
-	   	}
-	*/
+	err := d.virtualizer.DestroyDomain(taskID)
+	if err != nil {
+		return fmt.Errorf("virt: unable to stop task: %w", err)
+	}
+
 	return nil
 }
 
@@ -419,22 +408,12 @@ func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
 	if handle.IsRunning() && !force {
 		return errors.New("cannot destroy running task")
 	}
+	// Check for status to undefine task
 
-	// TODO: implement driver specific logic to destroy a complete task.
-	//
-	// Destroying a task includes removing any resources used by task and any
-	// local references in the plugin. If force is set to true the task should
-	// be destroyed even if it's currently running.
-	//
-	// In the example below we use the executor to force shutdown the task
-	// (timeout equals 0).
-	/* 	if !handle.pluginClient.Exited() {
-		if err := handle.exec.Shutdown("", 0); err != nil {
-			handle.logger.Error("destroying executor failed", "err", err)
-		}
-
-		handle.pluginClient.Kill()
-	} */
+	err := d.virtualizer.StopDomain(taskID)
+	if err != nil {
+		return fmt.Errorf("virt: unable to destroy task: %w", err)
+	}
 
 	d.tasks.Delete(taskID)
 	return nil

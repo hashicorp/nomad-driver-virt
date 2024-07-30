@@ -6,18 +6,18 @@ package main
 import (
 	"context"
 	"fmt"
-	"time"
 
 	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 	"github/hashicorp/nomad-driver-virt/libvirt"
 	"github/hashicorp/nomad-driver-virt/virt"
+	"time"
 
 	"github.com/hashicorp/go-hclog"
 )
 
 func main() {
 
-	name := "juana-23"
+	name := "j4"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "my-app",
 		Level: hclog.Debug,
@@ -43,7 +43,7 @@ func main() {
 			{
 				Name:     "juana",
 				Password: "password",
-				SSHKeys:  []string{"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCg6O020792w3AzhdV27gcH0zn6oCGF6JUSzrhRrqdXqFSwkw7kPeArw9uI61ebC2qNjUKOuiU8lkyYFYAMeirG4BPt5yMUzl+tjjdiI1J2IoeDxknMO83eA+4ebJJZ670vUpWYuzwEakPkj2IBiXg5UbIfTIdO0N2NtrXV9nTu7xKrfPXCbnIxPaSUJRVTHlg5hlZIT6tVl+ZsbJhzhVYgvPnIkqFqPj1Owo2XFtgE72A5KZQbYtnBEz+AwAjLmU7GL5JE14fsihD6z5QCD2z0wOHyhdCSP53/n5Tuo9oelDv2hkkTWf5QlAi6i5Z8UcEXuog7HWgqiiZblVIuCw9EGaFgBpMQbI1Q8WOrysOWcsPmoX9a4OjFGOfbE9R7tbwMRI10/nbvpapO1oBOKztF6bS9rHIXBS/9VHQ53GRTQhGGd6Zyk4eZfoEO8QMq2cT4/FA887L84QSvkJ9jCdNdmF8eYK9Z+pRVUBh4qrP8744rMH4fX5NJqnU1+UYTiy0= ubuntu@ip-10-0-1-235"},
+				SSHKeys:  []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1/cUhjyA8aznoy9FlwU4d6p/zfxP5RqRxhCWzGK juanita.delacuestamorales@hashicorp.com"},
 				Sudo:     "ALL=(ALL) NOPASSWD:ALL",
 				Groups:   []string{"sudo"},
 				Shell:    "/bin/bash",
@@ -52,7 +52,7 @@ func main() {
 	}
 
 	ci := domain.CloudInit{
-		Enable: true,
+		Enable: false,
 	}
 
 	mounts := []domain.MountFileConfig{
@@ -65,15 +65,16 @@ func main() {
 	}
 
 	config := &domain.Config{
+		OriginalImage:     "/home/ubuntu/test/focal-server-cloudimg-amd64.img",
 		RemoveConfigFiles: false,
 		CloudInit:         ci,
 		Timezone:          tz,
 		Name:              name,
-		Memory:            2048,
+		Memory:            2048000,
 		CPUs:              4,
 		Cores:             2,
 		OsVariant:         "ubuntufocal",
-		BaseImage:         "/home/ubuntu/test/juana23.img",
+		BaseImage:         "/home/ubuntu/test/" + name + ".img",
 		DiskFmt:           "qcow2",
 		DiskSize:          1,
 		NetworkInterfaces: []string{"virbr0"},
@@ -98,9 +99,9 @@ func main() {
 
 	err = conn.CreateDomain(config)
 	if err != nil {
-		fmt.Println(" no vm this time", err)
+		fmt.Println("\n no vm this time :(", err)
 	}
-
+	fmt.Println("\n we have a vm")
 	//conn.GetVms()
 
 	info, err := conn.GetInfo()
@@ -108,7 +109,7 @@ func main() {
 		fmt.Println("ups no info", err)
 	}
 
-	fmt.Printf("%+v\n", info)
+	fmt.Printf("%+v\n", info, "\n")
 	cancel()
 	time.Sleep(1 * time.Second)
 

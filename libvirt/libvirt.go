@@ -15,6 +15,7 @@ import (
 	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 
 	"github.com/hashicorp/go-hclog"
+	libvirtxml "github.com/libvirt/libvirt-go-xml"
 	"libvirt.org/go/libvirt"
 )
 
@@ -210,7 +211,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	if config.CloudInit.Enable {
 		ci.domainDir = domainDir
 
-		err = ci.createAndpopulateFiles(config)
+		err = ci.createAndpopulateUserDataFiles(config)
 		if err != nil {
 			return err
 		}
@@ -220,10 +221,207 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 
 	}
 
-	err = d.createDomainWithVirtInstall(config, ci)
+	cero := uint(0)
+	domcfg := &libvirtxml.Domain{
+		OnPoweroff: "destroy",
+		OnReboot:   "destroy",
+		OnCrash:    "destroy",
+		PM: &libvirtxml.DomainPM{
+			SuspendToMem: &libvirtxml.DomainPMPolicy{
+				Enabled: "no",
+			},
+			SuspendToDisk: &libvirtxml.DomainPMPolicy{
+				Enabled: "no",
+			},
+		},
+		Features: &libvirtxml.DomainFeatureList{
+			VMPort: &libvirtxml.DomainFeatureState{
+				State: "off",
+			},
+		},
+		SysInfo: []libvirtxml.DomainSysInfo{
+			{
+				SMBIOS: &libvirtxml.DomainSysInfoSMBIOS{
+					System: &libvirtxml.DomainSysInfoSystem{
+						Entry: []libvirtxml.DomainSysInfoEntry{
+							{
+								Name:  "serial",
+								Value: "ds=nocloud",
+							},
+						},
+					},
+				},
+			},
+		},
+		OS: &libvirtxml.DomainOS{
+			Type: &libvirtxml.DomainOSType{
+				//	Arch:    "x86_64",
+				//	Machine: "pc-i440fx-jammy",
+				Type: "hvm",
+			},
+			SMBios: &libvirtxml.DomainSMBios{
+				Mode: "sysinfo",
+			},
+		},
+		Devices: &libvirtxml.DomainDeviceList{
+			Controllers: []libvirtxml.DomainController{
+				{
+					Type:  "virtio-serial",
+					Index: &cero,
+				},
+				{
+					Type:  "sata",
+					Index: &cero,
+				},
+			},
+			Serials: []libvirtxml.DomainSerial{
+				{
+					Target: &libvirtxml.DomainSerialTarget{
+						Type: "isa-serial",
+						Port: &cero,
+						Model: &libvirtxml.DomainSerialTargetModel{
+							Name: "isa-serial",
+						},
+					},
+				},
+			},
+			Consoles: []libvirtxml.DomainConsole{
+				{
+					Target: &libvirtxml.DomainConsoleTarget{
+						Type: "serial",
+						Port: &cero,
+					},
+				},
+			},
+			RNGs: []libvirtxml.DomainRNG{
+				{
+					Model: "virtio",
+					Backend: &libvirtxml.DomainRNGBackend{
+						Random: &libvirtxml.DomainRNGBackendRandom{
+							Device: "/dev/urandom",
+						},
+					},
+				},
+			},
+			Disks: []libvirtxml.DomainDisk{
+				{
+					Device: "disk",
+					Driver: &libvirtxml.DomainDiskDriver{
+						Name: "qemu",
+						Type: "qcow2",
+					},
+					Source: &libvirtxml.DomainDiskSource{
+						File: &libvirtxml.DomainDiskSourceFile{
+							File: config.BaseImage,
+						},
+					},
+					BackingStore: &libvirtxml.DomainDiskBackingStore{
+						Index: 3,
+						Format: &libvirtxml.DomainDiskFormat{
+							Type: "qcow2",
+						},
+						Source: &libvirtxml.DomainDiskSource{
+							File: &libvirtxml.DomainDiskSourceFile{
+								File: config.OriginalImage,
+							},
+						},
+					},
+					Target: &libvirtxml.DomainDiskTarget{
+						Dev: "vda",
+						Bus: "virtio",
+					},
+				},
+				{
+					Device: "cdrom",
+					Driver: &libvirtxml.DomainDiskDriver{
+						Name: "qemu",
+						Type: "raw",
+					},
+					Source: &libvirtxml.DomainDiskSource{
+						File: &libvirtxml.DomainDiskSourceFile{
+							File: "/home/ubuntu/test/cidata.iso",
+						},
+					},
+					Target: &libvirtxml.DomainDiskTarget{
+						Dev: "sda",
+						Bus: "sata",
+					},
+					ReadOnly: &libvirtxml.DomainDiskReadOnly{},
+				},
+			},
+			Filesystems: []libvirtxml.DomainFilesystem{
+				{
+					AccessMode: "passthrough",
+					Driver: &libvirtxml.DomainFilesystemDriver{
+						Type: "virtiofs",
+					},
+					Binary: &libvirtxml.DomainFilesystemBinary{
+						Path: "/usr/lib/qemu/virtiofsd",
+					},
+					Source: &libvirtxml.DomainFilesystemSource{
+						Mount: &libvirtxml.DomainFilesystemSourceMount{
+							Dir: "/home/ubuntu/test/alloc",
+						},
+					},
+					Target: &libvirtxml.DomainFilesystemTarget{
+						Dir: "allocDir",
+					},
+					Alias: &libvirtxml.DomainAlias{
+						Name: "fs0",
+					},
+				},
+			},
+			Interfaces: []libvirtxml.DomainInterface{
+				{
+					Source: &libvirtxml.DomainInterfaceSource{
+						Bridge: &libvirtxml.DomainInterfaceSourceBridge{
+							Bridge: "virbr0",
+						},
+					},
+					Model: &libvirtxml.DomainInterfaceModel{
+						Type: "virtio",
+					},
+				},
+			},
+		},
+		Type: "kvm",
+		Name: config.Name,
+		Memory: &libvirtxml.DomainMemory{
+			Value: config.Memory,
+		},
+		MemoryBacking: &libvirtxml.DomainMemoryBacking{
+			MemorySource: &libvirtxml.DomainMemorySource{
+				Type: "memfd",
+			},
+			MemoryAccess: &libvirtxml.DomainMemoryAccess{
+				Mode: "shared",
+			},
+		},
+		VCPU: &libvirtxml.DomainVCPU{
+			Placement: "static",
+			Value:     uint(config.CPUs),
+		},
+		Resource: &libvirtxml.DomainResource{
+			Partition: "/machine",
+		},
+		/*  CPU: &libvirtxml.DomainCPU{
+			Topology: &libvirtxml.DomainCPUTopology{
+				Cores:   config.CPUs,
+				Sockets: 2,
+				Threads: 1,
+			},
+		}, */
+	}
+	xmldoc, err := domcfg.Marshal()
+	fmt.Println(xmldoc, err)
+
+	ddomLi, err := d.conn.DomainCreateXML(xmldoc, 0)
+	fmt.Println(ddomLi, err)
+
+	/* err = d.createDomainWithVirtInstall(config, ci)
 	if err != nil {
 		return err
-	}
+	} */
 
 	return nil
 }
@@ -243,9 +441,12 @@ func (d *driver) createDomainWithVirtInstall(dc *domain.Config, ci *cloudinitCon
 		return fmt.Errorf("libvirt: %w: %s", err, errb.String())
 	}
 
-	d.logger.Debug("logger", errb.String())
-	d.logger.Info("logger", outb.String())
+	//d.logger.Debug("logger", errb.String())
+	//d.logger.Info("logger", outb.String())
+	fmt.Println(outb.String())
 
+	dom, err := d.conn.DomainCreateXML(outb.String(), 0)
+	fmt.Println(dom, err)
 	return nil
 }
 
