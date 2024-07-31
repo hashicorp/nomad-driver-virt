@@ -17,7 +17,7 @@ import (
 
 func main() {
 
-	name := "j4"
+	name := "j9"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "my-app",
 		Level: hclog.Debug,
@@ -65,7 +65,6 @@ func main() {
 	}
 
 	config := &domain.Config{
-		OriginalImage:     "/home/ubuntu/test/focal-server-cloudimg-amd64.img",
 		RemoveConfigFiles: false,
 		CloudInit:         ci,
 		Timezone:          tz,
@@ -100,7 +99,9 @@ func main() {
 	err = conn.CreateDomain(config)
 	if err != nil {
 		fmt.Println("\n no vm this time :(", err)
+		return
 	}
+
 	fmt.Println("\n we have a vm")
 	//conn.GetVms()
 

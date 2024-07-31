@@ -4,18 +4,13 @@
 package libvirt
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
 
 	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 
 	"github.com/hashicorp/go-hclog"
-	libvirtxml "github.com/libvirt/libvirt-go-xml"
 	"libvirt.org/go/libvirt"
 )
 
@@ -25,8 +20,6 @@ const (
 	dataDirPermissions     = 0777
 	userDataDir            = "/virt"
 	userDataDirPermissions = 0777
-	userDataTemplate       = "/libvirt/user-data.tmpl"
-	metaDataTemplate       = "/libvirt/meta-data.tmpl"
 	envFile                = "/etc/profile.d/virt-envs.sh"
 )
 
@@ -35,13 +28,17 @@ var (
 	ErrDomainNotFound = errors.New("the domain does not exist")
 )
 
+type CloudInit interface {
+	GetCidataISO(ci domain.CloudInit) (string, error)
+}
+
 type driver struct {
 	uri      string
 	conn     *libvirt.Connect
 	logger   hclog.Logger
-	dataDir  string
 	user     string
 	password string
+	ci       CloudInit
 }
 
 type Option func(*driver)
@@ -56,12 +53,6 @@ func WithAuth(user, password string) Option {
 	return func(d *driver) {
 		d.user = user
 		d.password = password
-	}
-}
-
-func WithDataDirectory(path string) Option {
-	return func(d *driver) {
-		d.dataDir = path
 	}
 }
 
@@ -103,19 +94,12 @@ func (d *driver) monitorCtx(ctx context.Context) {
 
 func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, error) {
 	d := &driver{
-		logger:  logger.Named("nomad-virt-plugin"),
-		uri:     defaultURI,
-		dataDir: defaultDataDir,
+		logger: logger.Named("nomad-virt-plugin"),
+		uri:    defaultURI,
 	}
 
 	for _, opt := range options {
 		opt(d)
-	}
-
-	path := filepath.Join(d.dataDir, userDataDir)
-	err := os.MkdirAll(path, dataDirPermissions)
-	if err != nil {
-		return nil, err
 	}
 
 	conn, err := newConnection(d.uri, d.user, d.password)
@@ -192,261 +176,34 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		return ErrDomainExists
 	}
 
-	domainDir := filepath.Join(d.dataDir, userDataDir, config.Name)
-	err = createDomainFolder(domainDir)
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to build domain config: %w", err)
-	}
-
-	defer func() {
-		if config.RemoveConfigFiles {
-			err := cleanUpDomainFolder(domainDir)
-			if err != nil {
-				d.logger.Error("unable to clean up domain folder", err)
-			}
-		}
-	}()
-
-	ci := &cloudinitConfig{}
-	if config.CloudInit.Enable {
-		ci.domainDir = domainDir
-
-		err = ci.createAndpopulateUserDataFiles(config)
-		if err != nil {
-			return err
-		}
-
-		ci.userdataPath = ci.domainDir + "/user-data"
-		ci.metadataPath = ci.domainDir + "/meta-data"
-
-	}
-
-	cero := uint(0)
-	domcfg := &libvirtxml.Domain{
-		OnPoweroff: "destroy",
-		OnReboot:   "destroy",
-		OnCrash:    "destroy",
-		PM: &libvirtxml.DomainPM{
-			SuspendToMem: &libvirtxml.DomainPMPolicy{
-				Enabled: "no",
-			},
-			SuspendToDisk: &libvirtxml.DomainPMPolicy{
-				Enabled: "no",
-			},
-		},
-		Features: &libvirtxml.DomainFeatureList{
-			VMPort: &libvirtxml.DomainFeatureState{
-				State: "off",
-			},
-		},
-		SysInfo: []libvirtxml.DomainSysInfo{
-			{
-				SMBIOS: &libvirtxml.DomainSysInfoSMBIOS{
-					System: &libvirtxml.DomainSysInfoSystem{
-						Entry: []libvirtxml.DomainSysInfoEntry{
-							{
-								Name:  "serial",
-								Value: "ds=nocloud",
-							},
-						},
-					},
-				},
-			},
-		},
-		OS: &libvirtxml.DomainOS{
-			Type: &libvirtxml.DomainOSType{
-				//	Arch:    "x86_64",
-				//	Machine: "pc-i440fx-jammy",
-				Type: "hvm",
-			},
-			SMBios: &libvirtxml.DomainSMBios{
-				Mode: "sysinfo",
-			},
-		},
-		Devices: &libvirtxml.DomainDeviceList{
-			Controllers: []libvirtxml.DomainController{
-				{
-					Type:  "virtio-serial",
-					Index: &cero,
-				},
-				{
-					Type:  "sata",
-					Index: &cero,
-				},
-			},
-			Serials: []libvirtxml.DomainSerial{
-				{
-					Target: &libvirtxml.DomainSerialTarget{
-						Type: "isa-serial",
-						Port: &cero,
-						Model: &libvirtxml.DomainSerialTargetModel{
-							Name: "isa-serial",
-						},
-					},
-				},
-			},
-			Consoles: []libvirtxml.DomainConsole{
-				{
-					Target: &libvirtxml.DomainConsoleTarget{
-						Type: "serial",
-						Port: &cero,
-					},
-				},
-			},
-			RNGs: []libvirtxml.DomainRNG{
-				{
-					Model: "virtio",
-					Backend: &libvirtxml.DomainRNGBackend{
-						Random: &libvirtxml.DomainRNGBackendRandom{
-							Device: "/dev/urandom",
-						},
-					},
-				},
-			},
-			Disks: []libvirtxml.DomainDisk{
-				{
-					Device: "disk",
-					Driver: &libvirtxml.DomainDiskDriver{
-						Name: "qemu",
-						Type: "qcow2",
-					},
-					Source: &libvirtxml.DomainDiskSource{
-						File: &libvirtxml.DomainDiskSourceFile{
-							File: config.BaseImage,
-						},
-					},
-					BackingStore: &libvirtxml.DomainDiskBackingStore{
-						Index: 3,
-						Format: &libvirtxml.DomainDiskFormat{
-							Type: "qcow2",
-						},
-						Source: &libvirtxml.DomainDiskSource{
-							File: &libvirtxml.DomainDiskSourceFile{
-								File: config.OriginalImage,
-							},
-						},
-					},
-					Target: &libvirtxml.DomainDiskTarget{
-						Dev: "vda",
-						Bus: "virtio",
-					},
-				},
-				{
-					Device: "cdrom",
-					Driver: &libvirtxml.DomainDiskDriver{
-						Name: "qemu",
-						Type: "raw",
-					},
-					Source: &libvirtxml.DomainDiskSource{
-						File: &libvirtxml.DomainDiskSourceFile{
-							File: "/home/ubuntu/test/cidata.iso",
-						},
-					},
-					Target: &libvirtxml.DomainDiskTarget{
-						Dev: "sda",
-						Bus: "sata",
-					},
-					ReadOnly: &libvirtxml.DomainDiskReadOnly{},
-				},
-			},
-			Filesystems: []libvirtxml.DomainFilesystem{
-				{
-					AccessMode: "passthrough",
-					Driver: &libvirtxml.DomainFilesystemDriver{
-						Type: "virtiofs",
-					},
-					Binary: &libvirtxml.DomainFilesystemBinary{
-						Path: "/usr/lib/qemu/virtiofsd",
-					},
-					Source: &libvirtxml.DomainFilesystemSource{
-						Mount: &libvirtxml.DomainFilesystemSourceMount{
-							Dir: "/home/ubuntu/test/alloc",
-						},
-					},
-					Target: &libvirtxml.DomainFilesystemTarget{
-						Dir: "allocDir",
-					},
-					Alias: &libvirtxml.DomainAlias{
-						Name: "fs0",
-					},
-				},
-			},
-			Interfaces: []libvirtxml.DomainInterface{
-				{
-					Source: &libvirtxml.DomainInterfaceSource{
-						Bridge: &libvirtxml.DomainInterfaceSourceBridge{
-							Bridge: "virbr0",
-						},
-					},
-					Model: &libvirtxml.DomainInterfaceModel{
-						Type: "virtio",
-					},
-				},
-			},
-		},
-		Type: "kvm",
-		Name: config.Name,
-		Memory: &libvirtxml.DomainMemory{
-			Value: config.Memory,
-		},
-		MemoryBacking: &libvirtxml.DomainMemoryBacking{
-			MemorySource: &libvirtxml.DomainMemorySource{
-				Type: "memfd",
-			},
-			MemoryAccess: &libvirtxml.DomainMemoryAccess{
-				Mode: "shared",
-			},
-		},
-		VCPU: &libvirtxml.DomainVCPU{
-			Placement: "static",
-			Value:     uint(config.CPUs),
-		},
-		Resource: &libvirtxml.DomainResource{
-			Partition: "/machine",
-		},
-		/*  CPU: &libvirtxml.DomainCPU{
-			Topology: &libvirtxml.DomainCPUTopology{
-				Cores:   config.CPUs,
-				Sockets: 2,
-				Threads: 1,
-			},
-		}, */
-	}
-	xmldoc, err := domcfg.Marshal()
-	fmt.Println(xmldoc, err)
-
-	ddomLi, err := d.conn.DomainCreateXML(xmldoc, 0)
-	fmt.Println(ddomLi, err)
-
-	/* err = d.createDomainWithVirtInstall(config, ci)
+	err = config.Validate()
 	if err != nil {
 		return err
-	} */
-
-	return nil
-}
-
-func (d *driver) createDomainWithVirtInstall(dc *domain.Config, ci *cloudinitConfig) error {
-	var outb, errb bytes.Buffer
-
-	args := d.parceConfiguration(dc, ci)
-
-	cmd := exec.Command("virt-install", args...)
-	cmd.Dir = d.dataDir
-	cmd.Stdout = &outb
-	cmd.Stderr = &errb
-
-	err := cmd.Run()
-	if err != nil {
-		return fmt.Errorf("libvirt: %w: %s", err, errb.String())
 	}
 
-	//d.logger.Debug("logger", errb.String())
-	//d.logger.Info("logger", outb.String())
-	fmt.Println(outb.String())
+	ciDisk, err := d.ci.GetCidataISO(config.CloudInit)
+	if err != nil {
+		return fmt.Errorf("libvirt: unable to create cidata: %w", err)
+	}
 
-	dom, err := d.conn.DomainCreateXML(outb.String(), 0)
-	fmt.Println(dom, err)
+	var domXML string
+
+	if config.XMLConfig != "" {
+		domXML = config.XMLConfig
+	} else {
+		domXML, err = parceConfiguration(config, ciDisk)
+		if err != nil {
+			return fmt.Errorf("libvirt: unable to parce domain configuration: %w", err)
+		}
+	}
+
+	d.logger.Debug("creating domain with", domXML)
+
+	_, err = d.conn.DomainCreateXML(domXML, 0)
+	if err != nil {
+		return fmt.Errorf("libvirt: unable to parce create domain: %w", err)
+	}
+
 	return nil
 }
 

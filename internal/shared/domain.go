@@ -50,13 +50,13 @@ type MountFileConfig struct {
 }
 
 type CloudInit struct {
-	Enable       bool
-	UserDataPath string
-	MetaDataPath string
+	RemoveConfigFiles bool
+	Enable            bool
+	UserDataPath      string
+	MetaDataPath      string
 }
 
 type Config struct {
-	RemoveConfigFiles bool
 	XMLConfig         string
 	Name              string
 	Memory            uint
@@ -65,7 +65,6 @@ type Config struct {
 	CPUs              int
 	OsVariant         string
 	BaseImage         string
-	OriginalImage     string
 	CloudInit         CloudInit
 	DiskFmt           string
 	NetworkInterfaces []string
