@@ -4,3 +4,4 @@ nomad-driver-virt
 # IDE and editor items.
 .idea/
 .vscode/
+*.code-workspace
