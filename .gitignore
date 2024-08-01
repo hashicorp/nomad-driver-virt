@@ -1,2 +1,6 @@
-nomad-skeleton-driver-plugin
-hello-driver
+# The output binary when running development compilation.
+nomad-driver-virt
+
+# IDE and editor items.
+.idea/
+.vscode/
