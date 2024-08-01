@@ -1,0 +1,16 @@
+kernel/net/vmw_vsock/vsock.ko.zst:
+kernel/net/vmw_vsock/vsock_diag.ko.zst: kernel/net/vmw_vsock/vsock.ko.zst
+kernel/net/vmw_vsock/vmw_vsock_vmci_transport.ko.zst: kernel/drivers/misc/vmw_vmci/vmw_vmci.ko.zst kernel/net/vmw_vsock/vsock.ko.zst
+kernel/net/vmw_vsock/vmw_vsock_virtio_transport.ko.zst: kernel/net/vmw_vsock/vmw_vsock_virtio_transport_common.ko.zst kernel/net/vmw_vsock/vsock.ko.zst
+kernel/net/vmw_vsock/vmw_vsock_virtio_transport_common.ko.zst: kernel/net/vmw_vsock/vsock.ko.zst
+kernel/net/vmw_vsock/hv_sock.ko.zst: kernel/net/vmw_vsock/vsock.ko.zst kernel/drivers/hv/hv_vmbus.ko.zst
+kernel/net/vmw_vsock/vsock_loopback.ko.zst: kernel/net/vmw_vsock/vmw_vsock_virtio_transport_common.ko.zst kernel/net/vmw_vsock/vsock.ko.zst
+kernel/net/nsh/nsh.ko.zst:
+kernel/net/hsr/hsr.ko.zst:
+kernel/net/qrtr/qrtr.ko.zst:
+kernel/net/qrtr/qrtr-smd.ko.zst: kernel/net/qrtr/qrtr.ko.zst kernel/drivers/rpmsg/rpmsg_core.ko.zst
+kernel/net/qrtr/qrtr-tun.ko.zst: kernel/net/qrtr/qrtr.ko.zst
+kernel/net/qrtr/qrtr-mhi.ko.zst: kernel/net/qrtr/qrtr.ko.zst kernel/drivers/bus/mhi/host/mhi.ko.zst
+kernel/ubuntu/ubuntu-host/ubuntu-host.ko.zst:
+kernel/zfs/spl.ko.zst:
+kernel/zfs/zfs.ko.zst: kernel/zfs/spl.ko.zst

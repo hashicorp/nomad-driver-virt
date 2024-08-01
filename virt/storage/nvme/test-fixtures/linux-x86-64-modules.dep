@@ -1,0 +1,10 @@
+kernel/net/vmw_vsock/vsock.ko.xz:
+kernel/net/vmw_vsock/vsock_diag.ko.xz: kernel/net/vmw_vsock/vsock.ko.xz
+kernel/net/vmw_vsock/vmw_vsock_vmci_transport.ko.xz: kernel/net/vmw_vsock/vsock.ko.xz kernel/drivers/misc/vmw_vmci/vmw_vmci.ko.xz
+kernel/net/vmw_vsock/vmw_vsock_virtio_transport.ko.xz: kernel/net/vmw_vsock/vmw_vsock_virtio_transport_common.ko.xz kernel/net/vmw_vsock/vsock.ko.xz
+kernel/net/vmw_vsock/vmw_vsock_virtio_transport_common.ko.xz: kernel/net/vmw_vsock/vsock.ko.xz
+kernel/net/vmw_vsock/hv_sock.ko.xz: kernel/net/vmw_vsock/vsock.ko.xz kernel/drivers/hv/hv_vmbus.ko.xz
+kernel/net/vmw_vsock/vsock_loopback.ko.xz: kernel/net/vmw_vsock/vmw_vsock_virtio_transport_common.ko.xz kernel/net/vmw_vsock/vsock.ko.xz
+kernel/net/qrtr/qrtr.ko.xz:
+kernel/net/qrtr/qrtr-mhi.ko.xz: kernel/net/qrtr/qrtr.ko.xz kernel/drivers/bus/mhi/core/mhi.ko.xz
+kernel/virt/lib/irqbypass.ko.xz:
