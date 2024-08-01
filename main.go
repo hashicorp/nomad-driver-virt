@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 
+	"github/hashicorp/nomad-driver-virt/cloudinit"
 	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 	"github/hashicorp/nomad-driver-virt/libvirt"
 	"github/hashicorp/nomad-driver-virt/virt"
@@ -16,69 +17,61 @@ import (
 )
 
 func main() {
-
-	name := "j9"
+	name := "j26"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "my-app",
 		Level: hclog.Debug,
 	})
+
+	//fmt.Println(ci(appLogger, name))
+	fmt.Println(createVM(appLogger, name))
+
+	// Serve the plugin
+	//plugins.Serve(factory)
+}
+
+func createVM(appLogger hclog.Logger, name string) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
 
 	conn, err := libvirt.New(ctx, appLogger, libvirt.WithAuth("juana", "juana"))
 	if err != nil {
 		fmt.Printf("error: %+v\n %+v\n", conn, err)
-		return
+		return err
 	}
 
 	tz, err := time.LoadLocation("America/Denver")
 	if err != nil {
 		fmt.Println("Timezone is not valid")
-		return
+		return err
 	}
 
 	users := domain.Users{
 		IncludeDefault: true,
-		Users: []domain.UserConfig{
-			{
-				Name:     "juana",
+		//Password:       "password",
+		SSHKeys: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1/cUhjyA8aznoy9FlwU4d6p/zfxP5RqRxhCWzGK juanita.delacuestamorales@hashicorp.com",
+		Users:   []domain.UserConfig{
+			/* {
+				Name:     "root",
 				Password: "password",
 				SSHKeys:  []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1/cUhjyA8aznoy9FlwU4d6p/zfxP5RqRxhCWzGK juanita.delacuestamorales@hashicorp.com"},
-				Sudo:     "ALL=(ALL) NOPASSWD:ALL",
-				Groups:   []string{"sudo"},
-				Shell:    "/bin/bash",
-			},
-		},
-	}
-
-	ci := domain.CloudInit{
-		Enable: false,
-	}
-
-	mounts := []domain.MountFileConfig{
-		{
-			Source:      "/home/ubuntu/test/alloc",
-			Destination: "/home/juana/alloc",
-			ReadOnly:    false,
-			Tag:         "blah",
+			}, */
 		},
 	}
 
 	config := &domain.Config{
+		UsersConfig:       users,
 		RemoveConfigFiles: false,
-		CloudInit:         ci,
 		Timezone:          tz,
 		Name:              name,
 		Memory:            2048000,
 		CPUs:              4,
 		Cores:             2,
-		OsVariant:         "ubuntufocal",
 		BaseImage:         "/home/ubuntu/test/" + name + ".img",
 		DiskFmt:           "qcow2",
 		DiskSize:          1,
 		NetworkInterfaces: []string{"virbr0"},
 		HostName:          name + "-host",
-		UsersConfig:       users,
 		EnvVariables: map[string]string{
 			"IDENTITY": "identity",
 			"BLAH":     "identity",
@@ -93,13 +86,12 @@ func main() {
 				Group:       "root",
 			},
 		},
-		Mounts: mounts,
 	}
 
 	err = conn.CreateDomain(config)
 	if err != nil {
 		fmt.Println("\n no vm this time :(", err)
-		return
+		return err
 	}
 
 	fmt.Println("\n we have a vm")
@@ -114,11 +106,62 @@ func main() {
 	cancel()
 	time.Sleep(1 * time.Second)
 
-	// Serve the plugin
-	//plugins.Serve(factory)
+	return nil
 }
 
 // factory returns a new instance of a nomad driver plugin
 func factory(log hclog.Logger) interface{} {
 	return virt.NewPlugin(log)
+}
+
+func ci(appLogger hclog.Logger, name string) error {
+	cic, err := cloudinit.NewController(appLogger)
+	if err != nil {
+		fmt.Printf("error: %+v\n %+v\n", err)
+	}
+
+	users := domain.Users{
+		IncludeDefault: true,
+		Users: []domain.UserConfig{
+			{
+				Name:     "root",
+				Password: "password",
+				SSHKeys:  []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1/cUhjyA8aznoy9FlwU4d6p/zfxP5RqRxhCWzGK juanita.delacuestamorales@hashicorp.com"},
+			},
+		},
+	}
+
+	mounts := []domain.MountFileConfig{
+		{
+			Source:      "/home/ubuntu/test/alloc",
+			Destination: "/alloc",
+			Tag:         "allocDir",
+		},
+		{
+			Source:      "/home/ubuntu/test/logs",
+			Destination: "/run/cloud-init",
+			Tag:         "logs",
+		},
+	}
+
+	ci := &domain.CloudInit{
+		MetaData: domain.MetaData{
+			InstanceID:    name,
+			LocalHostname: name,
+		},
+		UserData: domain.UserData{
+			Users:  users,
+			Mounts: mounts,
+			RunCMD: []string{
+				fmt.Sprintf("mkdir -p %s", "/alloc"),
+				fmt.Sprintf("mount -t virtiofs %s %s", "allocDir", "/alloc"),
+				fmt.Sprintf("mount -t virtiofs %s %s", "logs", "/run/cloud-init"),
+			},
+		},
+	}
+
+	path, err := cic.WriteConfigToISO(ci, "/usr/local/virt")
+	fmt.Println(" the iso is located at: ", path)
+	return err
+
 }

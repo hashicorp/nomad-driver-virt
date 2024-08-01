@@ -14,6 +14,8 @@ var (
 
 type Users struct {
 	IncludeDefault bool
+	Password       string
+	SSHKeys        string
 	Users          []UserConfig
 }
 
@@ -49,14 +51,8 @@ type MountFileConfig struct {
 	Tag         string
 }
 
-type CloudInit struct {
-	RemoveConfigFiles bool
-	Enable            bool
-	UserDataPath      string
-	MetaDataPath      string
-}
-
 type Config struct {
+	RemoveConfigFiles bool
 	XMLConfig         string
 	Name              string
 	Memory            uint
@@ -65,7 +61,6 @@ type Config struct {
 	CPUs              int
 	OsVariant         string
 	BaseImage         string
-	CloudInit         CloudInit
 	DiskFmt           string
 	NetworkInterfaces []string
 	Type              string
@@ -75,7 +70,6 @@ type Config struct {
 	EnvVariables      map[string]string
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
-	CMD               []string
 }
 
 func (dc *Config) Validate() error {

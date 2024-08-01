@@ -2,6 +2,7 @@ package cloudinit
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -12,91 +13,61 @@ import (
 )
 
 const (
-	defaultURI             = "qemu:///system"
-	defaultDataDir         = "/usr/local"
-	dataDirPermissions     = 0777
-	userDataDir            = "/virt"
-	userDataDirPermissions = 0777
-	userDataTemplate       = "/libvirt/user-data.tmpl"
-	metaDataTemplate       = "/libvirt/meta-data.tmpl"
-	envFile                = "/etc/profile.d/virt-envs.sh"
+	userDataTemplate = "/cloudinit/user-data.tmpl"
+	metaDataTemplate = "/cloudinit/meta-data.tmpl"
+	ISOName          = "/cidata.iso"
 )
 
-type cloudinitConfig struct {
-	domainDir    string
-	metadataPath string
-	userdataPath string
-}
-
-func dirExists(dirname string) bool {
-	info, err := os.Stat(dirname)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return info.IsDir()
-}
-
-func deleteDir(name string) error {
-	if dirExists(name) {
-		err := os.RemoveAll(name)
-		if err != nil {
-			return fmt.Errorf("libvirt: failed to delete directory: %w", err)
-		}
-	}
-
-	return nil
-}
-
 type Controller struct {
-	logger  hclog.Logger
-	dataDir string
+	logger hclog.Logger
 }
 
 type Option func(*Controller)
 
-func WithDataDirectory(path string) Option {
-	return func(c *Controller) {
-		c.dataDir = path
-	}
-}
-
-func NewController() (*Controller, error) {
+func NewController(logger hclog.Logger) (*Controller, error) {
 	c := &Controller{
-		dataDir: defaultDataDir,
-	}
-
-	path := filepath.Join(c.dataDir, userDataDir)
-	err := os.MkdirAll(path, dataDirPermissions)
-	if err != nil {
-		return nil, err
+		logger: logger.Named("cloud-init"),
 	}
 
 	return c, nil
 }
 
-func (c *Controller) GetCidataISO(ci domain.CloudInit) (string, error) {
-	return "/home/ubuntu/test/cidata.iso", nil
-}
-
-func (cic *cloudinitConfig) createAndpopulateUserDataFiles(config *domain.Config) error {
-	mdf, err := os.Create(cic.domainDir + "/meta-data")
-	defer mdf.Close()
+func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, path string) (string, error) {
+	err := c.createAndPopulateCIFiles(ci, path)
 	if err != nil {
-		return fmt.Errorf("libvirt: create file: %w", err)
+		return "", err
+	}
+	writeToISO(path)
+	if err != nil {
+		return "", err
 	}
 
-	err = executeTemplate(config, metaDataTemplate, mdf)
+	return filepath.Join(path + ISOName), nil
+}
+
+func (c *Controller) createAndPopulateCIFiles(cic *domain.CloudInit, path string) error {
+	c.logger.Debug("creating ci config with", cic)
+
+	mdf, err := os.Create(path + "/meta-data")
+	defer mdf.Close()
+	if err != nil {
+		return fmt.Errorf("libvirt: unable create meta data file: %w", err)
+	}
+
+	// TODO: merge user provided cloud init configuration
+	err = executeTemplate(cic, metaDataTemplate, mdf)
 	if err != nil {
 		return err
 	}
 
-	udf, err := os.Create(cic.domainDir + "/user-data")
+	udf, err := os.Create(path + "/user-data")
 	defer udf.Close()
 	if err != nil {
-		return fmt.Errorf("libvirt: create file: %w", err)
+		return fmt.Errorf("libvirt: unable to create user-data file: %w", err)
 	}
 
-	err = executeTemplate(config, userDataTemplate, udf)
+	// TODO: merge user provided cloud init configuration
+	err = executeTemplate(cic, userDataTemplate, udf)
 	if err != nil {
 		return err
 	}
@@ -104,7 +75,40 @@ func (cic *cloudinitConfig) createAndpopulateUserDataFiles(config *domain.Config
 	return nil
 }
 
-func executeTemplate(config *domain.Config, in string, out *os.File) error {
+func writeToISO(path string) error {
+	mdf, err := os.Open(path + "/meta-data")
+	if err != nil {
+		return err
+	}
+
+	defer mdf.Close()
+
+	udf, err := os.Open(path + "/user-data")
+	if err != nil {
+		return err
+	}
+
+	defer udf.Close()
+
+	// Now `file` is an io.Reader
+	var readerUdt io.Reader = udf
+	var readerMdt io.Reader = mdf
+
+	l := []Entry{
+		{
+			Path:   "/meta-data",
+			Reader: readerMdt,
+		},
+		{
+			Path:   "/user-data",
+			Reader: readerUdt,
+		},
+	}
+
+	return Write(filepath.Join(path+ISOName), "cidata", l)
+}
+
+func executeTemplate(config *domain.CloudInit, in string, out *os.File) error {
 	pwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("libvirt: unable to get path: %w", err)
@@ -120,48 +124,8 @@ func executeTemplate(config *domain.Config, in string, out *os.File) error {
 		return fmt.Errorf("libvirt: unable to execute template: %w", err)
 	}
 	return nil
+
 }
 
-func createDomainFolder(path string) error {
-	err := os.MkdirAll(path, userDataDirPermissions)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func cleanUpDomainFolder(path string) error {
-	return deleteDir(path)
-}
-
-func blah() {
-	/* domainDir := filepath.Join(d.dataDir, userDataDir, config.Name)
-	err = createDomainFolder(domainDir)
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to build domain config: %w", err)
-	}
-
-	defer func() {
-		if config.RemoveConfigFiles {
-			err := cleanUpDomainFolder(domainDir)
-			if err != nil {
-				d.logger.Error("unable to clean up domain folder", err)
-			}
-		}
-	}()
-
-	ci := &cloudinitConfig{}
-	if config.CloudInit.Enable {
-		ci.domainDir = domainDir
-
-		err = ci.createAndpopulateUserDataFiles(config)
-		if err != nil {
-			return err
-		}
-
-		ci.userdataPath = ci.domainDir + "/user-data"
-		ci.metadataPath = ci.domainDir + "/meta-data"
-
-	} */
-}
+// Function to be implemented
+func mergeConfigs(CIFiles ...string) {}

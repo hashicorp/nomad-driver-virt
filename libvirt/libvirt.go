@@ -7,7 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
+	"github/hashicorp/nomad-driver-virt/cloudinit"
 	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 
 	"github.com/hashicorp/go-hclog"
@@ -15,12 +18,9 @@ import (
 )
 
 const (
-	defaultURI             = "qemu:///system"
-	defaultDataDir         = "/usr/local"
-	dataDirPermissions     = 0777
-	userDataDir            = "/virt"
-	userDataDirPermissions = 0777
-	envFile                = "/etc/profile.d/virt-envs.sh"
+	defaultURI         = "qemu:///system"
+	defaultDataDir     = "/home/ubuntu/test/virt"
+	dataDirPermissions = 0777
 )
 
 var (
@@ -29,7 +29,7 @@ var (
 )
 
 type CloudInit interface {
-	GetCidataISO(ci domain.CloudInit) (string, error)
+	WriteConfigToISO(ci *domain.CloudInit, path string) (string, error)
 }
 
 type driver struct {
@@ -39,9 +39,16 @@ type driver struct {
 	user     string
 	password string
 	ci       CloudInit
+	dataDir  string
 }
 
 type Option func(*driver)
+
+func WithDataDirectory(path string) Option {
+	return func(d *driver) {
+		d.dataDir = path
+	}
+}
 
 func WithConnectionURI(URI string) Option {
 	return func(d *driver) {
@@ -53,6 +60,12 @@ func WithAuth(user, password string) Option {
 	return func(d *driver) {
 		d.user = user
 		d.password = password
+	}
+}
+
+func WithCIController(ci *cloudinit.Controller) Option {
+	return func(d *driver) {
+		d.ci = ci
 	}
 }
 
@@ -93,9 +106,16 @@ func (d *driver) monitorCtx(ctx context.Context) {
 }
 
 func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, error) {
+	ci, err := cloudinit.NewController(logger)
+	if err != nil {
+		return nil, err
+	}
+
 	d := &driver{
-		logger: logger.Named("nomad-virt-plugin"),
-		uri:    defaultURI,
+		logger:  logger.Named("nomad-virt-plugin"),
+		uri:     defaultURI,
+		ci:      ci,
+		dataDir: defaultDataDir,
 	}
 
 	for _, opt := range options {
@@ -164,6 +184,33 @@ func (d *driver) Close() (int, error) {
 	return d.conn.Close()
 }
 
+func createCloudInitConfig(config *domain.Config) *domain.CloudInit {
+	cmds := []string{
+		fmt.Sprintf("mkdir -p %s", "/alloc"),
+		fmt.Sprintf("mount -t virtiofs %s %s", "allocDir", "/alloc"),
+	}
+
+	return &domain.CloudInit{
+		MetaData: domain.MetaData{
+			InstanceID:    config.Name,
+			LocalHostname: config.Name,
+		},
+		UserData: domain.UserData{
+			Users:  config.UsersConfig,
+			RunCMD: cmds,
+			Mounts: config.Mounts,
+		},
+	}
+}
+
+func createAllocFileMount() domain.MountFileConfig {
+	return domain.MountFileConfig{
+		Source:      "/home/ubuntu/test/alloc",
+		Tag:         "allocDir",
+		Destination: "/alloc",
+	}
+}
+
 // CreateDomain verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
 func (d *driver) CreateDomain(config *domain.Config) error {
@@ -181,17 +228,35 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		return err
 	}
 
-	ciDisk, err := d.ci.GetCidataISO(config.CloudInit)
+	config.Mounts = append(config.Mounts, createAllocFileMount())
+
+	dDir := filepath.Join(d.dataDir, config.Name)
+	err = createDomainFolder(dDir)
+	if err != nil {
+		return fmt.Errorf("libvirt: unable to create domain folder: %w", err)
+	}
+
+	defer func() {
+		if config.RemoveConfigFiles {
+			err := cleanUpDomainFolder(dDir)
+			if err != nil {
+				d.logger.Info("unable to remove ci config files", err)
+			}
+		}
+	}()
+
+	cic := createCloudInitConfig(config)
+
+	isoPath, err := d.ci.WriteConfigToISO(cic, dDir)
 	if err != nil {
 		return fmt.Errorf("libvirt: unable to create cidata: %w", err)
 	}
 
 	var domXML string
-
 	if config.XMLConfig != "" {
 		domXML = config.XMLConfig
 	} else {
-		domXML, err = parceConfiguration(config, ciDisk)
+		domXML, err = parceConfiguration(config, isoPath)
 		if err != nil {
 			return fmt.Errorf("libvirt: unable to parce domain configuration: %w", err)
 		}
@@ -268,4 +333,36 @@ func (d *driver) GetVms() {
 		}
 		dom.Free()
 	}
+}
+
+func cleanUpDomainFolder(path string) error {
+	return deleteDir(path)
+}
+
+func dirExists(dirname string) bool {
+	info, err := os.Stat(dirname)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return info.IsDir()
+}
+
+func deleteDir(name string) error {
+	if dirExists(name) {
+		err := os.RemoveAll(name)
+		if err != nil {
+			return fmt.Errorf("libvirt: failed to delete directory: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func createDomainFolder(path string) error {
+	err := os.MkdirAll(path, dataDirPermissions)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
