@@ -185,9 +185,14 @@ func (d *driver) Close() (int, error) {
 }
 
 func createCloudInitConfig(config *domain.Config) *domain.CloudInit {
-	cmds := []string{
-		fmt.Sprintf("mkdir -p %s", "/alloc"),
-		fmt.Sprintf("mount -t virtiofs %s %s", "allocDir", "/alloc"),
+	cmds := []string{}
+	for _, m := range config.Mounts {
+
+		c := []string{
+			fmt.Sprintf("mkdir -p %s", m.Destination),
+			fmt.Sprintf("mount -t virtiofs %s %s", m.Tag, m.Destination),
+		}
+		cmds = append(cmds, c...)
 	}
 
 	return &domain.CloudInit{
@@ -205,7 +210,7 @@ func createCloudInitConfig(config *domain.Config) *domain.CloudInit {
 
 func createAllocFileMount() domain.MountFileConfig {
 	return domain.MountFileConfig{
-		Source:      "/home/ubuntu/test/alloc",
+		Source:      "/home/ubuntu/test/alloc", // TODO: Define how to pass this value
 		Tag:         "allocDir",
 		Destination: "/alloc",
 	}
