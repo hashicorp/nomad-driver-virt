@@ -33,6 +33,10 @@ func main() {
 func createVM(appLogger hclog.Logger, name string) error {
 
 	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		cancel()
+		time.Sleep(1 * time.Second)
+	}()
 
 	conn, err := libvirt.New(ctx, appLogger, libvirt.WithAuth("juana", "juana"))
 	if err != nil {
@@ -72,11 +76,6 @@ func createVM(appLogger hclog.Logger, name string) error {
 		DiskSize:          1,
 		NetworkInterfaces: []string{"virbr0"},
 		HostName:          name + "-host",
-		EnvVariables: map[string]string{
-			"IDENTITY": "identity",
-			"BLAH":     "identity",
-			"DEMO":     "please dont fail",
-		},
 		Files: []domain.File{
 			{
 				Path:        "/home/juana/text.txt",
@@ -103,8 +102,6 @@ func createVM(appLogger hclog.Logger, name string) error {
 	}
 
 	fmt.Printf("%+v\n", info, "\n")
-	cancel()
-	time.Sleep(1 * time.Second)
 
 	return nil
 }

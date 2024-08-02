@@ -67,7 +67,6 @@ type Config struct {
 	HostName          string
 	UsersConfig       Users
 	Files             []File
-	EnvVariables      map[string]string
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
 }
@@ -90,7 +89,6 @@ type Info struct {
 	EmulatorVersion uint32
 	LibvirtVersion  uint32
 	Network         string
-	IP              string
 	RunningDomains  uint
 	InactiveDomains uint
 }

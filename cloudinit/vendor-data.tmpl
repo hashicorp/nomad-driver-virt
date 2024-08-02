@@ -38,18 +38,30 @@ users:
   {{- end }}   
 {{- end }}
 
-{{- $length_mounts := len .UserData.Mounts }} {{- if ne $length_mounts 0 }}
 
+{{- $length_mounts := len .UserData.Mounts }} {{- if ne $length_mounts 0 }}
 mounts:
   {{- range .UserData.Mounts}}  
   - [ {{.Tag}}, {{.Destination}}, "ext4", "defaults", "0", "2" ]
   {{- end }}
 {{- end }}
 
-{{- $length_cmd := len .UserData.RunCMD }} {{- if or (ne $length_cmd 0) }}
 
+{{- $lenght_files := len .Files }}{{- if ne $lenght_files 0}}
+write_files:
+  {{- range .Files}}  
+  - path: {{.Path}}
+    content:  {{.Content}}
+    permissions: '{{.Permissions}}'
+    owner: root:root
+  {{- end }}
+{{- end }}
+
+
+{{- $length_cmd := len .UserData.RunCMD }} {{- if or (ne $length_cmd 0) }}
 runcmd:
   {{- range .UserData.RunCMD}}  
   - {{.}}
   {{- end }}
 {{- end }}
+
