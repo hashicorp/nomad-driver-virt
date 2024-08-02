@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	name := "j29"
+	name := "j3"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "my-app",
 		Level: hclog.Debug,
@@ -50,21 +50,8 @@ func createVM(appLogger hclog.Logger, name string) error {
 		return err
 	}
 
-	users := domain.Users{
-		IncludeDefault: true,
-		//Password:       "password",
-		SSHKeys: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1/cUhjyA8aznoy9FlwU4d6p/zfxP5RqRxhCWzGK juanita.delacuestamorales@hashicorp.com",
-		Users:   []domain.UserConfig{
-			/* {
-				Name:     "root",
-				Password: "password",
-				SSHKeys:  []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1/cUhjyA8aznoy9FlwU4d6p/zfxP5RqRxhCWzGK juanita.delacuestamorales@hashicorp.com"},
-			}, */
-		},
-	}
-
 	config := &domain.Config{
-		UsersConfig:       users,
+		Password:          "password",
 		RemoveConfigFiles: false,
 		Timezone:          tz,
 		Name:              name,
@@ -76,13 +63,12 @@ func createVM(appLogger hclog.Logger, name string) error {
 		DiskSize:          1,
 		NetworkInterfaces: []string{"virbr0"},
 		HostName:          name + "-host",
+		SSHKey:            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1/cUhjyA8aznoy9FlwU4d6p/zfxP5RqRxhCWzGK juanita.delacuestamorales@hashicorp.com",
 		Files: []domain.File{
 			{
 				Path:        "/home/juana/text.txt",
 				Content:     ` this is the text we will be putting`,
 				Permissions: "0777",
-				Owner:       "root",
-				Group:       "root",
 			},
 		},
 	}
@@ -117,17 +103,6 @@ func ci(appLogger hclog.Logger, name string) error {
 		fmt.Printf("error: %+v\n %+v\n", err)
 	}
 
-	users := domain.Users{
-		IncludeDefault: true,
-		Users: []domain.UserConfig{
-			{
-				Name:     "root",
-				Password: "password",
-				SSHKeys:  []string{"ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1/cUhjyA8aznoy9FlwU4d6p/zfxP5RqRxhCWzGK juanita.delacuestamorales@hashicorp.com"},
-			},
-		},
-	}
-
 	mounts := []domain.MountFileConfig{
 		{
 			Source:      "/home/ubuntu/test/alloc",
@@ -146,8 +121,7 @@ func ci(appLogger hclog.Logger, name string) error {
 			InstanceID:    name,
 			LocalHostname: name,
 		},
-		UserData: domain.UserData{
-			Users:  users,
+		VendorData: domain.VendorData{
 			Mounts: mounts,
 			RunCMD: []string{
 				fmt.Sprintf("mkdir -p %s", "/alloc"),

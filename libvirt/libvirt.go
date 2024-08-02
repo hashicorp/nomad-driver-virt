@@ -185,27 +185,20 @@ func (d *driver) Close() (int, error) {
 }
 
 func createCloudInitConfig(config *domain.Config) *domain.CloudInit {
-	cmds := []string{}
-	for _, m := range config.Mounts {
-
-		c := []string{
-			fmt.Sprintf("mkdir -p %s", m.Destination),
-			fmt.Sprintf("mountpoint -q %s || mount -t virtiofs %s %s", m.Destination, m.Tag, m.Destination),
-		}
-
-		cmds = append(cmds, c...)
-	}
 
 	return &domain.CloudInit{
 		MetaData: domain.MetaData{
 			InstanceID:    config.Name,
 			LocalHostname: config.Name,
 		},
-		UserData: domain.UserData{
-			Users:  config.UsersConfig,
-			RunCMD: cmds,
-			Mounts: config.Mounts,
+		VendorData: domain.VendorData{
+			RunCMD:   config.CMDs,
+			Mounts:   config.Mounts,
+			Files:    config.Files,
+			Password: config.Password,
+			SSHKey:   config.SSHKey,
 		},
+		UserDataPath: config.CIUserData,
 	}
 }
 
@@ -215,6 +208,20 @@ func createAllocFileMount() domain.MountFileConfig {
 		Tag:         "allocDir",
 		Destination: "/alloc",
 	}
+}
+
+func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
+	cmds := []string{}
+	for _, m := range mounts {
+		c := []string{
+			fmt.Sprintf("mkdir -p %s", m.Destination),
+			fmt.Sprintf("mountpoint -q %s || mount -t virtiofs %s %s", m.Destination, m.Tag, m.Destination),
+		}
+
+		cmds = append(cmds, c...)
+	}
+
+	return cmds
 }
 
 // CreateDomain verifies if the domains exists already, if it does, it returns
@@ -235,6 +242,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	}
 
 	config.Mounts = append(config.Mounts, createAllocFileMount())
+	config.CMDs = append(addCMDsForMounts(config.Mounts), config.CMDs...)
 
 	dDir := filepath.Join(d.dataDir, config.Name)
 	err = createDomainFolder(dDir)

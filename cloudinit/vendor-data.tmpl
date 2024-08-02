@@ -1,55 +1,30 @@
 #cloud-config
 
 
-{{- if .UserData.Users.Password }}
-password: {{.UserData.Users.Password}}
+{{- if .VendorData.Password }}
+password: {{.VendorData.Password}}
 {{- end }}
 
 
-{{- if .UserData.Users}}
+{{- if .VendorData.SSHKey }}
 users:
-  {{- if .UserData.Users.SSHKeys }}
-  - ssh-authorized-keys: {{.UserData.Users.SSHKeys }}
+  {{- if .VendorData.SSHKey }}
+  - ssh-authorized-keys: {{.VendorData.SSHKey }}
   {{- end }}
-  {{- if .UserData.Users.IncludeDefault }}
-  - default
-  {{- end }}
-  {{- range .UserData.Users.Users}}  
-  - name: {{.Name}}
-    {{- if ne .Password ""}}
-    plain_text_passwd: {{.Password}}
-    lock_passwd: false
-    {{- end}}
-    {{- $length_keys := len .SSHKeys }} {{- if ne $length_keys 0 }}
-    ssh_authorized_keys:
-      {{- range .SSHKeys}}
-      - {{.}}
-      {{- end }}  
-    {{- end }}  
-    {{- if ne .Sudo "" }} 
-    sudo: "{{.Sudo}}"
-    {{- end }}  
-    {{- $length_groups := len .Groups }} {{- if ne $length_groups 0 }}
-    groups:  {{.Groups.Join}}
-    {{- end}}  
-    {{- if ne .Sudo "" }} 
-    shell: /bin/bash
-    {{- end}}
-  {{- end }}   
-{{- end }}
+{{- end}}
 
 
-{{- $length_mounts := len .UserData.Mounts }} {{- if ne $length_mounts 0 }}
+{{- $length_mounts := len .VendorData.Mounts }} {{- if ne $length_mounts 0 }}
 mounts:
-  {{- range .UserData.Mounts}}  
+  {{- range .VendorData.Mounts}}  
   - [ {{.Tag}}, {{.Destination}}, "ext4", "defaults", "0", "2" ]
   {{- end }}
 {{- end }}
 
 
-{{- $lenght_files := len .Files }}{{- if ne $lenght_files 0}}
+{{- $lenght_files := len .VendorData.Files }}{{- if ne $lenght_files 0}}
 write_files:
-  {{- range .Files}}  
+  {{- range .VendorData.Files}}  
   - path: {{.Path}}
     content:  {{.Content}}
     permissions: '{{.Permissions}}'
@@ -58,9 +33,9 @@ write_files:
 {{- end }}
 
 
-{{- $length_cmd := len .UserData.RunCMD }} {{- if or (ne $length_cmd 0) }}
+{{- $length_cmd := len .VendorData.RunCMD }} {{- if or (ne $length_cmd 0) }}
 runcmd:
-  {{- range .UserData.RunCMD}}  
+  {{- range .VendorData.RunCMD}}  
   - {{.}}
   {{- end }}
 {{- end }}

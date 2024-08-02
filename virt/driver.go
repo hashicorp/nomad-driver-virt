@@ -254,23 +254,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		DiskFmt:           "qcow2",
 		NetworkInterfaces: []string{"virbr0"},
 		HostName:          cfg.Name,
-		UsersConfig: domain.Users{
-			IncludeDefault: true,
-			Users: []domain.UserConfig{
-				{
-					Name:     "juana",
-					Password: "password",
-					SSHKeys:  []string{"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCg6O020792w3AzhdV27gcH0zn6oCGF6JUSzrhRrqdXqFSwkw7kPeArw9uI61ebC2qNjUKOuiU8lkyYFYAMeirG4BPt5yMUzl+tjjdiI1J2IoeDxknMO83eA+4ebJJZ670vUpWYuzwEakPkj2IBiXg5UbIfTIdO0N2NtrXV9nTu7xKrfPXCbnIxPaSUJRVTHlg5hlZIT6tVl+ZsbJhzhVYgvPnIkqFqPj1Owo2XFtgE72A5KZQbYtnBEz+AwAjLmU7GL5JE14fsihD6z5QCD2z0wOHyhdCSP53/n5Tuo9oelDv2hkkTWf5QlAi6i5Z8UcEXuog7HWgqiiZblVIuCw9EGaFgBpMQbI1Q8WOrysOWcsPmoX9a4OjFGOfbE9R7tbwMRI10/nbvpapO1oBOKztF6bS9rHIXBS/9VHQ53GRTQhGGd6Zyk4eZfoEO8QMq2cT4/FA887L84QSvkJ9jCdNdmF8eYK9Z+pRVUBh4qrP8744rMH4fX5NJqnU1+UYTiy0= ubuntu@ip-10-0-1-235"},
-					Sudo:     "ALL=(ALL) NOPASSWD:ALL",
-					Groups:   []string{"sudo"},
-					Shell:    "/bin/bash",
-				},
-			},
-		},
-		/* 	Files:             "",
-		EnvVariables:      "",
-		RemoveConfigFiles: "",
-		Timezone:          "", */
+		Files:             []domain.File{},
+		Mounts:            []domain.MountFileConfig{},
+		//Timezone:          "",
 	}); err != nil {
 		return nil, nil, fmt.Errorf("failed to start task: %w", err)
 	}

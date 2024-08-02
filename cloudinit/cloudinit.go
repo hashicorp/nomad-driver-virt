@@ -50,10 +50,21 @@ func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, path string) (string
 		return "", err
 	}
 
-	udb := &bytes.Buffer{}
-	err = executeTemplate(ci, userDataTemplate, udb)
-	if err != nil {
-		return "", err
+	var udb io.ReadWriter
+	if ci.UserDataPath != "" {
+		udf, err := os.Open(path + "/user-data")
+		if err != nil {
+			return "", err
+		}
+		defer udf.Close()
+		udb = udf
+
+	} else {
+		udb = &bytes.Buffer{}
+		err = executeTemplate(ci, userDataTemplate, udb)
+		if err != nil {
+			return "", err
+		}
 	}
 
 	l := []Entry{
