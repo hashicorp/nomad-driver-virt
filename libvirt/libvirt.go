@@ -190,8 +190,9 @@ func createCloudInitConfig(config *domain.Config) *domain.CloudInit {
 
 		c := []string{
 			fmt.Sprintf("mkdir -p %s", m.Destination),
-			fmt.Sprintf("mount -t virtiofs %s %s", m.Tag, m.Destination),
+			fmt.Sprintf("mountpoint -q %s || mount -t virtiofs %s %s", m.Destination, m.Tag, m.Destination),
 		}
+
 		cmds = append(cmds, c...)
 	}
 

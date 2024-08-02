@@ -1,6 +1,7 @@
 package cloudinit
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
@@ -13,9 +14,10 @@ import (
 )
 
 const (
-	userDataTemplate = "/cloudinit/user-data.tmpl"
-	metaDataTemplate = "/cloudinit/meta-data.tmpl"
-	ISOName          = "/cidata.iso"
+	vendorDataTemplate = "/cloudinit/vendor-data.tmpl"
+	userDataTemplate   = "/cloudinit/user-data.tmpl"
+	metaDataTemplate   = "/cloudinit/meta-data.tmpl"
+	ISOName            = "/cidata.iso"
 )
 
 type Controller struct {
@@ -33,82 +35,51 @@ func NewController(logger hclog.Logger) (*Controller, error) {
 }
 
 func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, path string) (string, error) {
-	err := c.createAndPopulateCIFiles(ci, path)
+	ciPath := filepath.Join(path + ISOName)
+	c.logger.Debug("creating ci config with", ci, "in", path)
+
+	mdb := &bytes.Buffer{}
+	err := executeTemplate(ci, metaDataTemplate, mdb)
 	if err != nil {
 		return "", err
 	}
-	writeToISO(path)
+
+	vdb := &bytes.Buffer{}
+	err = executeTemplate(ci, vendorDataTemplate, vdb)
 	if err != nil {
 		return "", err
 	}
 
-	return filepath.Join(path + ISOName), nil
-}
-
-func (c *Controller) createAndPopulateCIFiles(cic *domain.CloudInit, path string) error {
-	c.logger.Debug("creating ci config with", cic)
-
-	mdf, err := os.Create(path + "/meta-data")
-	defer mdf.Close()
+	udb := &bytes.Buffer{}
+	err = executeTemplate(ci, userDataTemplate, udb)
 	if err != nil {
-		return fmt.Errorf("libvirt: unable create meta data file: %w", err)
+		return "", err
 	}
-
-	// TODO: merge user provided cloud init configuration
-	err = executeTemplate(cic, metaDataTemplate, mdf)
-	if err != nil {
-		return err
-	}
-
-	udf, err := os.Create(path + "/user-data")
-	defer udf.Close()
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to create user-data file: %w", err)
-	}
-
-	// TODO: merge user provided cloud init configuration
-	err = executeTemplate(cic, userDataTemplate, udf)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func writeToISO(path string) error {
-	mdf, err := os.Open(path + "/meta-data")
-	if err != nil {
-		return err
-	}
-
-	defer mdf.Close()
-
-	udf, err := os.Open(path + "/user-data")
-	if err != nil {
-		return err
-	}
-
-	defer udf.Close()
-
-	// Now `file` is an io.Reader
-	var readerUdt io.Reader = udf
-	var readerMdt io.Reader = mdf
 
 	l := []Entry{
 		{
 			Path:   "/meta-data",
-			Reader: readerMdt,
+			Reader: mdb,
 		},
 		{
 			Path:   "/user-data",
-			Reader: readerUdt,
+			Reader: udb,
+		},
+		{
+			Path:   "/vendor-data",
+			Reader: vdb,
 		},
 	}
 
-	return Write(filepath.Join(path+ISOName), "cidata", l)
+	err = Write(ciPath, "cidata", l)
+	if err != nil {
+		return "", err
+	}
+
+	return ciPath, nil
 }
 
-func executeTemplate(config *domain.CloudInit, in string, out *os.File) error {
+func executeTemplate(config *domain.CloudInit, in string, out io.Writer) error {
 	pwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("libvirt: unable to get path: %w", err)

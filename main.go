@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	name := "j26"
+	name := "j29"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "my-app",
 		Level: hclog.Debug,

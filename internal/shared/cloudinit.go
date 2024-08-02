@@ -4,7 +4,6 @@ type CloudInit struct {
 	UserData     UserData
 	MetaData     MetaData
 	UserDataPath string
-	MetaDataPath string
 }
 
 type MetaData struct {
