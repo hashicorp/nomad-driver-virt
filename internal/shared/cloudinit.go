@@ -1,7 +1,7 @@
 package domain
 
 type CloudInit struct {
-	UserData     UserData
+	VendorData   VendorData
 	MetaData     MetaData
 	UserDataPath string
 }
@@ -11,8 +11,10 @@ type MetaData struct {
 	LocalHostname string `yaml:""`
 }
 
-type UserData struct {
-	Users  Users
-	RunCMD []string
-	Mounts []MountFileConfig
+type VendorData struct {
+	Password string
+	SSHKey   string
+	RunCMD   []string
+	Mounts   []MountFileConfig
+	Files    []File
 }

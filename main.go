@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	name := "j3"
+	name := "j10"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "my-app",
 		Level: hclog.Debug,
@@ -51,6 +51,7 @@ func createVM(appLogger hclog.Logger, name string) error {
 	}
 
 	config := &domain.Config{
+		CIUserData:        "/home/ubuntu/test/user-data",
 		Password:          "password",
 		RemoveConfigFiles: false,
 		Timezone:          tz,

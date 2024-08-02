@@ -224,6 +224,49 @@ func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
 	return cmds
 }
 
+func (d *driver) GetDomain(name string) (*libvirt.Domain, error) {
+	dom, err := d.conn.LookupDomainByName(name)
+	if err != nil {
+		if lverr, ok := err.(*libvirt.Error); ok {
+			if lverr.Code != libvirt.ERR_NO_DOMAIN {
+				return nil, fmt.Errorf("libvirt: unable to verify exiting domains: %w", err)
+			}
+		}
+	}
+
+	return dom, nil
+}
+
+func (d *driver) StopDomain(name string) error {
+	dom, err := d.GetDomain(name)
+	if err != nil {
+		return err
+	}
+
+	if dom == nil {
+		return ErrDomainNotFound
+	}
+
+	d.logger.Debug("stopping domain", name)
+
+	return dom.ShutdownFlags(libvirt.DOMAIN_SHUTDOWN_SIGNAL)
+}
+
+func (d *driver) DestroyDomain(name string) error {
+	dom, err := d.GetDomain(name)
+	if err != nil {
+		return err
+	}
+
+	if dom == nil {
+		return ErrDomainNotFound
+	}
+
+	d.logger.Debug("destroying domain", name)
+
+	return dom.DestroyFlags(libvirt.DOMAIN_DESTROY_GRACEFUL)
+}
+
 // CreateDomain verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
 func (d *driver) CreateDomain(config *domain.Config) error {
@@ -284,49 +327,6 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	}
 
 	return nil
-}
-
-func (d *driver) GetDomain(name string) (*libvirt.Domain, error) {
-	dom, err := d.conn.LookupDomainByName(name)
-	if err != nil {
-		if lverr, ok := err.(*libvirt.Error); ok {
-			if lverr.Code != libvirt.ERR_NO_DOMAIN {
-				return nil, fmt.Errorf("libvirt: unable to verify exiting domains: %w", err)
-			}
-		}
-	}
-
-	return dom, nil
-}
-
-func (d *driver) StopDomain(name string) error {
-	dom, err := d.GetDomain(name)
-	if err != nil {
-		return err
-	}
-
-	if dom == nil {
-		return ErrDomainNotFound
-	}
-
-	d.logger.Debug("stopping domain", name)
-
-	return dom.ShutdownFlags(libvirt.DOMAIN_SHUTDOWN_SIGNAL)
-}
-
-func (d *driver) DestroyDomain(name string) error {
-	dom, err := d.GetDomain(name)
-	if err != nil {
-		return err
-	}
-
-	if dom == nil {
-		return ErrDomainNotFound
-	}
-
-	d.logger.Debug("destroying domain", name)
-
-	return dom.DestroyFlags(libvirt.DOMAIN_DESTROY_GRACEFUL)
 }
 
 func (d *driver) GetVms() {

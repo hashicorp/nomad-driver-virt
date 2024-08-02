@@ -2,7 +2,6 @@ package domain
 
 import (
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
@@ -12,35 +11,12 @@ var (
 	ErrEmptyName = errors.New("domain name can't be emtpy")
 )
 
-type Users struct {
-	IncludeDefault bool
-	Password       string
-	SSHKeys        string
-	Users          []UserConfig
-}
-
 type File struct {
 	Path        string
 	Content     string
 	Permissions string
 	Owner       string
 	Group       string
-}
-
-type UserGroups []string
-
-func (ug UserGroups) Join() string {
-	return strings.Join(ug, ", ")
-}
-
-type UserConfig struct {
-	Name           string
-	Password       string
-	PathToPassword string
-	SSHKeys        []string
-	Sudo           string
-	Groups         UserGroups
-	Shell          string
 }
 
 type MountFileConfig struct {
@@ -65,10 +41,13 @@ type Config struct {
 	NetworkInterfaces []string
 	Type              string
 	HostName          string
-	UsersConfig       Users
-	Files             []File
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
+	Files             []File
+	SSHKey            string
+	Password          string
+	CMDs              []string
+	CIUserData        string
 }
 
 func (dc *Config) Validate() error {
@@ -88,7 +67,6 @@ type Info struct {
 	Cores           uint32
 	EmulatorVersion uint32
 	LibvirtVersion  uint32
-	Network         string
 	RunningDomains  uint
 	InactiveDomains uint
 }

@@ -52,7 +52,7 @@ func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, path string) (string
 
 	var udb io.ReadWriter
 	if ci.UserDataPath != "" {
-		udf, err := os.Open(path + "/user-data")
+		udf, err := os.Open(ci.UserDataPath)
 		if err != nil {
 			return "", err
 		}
