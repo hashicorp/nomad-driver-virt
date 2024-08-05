@@ -202,14 +202,6 @@ func createCloudInitConfig(config *domain.Config) *domain.CloudInit {
 	}
 }
 
-func createAllocFileMount() domain.MountFileConfig {
-	return domain.MountFileConfig{
-		Source:      "/home/ubuntu/test/alloc", // TODO: Define how to pass this value
-		Tag:         "allocDir",
-		Destination: "/alloc",
-	}
-}
-
 func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
 	cmds := []string{}
 	for _, m := range mounts {
@@ -284,7 +276,6 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		return err
 	}
 
-	config.Mounts = append(config.Mounts, createAllocFileMount())
 	config.CMDs = append(addCMDsForMounts(config.Mounts), config.CMDs...)
 
 	dDir := filepath.Join(d.dataDir, config.Name)

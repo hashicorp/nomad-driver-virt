@@ -32,17 +32,19 @@ func Write(isoPath, label string, layout []Entry) error {
 	if err != nil {
 		return err
 	}
+
 	if runtime.GOOS == "windows" {
 		// go-embed unfortunately needs unix path
 		workdir = filepath.ToSlash(workdir)
 	}
+
 	fs, err := iso9660.Create(isoFile, 0, 0, 0, workdir)
 	if err != nil {
 		return err
 	}
 
 	for _, f := range layout {
-		if _, err := WriteFile(fs, f.Path, f.Reader); err != nil {
+		if _, err := writeFile(fs, f.Path, f.Reader); err != nil {
 			return err
 		}
 	}
@@ -51,6 +53,7 @@ func Write(isoPath, label string, layout []Entry) error {
 		RockRidge:        true,
 		VolumeIdentifier: label,
 	}
+
 	if err := fs.Finalize(finalizeOptions); err != nil {
 		return err
 	}
@@ -58,7 +61,7 @@ func Write(isoPath, label string, layout []Entry) error {
 	return isoFile.Close()
 }
 
-func WriteFile(fs filesystem.FileSystem, pathStr string, r io.Reader) (int64, error) {
+func writeFile(fs filesystem.FileSystem, pathStr string, r io.Reader) (int64, error) {
 	if dir := path.Dir(pathStr); dir != "" && dir != "/" {
 		if err := fs.Mkdir(dir); err != nil {
 			return 0, err
@@ -70,19 +73,4 @@ func WriteFile(fs filesystem.FileSystem, pathStr string, r io.Reader) (int64, er
 	}
 	defer f.Close()
 	return io.Copy(f, r)
-}
-
-func IsISO9660(imagePath string) (bool, error) {
-	imageFile, err := os.Open(imagePath)
-	if err != nil {
-		return false, err
-	}
-	defer imageFile.Close()
-
-	fileInfo, err := imageFile.Stat()
-	if err != nil {
-		return false, err
-	}
-	_, err = iso9660.Read(imageFile, fileInfo.Size(), 0, 0)
-	return err == nil, nil
 }

@@ -215,6 +215,14 @@ func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 	return fp
 }
 
+func createAllocFileMount() domain.MountFileConfig {
+	return domain.MountFileConfig{
+		Source:      "/home/ubuntu/test/alloc", // TODO: Define how to pass this value
+		Tag:         "allocDir",
+		Destination: "/alloc",
+	}
+}
+
 // StartTask returns a task handle and a driver network if necessary.
 func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drivers.DriverNetwork, error) {
 	if _, ok := d.tasks.Get(cfg.ID); ok {
@@ -255,8 +263,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		NetworkInterfaces: []string{"virbr0"},
 		HostName:          cfg.Name,
 		Files:             []domain.File{},
-		Mounts:            []domain.MountFileConfig{},
-		//Timezone:          "",
+		Mounts:            []domain.MountFileConfig{createAllocFileMount()},
 	}); err != nil {
 		return nil, nil, fmt.Errorf("failed to start task: %w", err)
 	}
