@@ -15,6 +15,7 @@ type VendorData struct {
 	Password string
 	SSHKey   string
 	RunCMD   []string
+	BootCMD  []string
 	Mounts   []MountFileConfig
 	Files    []File
 }

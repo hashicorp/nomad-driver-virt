@@ -44,11 +44,15 @@ func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, path string) (string
 		return "", err
 	}
 
+	c.logger.Debug("metadata", mdb.String())
+
 	vdb := &bytes.Buffer{}
 	err = executeTemplate(ci, vendorDataTemplate, vdb)
 	if err != nil {
 		return "", err
 	}
+
+	c.logger.Debug("vendor data", vdb.String())
 
 	var udb io.ReadWriter
 	if ci.UserDataPath != "" {
@@ -65,6 +69,7 @@ func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, path string) (string
 		if err != nil {
 			return "", err
 		}
+
 	}
 
 	l := []Entry{
@@ -108,6 +113,3 @@ func executeTemplate(config *domain.CloudInit, in string, out io.Writer) error {
 	return nil
 
 }
-
-// Function to be implemented
-func mergeConfigs(CIFiles ...string) {}

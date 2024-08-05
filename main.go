@@ -17,7 +17,7 @@ import (
 )
 
 func main() {
-	name := "j10"
+	name := "j6"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "my-app",
 		Level: hclog.Debug,
@@ -70,6 +70,13 @@ func createVM(appLogger hclog.Logger, name string) error {
 				Path:        "/home/juana/text.txt",
 				Content:     ` this is the text we will be putting`,
 				Permissions: "0777",
+			},
+		},
+		Mounts: []domain.MountFileConfig{
+			{
+				Source:      "/home/ubuntu/test/alloc",
+				Tag:         "allocDir",
+				Destination: "/alloc",
 			},
 		},
 	}

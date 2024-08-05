@@ -4,7 +4,7 @@ merge_how:
  - name: list
    settings: [prepend]
  - name: dict
-   settings: [no_replace, recurse_list]
+   settings: [no_replace, recurse_dict]
 {{- end}}
 
 {{- if .VendorData.Password }}
@@ -41,6 +41,13 @@ write_files:
 {{- $length_cmd := len .VendorData.RunCMD }} {{- if or (ne $length_cmd 0) }}
 runcmd:
   {{- range .VendorData.RunCMD}}  
+  - {{.}}
+  {{- end }}
+{{- end }}
+
+{{- $length_bcmd := len .VendorData.BootCMD }} {{- if or (ne $length_bcmd 0) }}
+bootcmd:
+  {{- range .VendorData.BootCMD}}  
   - {{.}}
   {{- end }}
 {{- end }}

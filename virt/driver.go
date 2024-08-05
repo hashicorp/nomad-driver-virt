@@ -13,6 +13,7 @@ import (
 	"github/hashicorp/nomad-driver-virt/libvirt"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad/client/taskenv"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
 	"github.com/hashicorp/nomad/plugins/base"
 	"github.com/hashicorp/nomad/plugins/drivers"
@@ -215,12 +216,26 @@ func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 	return fp
 }
 
-func createAllocFileMount() domain.MountFileConfig {
-	return domain.MountFileConfig{
-		Source:      "/home/ubuntu/test/alloc", // TODO: Define how to pass this value
-		Tag:         "allocDir",
-		Destination: "/alloc",
+func createAllocFileMounts(task *drivers.TaskConfig) []domain.MountFileConfig {
+	mounts := []domain.MountFileConfig{
+		{
+			Source:      task.TaskDir().SharedAllocDir,
+			Tag:         "allocDir",
+			Destination: task.Env[taskenv.AllocDir],
+		},
+		{
+			Source:      task.TaskDir().LocalDir,
+			Tag:         "localDir",
+			Destination: task.Env[taskenv.TaskLocalDir],
+		},
+		{
+			Source:      task.TaskDir().SecretsDir,
+			Tag:         "secretsDir",
+			Destination: task.Env[taskenv.SecretsDir],
+		},
 	}
+
+	return mounts
 }
 
 // StartTask returns a task handle and a driver network if necessary.
@@ -263,7 +278,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		NetworkInterfaces: []string{"virbr0"},
 		HostName:          cfg.Name,
 		Files:             []domain.File{},
-		Mounts:            []domain.MountFileConfig{createAllocFileMount()},
+		Mounts:            createAllocFileMounts(cfg),
 	}); err != nil {
 		return nil, nil, fmt.Errorf("failed to start task: %w", err)
 	}

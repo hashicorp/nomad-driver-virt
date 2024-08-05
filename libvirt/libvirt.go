@@ -185,13 +185,13 @@ func (d *driver) Close() (int, error) {
 }
 
 func createCloudInitConfig(config *domain.Config) *domain.CloudInit {
-
 	return &domain.CloudInit{
 		MetaData: domain.MetaData{
 			InstanceID:    config.Name,
 			LocalHostname: config.Name,
 		},
 		VendorData: domain.VendorData{
+			BootCMD:  addCMDsForMounts(config.Mounts),
 			RunCMD:   config.CMDs,
 			Mounts:   config.Mounts,
 			Files:    config.Files,
@@ -275,8 +275,6 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	if err != nil {
 		return err
 	}
-
-	config.CMDs = append(addCMDsForMounts(config.Mounts), config.CMDs...)
 
 	dDir := filepath.Join(d.dataDir, config.Name)
 	err = createDomainFolder(dDir)
