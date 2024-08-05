@@ -2,8 +2,6 @@ package cloudinit
 
 import (
 	"bytes"
-	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -93,8 +91,7 @@ func TestWriteConfigToISO(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				fmt.Println(isoPath, "el error de la monda", err)
-				//assert.FileExists(t, isoPath)
+				assert.FileExists(t, isoPath)
 
 			}
 		})
@@ -117,7 +114,7 @@ func TestExecuteTemplate(t *testing.T) {
 					LocalHostname: "test-localhost",
 				},
 			},
-			templatePath: "test_meta-data.tmpl",
+			templatePath: "/meta-data.tmpl",
 			expectError:  false,
 		},
 		{
@@ -133,14 +130,15 @@ func TestExecuteTemplate(t *testing.T) {
 	}
 
 	// Create temporary directory for testing
-	tempDir, err := ioutil.TempDir("", "cloudinit_test")
+	tempDir, err := os.MkdirTemp("", "cloudinit_test")
 	assert.NoError(t, err)
 	defer os.RemoveAll(tempDir)
 
 	// Create test template file
-	templateContent := "instance-id: {{ .MetaData.instance-id }}"
+	templateContent := "local-hostname:: {{ .MetaData.LocalHostname }}"
 	templateFile := filepath.Join(tempDir, "test_meta-data.tmpl")
-	err = ioutil.WriteFile(templateFile, []byte(templateContent), 0644)
+
+	err = os.WriteFile(templateFile, []byte(templateContent), 0644)
 	assert.NoError(t, err)
 
 	for _, tt := range tests {
@@ -151,7 +149,7 @@ func TestExecuteTemplate(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				assert.Contains(t, out.String(), "instance-id: test-instance")
+				assert.Contains(t, out.String(), "local-hostname: test-localhost")
 			}
 		})
 	}
