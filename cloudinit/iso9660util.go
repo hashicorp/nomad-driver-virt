@@ -72,5 +72,6 @@ func writeFile(fs filesystem.FileSystem, pathStr string, r io.Reader) (int64, er
 		return 0, err
 	}
 	defer f.Close()
+
 	return io.Copy(f, r)
 }

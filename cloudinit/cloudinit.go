@@ -14,17 +14,18 @@ import (
 )
 
 const (
+	ISOName = "/cidata.iso"
+)
+
+var (
 	vendorDataTemplate = "/cloudinit/vendor-data.tmpl"
 	userDataTemplate   = "/cloudinit/user-data.tmpl"
 	metaDataTemplate   = "/cloudinit/meta-data.tmpl"
-	ISOName            = "/cidata.iso"
 )
 
 type Controller struct {
 	logger hclog.Logger
 }
-
-type Option func(*Controller)
 
 func NewController(logger hclog.Logger) (*Controller, error) {
 	c := &Controller{
@@ -111,5 +112,4 @@ func executeTemplate(config *domain.CloudInit, in string, out io.Writer) error {
 		return fmt.Errorf("libvirt: unable to execute template: %w", err)
 	}
 	return nil
-
 }

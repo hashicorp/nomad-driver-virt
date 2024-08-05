@@ -2,13 +2,66 @@ package cloudinit
 
 import (
 	"bytes"
-	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/diskfs/go-diskfs/filesystem/iso9660"
 )
+
+func TestWrite(t *testing.T) {
+	tests := []struct {
+		name      string
+		isoPath   string
+		label     string
+		layout    []Entry
+		wantError bool
+	}{
+		{
+			name:    "Empty layout",
+			isoPath: "test_empty.iso",
+			label:   "EMPTY",
+			layout:  []Entry{},
+		},
+		{
+			name:    "Single file",
+			isoPath: "test_single_file.iso",
+			label:   "SINGLE",
+			layout: []Entry{
+				{
+					Path:   "/file.txt",
+					Reader: bytes.NewReader([]byte("Hello, World!")),
+				},
+			},
+		},
+		{
+			name:    "Multiple files",
+			isoPath: "test_multiple_files.iso",
+			label:   "MULTIPLE",
+			layout: []Entry{
+				{
+					Path:   "/file1.txt",
+					Reader: bytes.NewReader([]byte("Hello, World 1!")),
+				},
+				{
+					Path:   "/file2.txt",
+					Reader: bytes.NewReader([]byte("Hello, World 2!")),
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := Write(tt.isoPath, tt.label, tt.layout)
+			if (err != nil) != tt.wantError {
+				t.Errorf("Write() error = %v, wantError %v", err, tt.wantError)
+			}
+
+			os.Remove(tt.isoPath)
+		})
+	}
+}
 
 func TestWriteFile(t *testing.T) {
 	tests := []struct {
@@ -48,7 +101,7 @@ func TestWriteFile(t *testing.T) {
 				t.Fatalf("failed to create iso filesystem: %v", err)
 			}
 
-			_, err = WriteFile(fs, tt.pathStr, bytes.NewReader([]byte(tt.content)))
+			_, err = writeFile(fs, tt.pathStr, bytes.NewReader([]byte(tt.content)))
 			if (err != nil) != tt.wantError {
 				t.Errorf("WriteFile() error = %v, wantError %v", err, tt.wantError)
 			}
