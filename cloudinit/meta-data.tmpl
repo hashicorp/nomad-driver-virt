@@ -1,2 +1,6 @@
-local-hostname: {{.MetaData.LocalHostname}}
+{{- if .MetaData.InstanceID}}
 instance-id: {{.MetaData.InstanceID}}
+{{- end }}
+{{- if and .MetaData.LocalHostname (not .UserDataPath)}}
+local-hostname: {{.MetaData.LocalHostname}}
+{{- end}}
