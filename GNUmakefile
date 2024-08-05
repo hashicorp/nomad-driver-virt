@@ -9,7 +9,7 @@ GO111MODULE = on
 # Attempt to use gotestsum for running tests, otherwise fallback to go test.
 GO_TEST_CMD = $(if $(shell command -v gotestsum 2>/dev/null),gotestsum --,go test)
 
-default: test build
+default: check-go-mod test build
 
 .PHONY: clean
 clean: ## Remove build artifacts
@@ -33,6 +33,17 @@ test-tools: ## Install the tools used to run tests
 test: ## Test the source code
 	@echo "==> Testing source code..."
 	@$(GO_TEST_CMD) -v -race -cover ./...
+	@echo "==> Done"
+
+.PHONY: check-go-mod
+check-go-mod: ## Checks the Go mod is tidy
+	@echo "==> Checking Go mod and Go sum..."
+	@go mod tidy
+	@if (git status --porcelain | grep -Eq "go\.(mod|sum)"); then \
+		echo go.mod or go.sum needs updating; \
+		git --no-pager diff go.mod; \
+		git --no-pager diff go.sum; \
+		exit 1; fi
 	@echo "==> Done"
 
 HELP_FORMAT="    \033[36m%-25s\033[0m %s\n"
