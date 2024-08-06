@@ -14,17 +14,34 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad/client/taskenv"
+	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
 func main() {
-	name := "j6"
+	name := "j9"
 	appLogger := hclog.New(&hclog.LoggerOptions{
-		Name:  "my-app",
+		Name:  "virt",
 		Level: hclog.Debug,
 	})
 
 	//fmt.Println(ci(appLogger, name))
 	fmt.Println(createVM(appLogger, name))
+
+	np := virt.NewPlugin(appLogger)
+
+	d, n, err := np.StartTask(&drivers.TaskConfig{
+		ID:            name,
+		AllocID:       name,
+		JobID:         "job-ID",
+		TaskGroupName: "task-group-name",
+		Env: map[string]string{
+			taskenv.AllocDir:     "/alloc",
+			taskenv.TaskLocalDir: "/local",
+			taskenv.SecretsDir:   "/secrets",
+		},
+	})
+	fmt.Println(d, n, err)
 
 	// Serve the plugin
 	//plugins.Serve(factory)
@@ -95,7 +112,7 @@ func createVM(appLogger hclog.Logger, name string) error {
 		fmt.Println("ups no info", err)
 	}
 
-	fmt.Printf("%+v\n", info, "\n")
+	fmt.Printf("%+v\n", info)
 
 	return nil
 }
@@ -108,7 +125,7 @@ func factory(log hclog.Logger) interface{} {
 func ci(appLogger hclog.Logger, name string) error {
 	cic, err := cloudinit.NewController(appLogger)
 	if err != nil {
-		fmt.Printf("error: %+v\n %+v\n", err)
+		fmt.Printf("error: %+v\n", err)
 	}
 
 	mounts := []domain.MountFileConfig{
