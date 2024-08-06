@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	domain "github/hashicorp/nomad-driver-virt/internal/shared"
@@ -37,6 +38,9 @@ const (
 	// this is used to allow modification and migration of the task schema
 	// used by the plugin
 	taskHandleVersion = 1
+
+	envVariblesFilePath        = "/etc/profile.d/virt.sh"
+	envVariblesFilePermissions = "0600"
 )
 
 var (
@@ -238,6 +242,24 @@ func createAllocFileMounts(task *drivers.TaskConfig) []domain.MountFileConfig {
 	return mounts
 }
 
+func createEnvsFile(envs map[string]string) []domain.File {
+	con := []string{}
+
+	for k, v := range envs {
+		con = append(con, fmt.Sprintf("export %s=%s", k, v))
+	}
+
+	files := []domain.File{
+		{
+			Path:        envVariblesFilePath,
+			Permissions: envVariblesFilePermissions,
+			Content:     strings.Join(con, "\n"),
+		},
+	}
+
+	return files
+}
+
 // StartTask returns a task handle and a driver network if necessary.
 func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drivers.DriverNetwork, error) {
 	if _, ok := d.tasks.Get(cfg.ID); ok {
@@ -277,7 +299,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		DiskFmt:           "qcow2",
 		NetworkInterfaces: []string{"virbr0"},
 		HostName:          cfg.Name,
-		Files:             []domain.File{},
+		Files:             createEnvsFile(cfg.Env),
 		Mounts:            createAllocFileMounts(cfg),
 	}); err != nil {
 		return nil, nil, fmt.Errorf("failed to start task: %w", err)
