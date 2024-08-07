@@ -248,16 +248,16 @@ func (d *driver) DestroyDomain(name string) error {
 // CreateDomain verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
 func (d *driver) CreateDomain(config *domain.Config) error {
-	/* dom, err := d.GetDomain(config.Name)
+	dom, err := d.GetDomain(config.Name)
 	if err != nil {
 		return err
 	}
 
 	if dom != nil {
 		return ErrDomainExists
-	} */
+	}
 
-	err := config.Validate()
+	err = config.Validate()
 	if err != nil {
 		return err
 	}
@@ -272,7 +272,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		if config.RemoveConfigFiles {
 			err := cleanUpDomainFolder(dDir)
 			if err != nil {
-				d.logger.Info("unable to remove ci config files", err)
+				d.logger.Info("unable to remove domain files", err)
 			}
 		}
 	}()
@@ -294,11 +294,11 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		}
 	}
 
-	d.logger.Debug("creating domain with", domXML)
+	d.logger.Debug("defining domain with", domXML)
 
-	_, err = d.conn.DomainCreateXML(domXML, 0)
+	_, err = d.conn.DomainDefineXMLFlags(domXML, libvirt.DOMAIN_DEFINE_VALIDATE)
 	if err != nil {
-		return fmt.Errorf("libvirt: unable to parce create domain: %w", err)
+		return fmt.Errorf("libvirt: unable to define domain: %w", err)
 	}
 
 	return nil
@@ -325,7 +325,14 @@ func (d *driver) GetVms() {
 }
 
 func cleanUpDomainFolder(path string) error {
-	return deleteDir(path)
+	if dirExists(path) {
+		err := os.RemoveAll(path)
+		if err != nil {
+			return fmt.Errorf("libvirt: failed to delete directory: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func dirExists(dirname string) bool {
@@ -334,17 +341,6 @@ func dirExists(dirname string) bool {
 		return false
 	}
 	return info.IsDir()
-}
-
-func deleteDir(name string) error {
-	if dirExists(name) {
-		err := os.RemoveAll(name)
-		if err != nil {
-			return fmt.Errorf("libvirt: failed to delete directory: %w", err)
-		}
-	}
-
-	return nil
 }
 
 func createDomainFolder(path string) error {

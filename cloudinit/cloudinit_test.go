@@ -102,23 +102,82 @@ func TestWriteConfigToISO(t *testing.T) {
 
 func TestExecuteTemplate(t *testing.T) {
 	tests := []struct {
-		name         string
-		config       *domain.CloudInit
-		templatePath string
-		expectError  bool
+		name            string
+		config          *domain.CloudInit
+		templatePath    string
+		expectError     bool
+		expectedContent string
 	}{
 		{
-			name: "Valid Template",
+			name: "no_host_and_no_user_data",
 			config: &domain.CloudInit{
 				MetaData: domain.MetaData{
-					LocalHostname: "test-localhost",
+					InstanceID: "test-instanceID",
 				},
 			},
-			templatePath: "/meta-data.tmpl",
-			expectError:  false,
+			templatePath:    "/meta-data.tmpl",
+			expectError:     false,
+			expectedContent: "instance-id: test-instanceID",
 		},
 		{
-			name: "Invalid Template Path",
+			name: "host_and_no_user_data",
+			config: &domain.CloudInit{
+				MetaData: domain.MetaData{
+					InstanceID:    "test-instanceID",
+					LocalHostname: "test-localhostname",
+				},
+			},
+			templatePath:    "/meta-data.tmpl",
+			expectError:     false,
+			expectedContent: "instance-id: test-instanceID",
+		},
+		{
+			name: "host_and_user_data",
+			config: &domain.CloudInit{
+				MetaData: domain.MetaData{
+					InstanceID:    "test-instanceID",
+					LocalHostname: "test-localhostname",
+				},
+				UserDataPath: "/path/to/some/file",
+			},
+			templatePath:    "/meta-data.tmpl",
+			expectError:     false,
+			expectedContent: "instance-id: test-instanceID\nlocal-hostname: test-localhostname",
+		},
+		{
+			name: "no_user_data",
+			config: &domain.CloudInit{
+				MetaData: domain.MetaData{
+					LocalHostname: "test-localhostname",
+				},
+			},
+			templatePath:    "/user-data.tmpl",
+			expectError:     false,
+			expectedContent: "#cloud-config\nlocal-hostname: test-localhostname",
+		},
+		{
+			name: "no_user_data",
+			config: &domain.CloudInit{
+				MetaData: domain.MetaData{
+					LocalHostname: "test-localhostname",
+				},
+				UserDataPath: "some/path/to/file",
+			},
+			templatePath:    "/user-data.tmpl",
+			expectError:     false,
+			expectedContent: "#cloud-config",
+		},
+		{
+			name: "vendor_data",
+			config: &domain.CloudInit{
+				VendorData: domain.VendorData{},
+			},
+			templatePath:    "/user-data.tmpl",
+			expectError:     false,
+			expectedContent: "#cloud-config",
+		},
+		{
+			name: "invalid_template_path",
 			config: &domain.CloudInit{
 				MetaData: domain.MetaData{
 					LocalHostname: "test-localhost",
@@ -129,17 +188,7 @@ func TestExecuteTemplate(t *testing.T) {
 		},
 	}
 
-	// Create temporary directory for testing
-	tempDir, err := os.MkdirTemp("", "cloudinit_test")
-	assert.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
 	// Create test template file
-	templateContent := "local-hostname:: {{ .MetaData.LocalHostname }}"
-	templateFile := filepath.Join(tempDir, "test_meta-data.tmpl")
-
-	err = os.WriteFile(templateFile, []byte(templateContent), 0644)
-	assert.NoError(t, err)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -149,7 +198,7 @@ func TestExecuteTemplate(t *testing.T) {
 				assert.Error(t, err)
 			} else {
 				assert.NoError(t, err)
-				assert.Contains(t, out.String(), "local-hostname: test-localhost")
+				assert.Contains(t, out.String(), tt.expectedContent)
 			}
 		})
 	}

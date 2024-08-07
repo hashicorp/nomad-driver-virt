@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad/plugins"
 )
 
 func main() {
@@ -23,26 +24,12 @@ func main() {
 		Level: hclog.Debug,
 	})
 
+	appLogger.Debug(name)
 	//fmt.Println(ci(appLogger, name))
-	fmt.Println(createVM(appLogger, name))
-
-	/* 	np := virt.NewPlugin(appLogger)
-
-	   	d, n, err := np.StartTask(&drivers.TaskConfig{
-	   		ID:            name,
-	   		AllocID:       name,
-	   		JobID:         "job-ID",
-	   		TaskGroupName: "task-group-name",
-	   		Env: map[string]string{
-	   			taskenv.AllocDir:     "/alloc",
-	   			taskenv.TaskLocalDir: "/local",
-	   			taskenv.SecretsDir:   "/secrets",
-	   		},
-	   	})
-	   	fmt.Println(d, n, err) */
+	//mt.Println(createVM(appLogger, name))
 
 	// Serve the plugin
-	//plugins.Serve(factory)
+	plugins.Serve(factory)
 }
 
 func createVM(appLogger hclog.Logger, name string) error {

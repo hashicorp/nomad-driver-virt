@@ -294,7 +294,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		procState:  drivers.TaskStateRunning,
 		startedAt:  time.Now().Round(time.Millisecond),
 		logger:     d.logger,
-		virtURI:    d.config.URI,
+		virtURI:    d.config.EmulatorURI,
 	}
 
 	driverState := TaskState{
@@ -318,7 +318,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		Files:             createEnvsFile(cfg.Env),
 		Mounts:            allocFSMounts,
 		BOOTCMDs:          appendBootCMDsForMounts(allocFSMounts),
-		CMDs:              driverConfig.CMD,
+		CMDs:              driverConfig.CMDs,
 	}); err != nil {
 		return nil, nil, fmt.Errorf("failed to start task: %w", err)
 	}
