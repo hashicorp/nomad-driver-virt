@@ -32,7 +32,8 @@ mounts:
 write_files:
   {{- range .VendorData.Files}}  
   - path: {{.Path}}
-    content:  {{.Content}}
+    content:  |
+{{.Content}}
     permissions: '{{.Permissions}}'
     owner: root:root
   {{- end }}

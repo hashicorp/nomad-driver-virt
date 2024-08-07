@@ -29,12 +29,12 @@ func TestConfig_TaskCMDs(t *testing.T) {
 	must.StrContains(t, expectedImg, tc.ImagePath)
 }
 
-/* func TestConfig_Plugin(t *testing.T) {
+func TestConfig_Plugin(t *testing.T) {
 	t.Parallel()
 
 	parser := hclutils.NewConfigParser(configSpec)
-	expectedCmds := []string{"redis"}
-	expectedImg := "/path/to/image/here"
+	//expectedCmds := []string{"redis"}
+	//expectedImg := "/path/to/image/here"
 	validHCL := `
   config {
 	data_dir = "blah"
@@ -43,9 +43,9 @@ func TestConfig_TaskCMDs(t *testing.T) {
 
 	var tc *TaskConfig
 	parser.ParseHCL(t, validHCL, &tc)
-	must.SliceContainsAll(t, expectedCmds, tc.CMDs)
-	must.StrContains(t, expectedImg, tc.ImagePath)
-} */
+	// must.SliceContainsAll(t, expectedCmds, tc.CMDs)
+	// must.StrContains(t, expectedImg, tc.ImagePath)
+}
 
 /*
 func TestConfig_Logging(t *testing.T) {

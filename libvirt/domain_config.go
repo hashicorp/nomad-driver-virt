@@ -6,7 +6,7 @@ package libvirt
 import (
 	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 
-	"libvirt.org/go/libvirtxml"
+	libvirtxml "github.com/libvirt/libvirt-go-xml"
 )
 
 func parceConfiguration(config *domain.Config, cloudInitPath string) (string, error) {
@@ -51,27 +51,6 @@ func parceConfiguration(config *domain.Config, cloudInitPath string) (string, er
 		interfaces = append(interfaces, i)
 	}
 
-	os := &libvirtxml.DomainOS{
-		Type: &libvirtxml.DomainOSType{
-			Type: "hvm",
-		},
-		SMBios: &libvirtxml.DomainSMBios{
-			Mode: "sysinfo",
-		},
-	}
-
-	if config.Arch != "" {
-		os.Type.Arch = config.Arch
-	}
-
-	if config.Machine != "" {
-		os.Type.Machine = config.Machine
-	}
-
-	if config.OSType != "" {
-		os.Type.Type = config.OSType
-	}
-
 	domcfg := &libvirtxml.Domain{
 		OnPoweroff: "destroy",
 		OnReboot:   "destroy",
@@ -103,7 +82,14 @@ func parceConfiguration(config *domain.Config, cloudInitPath string) (string, er
 				},
 			},
 		},
-		OS: os,
+		OS: &libvirtxml.DomainOS{
+			Type: &libvirtxml.DomainOSType{
+				Type: "hvm",
+			},
+			SMBios: &libvirtxml.DomainSMBios{
+				Mode: "sysinfo",
+			},
+		},
 		Devices: &libvirtxml.DomainDeviceList{
 			Controllers: []libvirtxml.DomainController{
 				{

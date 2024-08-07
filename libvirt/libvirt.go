@@ -248,16 +248,16 @@ func (d *driver) DestroyDomain(name string) error {
 // CreateDomain verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
 func (d *driver) CreateDomain(config *domain.Config) error {
-	dom, err := d.GetDomain(config.Name)
-	if err != nil {
-		return err
-	}
+	/* 	dom, err := d.GetDomain(config.Name)
+	   	if err != nil {
+	   		return err
+	   	}
 
-	if dom != nil {
-		return ErrDomainExists
-	}
+	   	if dom != nil {
+	   		return ErrDomainExists
+	   	} */
 
-	err = config.Validate()
+	err := config.Validate()
 	if err != nil {
 		return err
 	}

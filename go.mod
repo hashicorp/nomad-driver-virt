@@ -11,10 +11,10 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/nomad v1.8.1
+	github.com/libvirt/libvirt-go-xml v7.4.0+incompatible
 	github.com/shoenig/test v1.7.1
 	github.com/stretchr/testify v1.9.0
 	libvirt.org/go/libvirt v1.10003.0
-	libvirt.org/go/libvirtxml v1.10006.0
 )
 
 require (

@@ -1,6 +1,3 @@
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
-
 package virt
 
 import (
@@ -12,18 +9,14 @@ import (
 )
 
 var (
-	// configSpec is the specification of the plugin's configuration
-	// this is used to validate the configuration specified for the plugin
-	// on the client.
-	// this is not global, but can be specified on a per-client basis.
 	configSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-		"emulator_uri": hclspec.NewDefault(
+		"emulator": hclspec.NewDefault(
 			hclspec.NewAttr("emulator_uri", "string", false),
-			hclspec.NewLiteral("qemu:///system"),
+			hclspec.NewLiteral(`"qemu:///system"`),
 		),
 		"data_dir": hclspec.NewDefault(
 			hclspec.NewAttr("data_dir", "string", false),
-			hclspec.NewLiteral("/opt/virt"),
+			hclspec.NewLiteral(`"/opt/virt"`),
 		),
 		//"nvmeof_subsystem": hclspec.NewDefault(hclspec.NewBlock("nvmeof_subsystem", false, hclspec.NewObject(map[string]*hclspec.Spec{})), hclspec.NewLiteral("")),
 	})

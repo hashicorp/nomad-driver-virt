@@ -1,0 +1,134 @@
+<domain type='kvm' id='19'>
+  <name>j1</name>
+  <uuid>e94d59e4-8131-450a-a19a-1c2885d2298a</uuid>
+  <memory unit='KiB'>2048000</memory>
+  <currentMemory unit='KiB'>2048000</currentMemory>
+  <memoryBacking>
+    <source type='memfd'/>
+    <access mode='shared'/>
+  </memoryBacking>
+  <vcpu placement='static'>4</vcpu>
+  <resource>
+    <partition>/machine</partition>
+  </resource>
+  <sysinfo type='smbios'>
+    <system>
+      <entry name='serial'>ds=nocloud</entry>
+    </system>
+  </sysinfo>
+  <os>
+    <type arch='x86_64' machine='pc-i440fx-jammy'>hvm</type>
+    <boot dev='hd'/>
+    <smbios mode='sysinfo'/>
+  </os>
+  <features>
+    <vmport state='off'/>
+  </features>
+  <cpu mode='custom' match='exact' check='full'>
+    <model fallback='forbid'>qemu64</model>
+    <feature policy='require' name='x2apic'/>
+    <feature policy='require' name='hypervisor'/>
+    <feature policy='require' name='lahf_lm'/>
+    <feature policy='disable' name='svm'/>
+  </cpu>
+  <clock offset='utc'/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>destroy</on_reboot>
+  <on_crash>destroy</on_crash>
+  <pm>
+    <suspend-to-mem enabled='no'/>
+    <suspend-to-disk enabled='no'/>
+  </pm>
+  <devices>
+    <emulator>/usr/bin/qemu-system-x86_64</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' type='qcow2'/>
+      <source file='/home/ubuntu/test/j1.img' index='2'/>
+      <backingStore type='file' index='3'>
+        <format type='qcow2'/>
+        <source file='/home/ubuntu/test/focal-server-cloudimg-amd64.img'/>
+        <backingStore/>
+      </backingStore>
+      <target dev='vda' bus='virtio'/>
+      <alias name='virtio-disk0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x06' function='0x0'/>
+    </disk>
+    <disk type='file' device='cdrom'>
+      <driver name='qemu' type='raw'/>
+      <source file='/home/ubuntu/test/virt/j1/cidata.iso' index='1'/>
+      <backingStore/>
+      <target dev='sda' bus='sata'/>
+      <readonly/>
+      <alias name='sata0-0-0'/>
+      <address type='drive' controller='0' bus='0' target='0' unit='0'/>
+    </disk>
+    <controller type='virtio-serial' index='0'>
+      <alias name='virtio-serial0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x04' function='0x0'/>
+    </controller>
+    <controller type='sata' index='0'>
+      <alias name='sata0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x05' function='0x0'/>
+    </controller>
+    <controller type='usb' index='0' model='piix3-uhci'>
+      <alias name='usb'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x01' function='0x2'/>
+    </controller>
+    <controller type='pci' index='0' model='pci-root'>
+      <alias name='pci.0'/>
+    </controller>
+    <filesystem type='mount' accessmode='passthrough'>
+      <driver type='virtiofs'/>
+      <binary path='/usr/lib/qemu/virtiofsd'/>
+      <source dir='/home/ubuntu/test/alloc'/>
+      <target dir='allocDir'/>
+      <alias name='fs0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x02' function='0x0'/>
+    </filesystem>
+    <interface type='bridge'>
+      <mac address='52:54:00:ab:d9:4e'/>
+      <source bridge='virbr0'/>
+      <target dev='vnet12'/>
+      <model type='virtio'/>
+      <alias name='net0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x03' function='0x0'/>
+    </interface>
+    <serial type='pty'>
+      <source path='/dev/pts/4'/>
+      <target type='isa-serial' port='0'>
+        <model name='isa-serial'/>
+      </target>
+      <alias name='serial0'/>
+    </serial>
+    <console type='pty' tty='/dev/pts/4'>
+      <source path='/dev/pts/4'/>
+      <target type='serial' port='0'/>
+      <alias name='serial0'/>
+    </console>
+    <input type='mouse' bus='ps2'>
+      <alias name='input0'/>
+    </input>
+    <input type='keyboard' bus='ps2'>
+      <alias name='input1'/>
+    </input>
+    <audio id='1' type='none'/>
+    <memballoon model='virtio'>
+      <alias name='balloon0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x07' function='0x0'/>
+    </memballoon>
+    <rng model='virtio'>
+      <backend model='random'>/dev/urandom</backend>
+      <alias name='rng0'/>
+      <address type='pci' domain='0x0000' bus='0x00' slot='0x08' function='0x0'/>
+    </rng>
+  </devices>
+  <seclabel type='dynamic' model='apparmor' relabel='yes'>
+    <label>libvirt-e94d59e4-8131-450a-a19a-1c2885d2298a</label>
+    <imagelabel>libvirt-e94d59e4-8131-450a-a19a-1c2885d2298a</imagelabel>
+  </seclabel>
+  <seclabel type='dynamic' model='dac' relabel='yes'>
+    <label>+0:+0</label>
+    <imagelabel>+0:+0</imagelabel>
+  </seclabel>
+</domain>
+

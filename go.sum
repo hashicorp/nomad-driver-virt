@@ -271,6 +271,8 @@ github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
 github.com/kr/text v0.2.0 h1:5Nx0Ya0ZqY2ygV366QzturHI13Jq95ApcVaJBhpS+AY=
 github.com/kr/text v0.2.0/go.mod h1:eLer722TekiGuMkidMxC/pM04lWEeraHUUmBw8l2grE=
+github.com/libvirt/libvirt-go-xml v7.4.0+incompatible h1:+BBo2XjlT8pAK4pm+aSX8mC/6nc/rdRac10ZukpW31U=
+github.com/libvirt/libvirt-go-xml v7.4.0+incompatible/go.mod h1:oBlgD3xOA01ihiK5stbhFzvieyW+jVS6kbbsMVF623A=
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 h1:6E+4a0GO5zZEnZ81pIr0yLvtUWk2if982qA3F3QD6H4=
 github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0/go.mod h1:zJYVVT2jmtg6P3p1VtQj7WsuWi/y4VnjVBn7F8KPB3I=
 github.com/mattn/go-colorable v0.0.9/go.mod h1:9vuHe8Xs5qXnSaW/c/ABM9alt+Vo+STaOChaDxuIBZU=
@@ -621,7 +623,5 @@ kernel.org/pub/linux/libs/security/libcap/psx v1.2.69 h1:IdrOs1ZgwGw5CI+BH6GgVVl
 kernel.org/pub/linux/libs/security/libcap/psx v1.2.69/go.mod h1:+l6Ee2F59XiJ2I6WR5ObpC1utCQJZ/VLsEbQCD8RG24=
 libvirt.org/go/libvirt v1.10003.0 h1:LEoawzuggD6IL5R/XtnBE8wWJx49i7UZ1HcB7p9glwE=
 libvirt.org/go/libvirt v1.10003.0/go.mod h1:1WiFE8EjZfq+FCVog+rvr1yatKbKZ9FaFMZgEqxEJqQ=
-libvirt.org/go/libvirtxml v1.10006.0 h1:xFAu565mO+StoxVdZZ+LCtrfk33okwmCMJ5x+BMrSYg=
-libvirt.org/go/libvirtxml v1.10006.0/go.mod h1:7Oq2BLDstLr/XtoQD8Fr3mfDNrzlI3utYKySXF2xkng=
 oss.indeed.com/go/libtime v1.6.0 h1:XQyczJihse/wQGo59OfPF3f4f+Sywv4R8vdGB3S9BfU=
 oss.indeed.com/go/libtime v1.6.0/go.mod h1:B2sdEcuzB0zhTKkAuHy4JInKRc7Al3tME4qWam6R7mA=

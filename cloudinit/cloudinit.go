@@ -2,8 +2,10 @@ package cloudinit
 
 import (
 	"bytes"
+	"embed"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"text/template"
@@ -13,14 +15,18 @@ import (
 	"github.com/hashicorp/go-hclog"
 )
 
+//go:embed templates
+var templateFS embed.FS
+
 const (
-	ISOName = "/cidata.iso"
+	templateFSRoot = "templates"
+	ISOName        = "/cidata.iso"
 )
 
 var (
-	vendorDataTemplate = "/cloudinit/vendor-data.tmpl"
-	userDataTemplate   = "/cloudinit/user-data.tmpl"
-	metaDataTemplate   = "/cloudinit/meta-data.tmpl"
+	vendorDataTemplate = "vendor-data.tmpl"
+	userDataTemplate   = "user-data.tmpl"
+	metaDataTemplate   = "meta-data.tmpl"
 )
 
 type Controller struct {
@@ -37,7 +43,7 @@ func NewController(logger hclog.Logger) (*Controller, error) {
 
 func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, path string) (string, error) {
 	ciPath := filepath.Join(path + ISOName)
-	c.logger.Debug("creating ci config with", fmt.Sprintf("%+v", ci), "in", path)
+	//c.logger.Debug("creating ci config with", fmt.Sprintf("%+v", ci), "in", path)
 
 	mdb := &bytes.Buffer{}
 	err := executeTemplate(ci, metaDataTemplate, mdb)
@@ -97,19 +103,19 @@ func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, path string) (string
 }
 
 func executeTemplate(config *domain.CloudInit, in string, out io.Writer) error {
-	pwd, err := os.Getwd()
+	fsys, err := fs.Sub(templateFS, templateFSRoot)
 	if err != nil {
-		return fmt.Errorf("libvirt: unable to get path: %w", err)
+		return fmt.Errorf("cloud-init: unable to get templates fs: %w", err)
 	}
 
-	tmpl, err := template.ParseFiles(pwd + in)
+	tmpl, err := template.ParseFS(fsys, in)
 	if err != nil {
-		return fmt.Errorf("libvirt: unable to parse template: %w", err)
+		return fmt.Errorf("cloud-init: unable to parse template: %w", err)
 	}
 
 	err = tmpl.Execute(out, config)
 	if err != nil {
-		return fmt.Errorf("libvirt: unable to execute template: %w", err)
+		return fmt.Errorf("cloud-init: unable to execute template: %w", err)
 	}
 	return nil
 }

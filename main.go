@@ -14,11 +14,10 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/nomad/plugins"
 )
 
 func main() {
-	name := "j2"
+	name := "j4"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "virt",
 		Level: hclog.Debug,
@@ -26,10 +25,10 @@ func main() {
 
 	appLogger.Debug(name)
 	//fmt.Println(ci(appLogger, name))
-	//mt.Println(createVM(appLogger, name))
+	fmt.Println(createVM(appLogger, name))
 
 	// Serve the plugin
-	plugins.Serve(factory)
+	//plugins.Serve(factory)
 }
 
 func createVM(appLogger hclog.Logger, name string) error {
@@ -141,8 +140,8 @@ func ci(appLogger hclog.Logger, name string) error {
 		},
 	}
 
-	path, err := cic.WriteConfigToISO(ci, "/usr/local/virt")
-	fmt.Println(" the iso is located at: ", path)
+	_, err = cic.WriteConfigToISO(ci, "/home/ubuntu/test/virt")
+
 	return err
 
 }
