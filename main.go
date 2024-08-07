@@ -14,12 +14,10 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/nomad/client/taskenv"
-	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
 func main() {
-	name := "j9"
+	name := "j2"
 	appLogger := hclog.New(&hclog.LoggerOptions{
 		Name:  "virt",
 		Level: hclog.Debug,
@@ -28,20 +26,20 @@ func main() {
 	//fmt.Println(ci(appLogger, name))
 	fmt.Println(createVM(appLogger, name))
 
-	np := virt.NewPlugin(appLogger)
+	/* 	np := virt.NewPlugin(appLogger)
 
-	d, n, err := np.StartTask(&drivers.TaskConfig{
-		ID:            name,
-		AllocID:       name,
-		JobID:         "job-ID",
-		TaskGroupName: "task-group-name",
-		Env: map[string]string{
-			taskenv.AllocDir:     "/alloc",
-			taskenv.TaskLocalDir: "/local",
-			taskenv.SecretsDir:   "/secrets",
-		},
-	})
-	fmt.Println(d, n, err)
+	   	d, n, err := np.StartTask(&drivers.TaskConfig{
+	   		ID:            name,
+	   		AllocID:       name,
+	   		JobID:         "job-ID",
+	   		TaskGroupName: "task-group-name",
+	   		Env: map[string]string{
+	   			taskenv.AllocDir:     "/alloc",
+	   			taskenv.TaskLocalDir: "/local",
+	   			taskenv.SecretsDir:   "/secrets",
+	   		},
+	   	})
+	   	fmt.Println(d, n, err) */
 
 	// Serve the plugin
 	//plugins.Serve(factory)

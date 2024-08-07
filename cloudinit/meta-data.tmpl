@@ -1,6 +1,5 @@
-{{- if .MetaData.InstanceID}}
-instance-id: {{.MetaData.InstanceID}}
+{{- if .MetaData.InstanceID}}instance-id: {{.MetaData.InstanceID}} 
 {{- end }}
-{{- if and .MetaData.LocalHostname (not .UserDataPath)}}
+{{- if and .MetaData.LocalHostname (ne .UserDataPath "")}}
 local-hostname: {{.MetaData.LocalHostname}}
 {{- end}}

@@ -37,7 +37,7 @@ func NewController(logger hclog.Logger) (*Controller, error) {
 
 func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, path string) (string, error) {
 	ciPath := filepath.Join(path + ISOName)
-	c.logger.Debug("creating ci config with", ci, "in", path)
+	c.logger.Debug("creating ci config with", fmt.Sprintf("%+v", ci), "in", path)
 
 	mdb := &bytes.Buffer{}
 	err := executeTemplate(ci, metaDataTemplate, mdb)

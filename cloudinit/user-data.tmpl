@@ -1,2 +1,4 @@
 #cloud-config
+{{- if (eq .UserDataPath "")}}
 local-hostname: {{.MetaData.LocalHostname}}
+{{- end}}

@@ -92,7 +92,7 @@ type TaskConfig struct {
 	NetworkInterface []NetworkInterface `codec:"network_interface"`
 	VNC              *VNC               `codec:"vnc"`
 	TimeZone         *time.Location     `codec:"timezone"`
-	WorkloadIdentity string             `codec:"workload_identity"`
+	CMD              []string           `codec:"cmd"`
 }
 
 type OS struct {

@@ -40,7 +40,7 @@ const (
 	taskHandleVersion = 1
 
 	envVariblesFilePath        = "/etc/profile.d/virt.sh"
-	envVariblesFilePermissions = "0600"
+	envVariblesFilePermissions = "0777"
 )
 
 var (
@@ -220,6 +220,20 @@ func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 	return fp
 }
 
+func appendBootCMDsForMounts(mounts []domain.MountFileConfig) []string {
+	cmds := []string{}
+	for _, m := range mounts {
+		c := []string{
+			fmt.Sprintf("mkdir -p %s", m.Destination),
+			fmt.Sprintf("mountpoint -q %s || mount -t virtiofs %s %s", m.Destination, m.Tag, m.Destination),
+		}
+
+		cmds = append(cmds, c...)
+	}
+
+	return cmds
+}
+
 func createAllocFileMounts(task *drivers.TaskConfig) []domain.MountFileConfig {
 	mounts := []domain.MountFileConfig{
 		{
@@ -289,18 +303,22 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		StartedAt:  h.startedAt,
 	}
 
+	allocFSMounts := createAllocFileMounts(cfg)
+
 	if err := d.virtualizer.CreateDomain(&domain.Config{
 		Name:   cfg.ID,
 		Memory: uint(cfg.Resources.NomadResources.Memory.MemoryMB),
 		//Cores:             int(cfg.Resources.NomadResources.Cpu.ReservedCores[]),
-		CPUs:              int(cfg.Resources.NomadResources.Cpu.CpuShares),
-		OsVariant:         driverConfig.OSVariant.Type,
+		CPUs: int(cfg.Resources.NomadResources.Cpu.CpuShares),
+		//OsVariant:         driverConfig.OSVariant.Type,
 		BaseImage:         driverConfig.ImagePath,
 		DiskFmt:           "qcow2",
 		NetworkInterfaces: []string{"virbr0"},
 		HostName:          cfg.Name,
 		Files:             createEnvsFile(cfg.Env),
-		Mounts:            createAllocFileMounts(cfg),
+		Mounts:            allocFSMounts,
+		BOOTCMDs:          appendBootCMDsForMounts(allocFSMounts),
+		CMDs:              driverConfig.CMD,
 	}); err != nil {
 		return nil, nil, fmt.Errorf("failed to start task: %w", err)
 	}

@@ -23,7 +23,6 @@ type MountFileConfig struct {
 	Source      string
 	Destination string
 	ReadOnly    bool
-	AccessMode  string
 	Tag         string
 }
 
@@ -35,11 +34,12 @@ type Config struct {
 	DiskSize          int
 	Cores             uint
 	CPUs              int
-	OsVariant         string
+	OSType            string //Further optimize the guest configuration for a specific operating system variant
+	Arch              string //Request a non-native CPU architecture for the guest virtual machine.  If omitted, the host CPU architecture will be used in the guest.
+	Machine           string //The machine type to emulate. This will typically not need to be specified for Xen or KVM, but is useful for choosing machine types of more exotic architectures.
 	BaseImage         string
-	DiskFmt           string
+	DiskFmt           string // Image format to be used if creating managed storage. For file volumes, this can be 'raw', 'qcow2', 'vmdk', etc.
 	NetworkInterfaces []string
-	Type              string
 	HostName          string
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
@@ -47,6 +47,7 @@ type Config struct {
 	SSHKey            string
 	Password          string
 	CMDs              []string
+	BOOTCMDs          []string
 	CIUserData        string
 }
 

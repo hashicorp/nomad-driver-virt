@@ -11,10 +11,9 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/nomad v1.8.1
-	github.com/libvirt/libvirt-go-xml v7.4.0+incompatible
 	github.com/stretchr/testify v1.9.0
-	golang.org/x/exp v0.0.0-20240613232115-7f521ea00fb8
 	libvirt.org/go/libvirt v1.10003.0
+	libvirt.org/go/libvirtxml v1.10006.0
 )
 
 require (
@@ -114,6 +113,7 @@ require (
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	github.com/zclconf/go-cty v1.13.0 // indirect
 	golang.org/x/crypto v0.25.0 // indirect
+	golang.org/x/exp v0.0.0-20240613232115-7f521ea00fb8 // indirect
 	golang.org/x/mod v0.19.0 // indirect
 	golang.org/x/net v0.27.0 // indirect
 	golang.org/x/sync v0.7.0 // indirect

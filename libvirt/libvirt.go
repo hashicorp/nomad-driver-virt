@@ -191,7 +191,7 @@ func createCloudInitConfig(config *domain.Config) *domain.CloudInit {
 			LocalHostname: config.Name,
 		},
 		VendorData: domain.VendorData{
-			BootCMD:  addCMDsForMounts(config.Mounts),
+			BootCMD:  config.BOOTCMDs,
 			RunCMD:   config.CMDs,
 			Mounts:   config.Mounts,
 			Files:    config.Files,
@@ -200,20 +200,6 @@ func createCloudInitConfig(config *domain.Config) *domain.CloudInit {
 		},
 		UserDataPath: config.CIUserData,
 	}
-}
-
-func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
-	cmds := []string{}
-	for _, m := range mounts {
-		c := []string{
-			fmt.Sprintf("mkdir -p %s", m.Destination),
-			fmt.Sprintf("mountpoint -q %s || mount -t virtiofs %s %s", m.Destination, m.Tag, m.Destination),
-		}
-
-		cmds = append(cmds, c...)
-	}
-
-	return cmds
 }
 
 func (d *driver) GetDomain(name string) (*libvirt.Domain, error) {
@@ -262,16 +248,16 @@ func (d *driver) DestroyDomain(name string) error {
 // CreateDomain verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
 func (d *driver) CreateDomain(config *domain.Config) error {
-	dom, err := d.GetDomain(config.Name)
+	/* dom, err := d.GetDomain(config.Name)
 	if err != nil {
 		return err
 	}
 
 	if dom != nil {
 		return ErrDomainExists
-	}
+	} */
 
-	err = config.Validate()
+	err := config.Validate()
 	if err != nil {
 		return err
 	}
