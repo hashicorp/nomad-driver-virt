@@ -2,14 +2,19 @@ package cloudinit
 
 import (
 	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/shoenig/test/must"
+	"github.com/stretchr/testify/assert"
 )
 
-/* func TestWriteConfigToISO(t *testing.T) {
+func TestWriteConfigToISO(t *testing.T) {
 	vendorDataTemplate = "/vendor-data.tmpl"
 	userDataTemplate = "/user-data.tmpl"
 	metaDataTemplate = "/meta-data.tmpl"
@@ -95,7 +100,7 @@ import (
 	}
 
 	os.RemoveAll(tempDir)
-} */
+}
 
 func TestExecuteTemplate(t *testing.T) {
 	tests := []struct {
@@ -173,6 +178,51 @@ func TestExecuteTemplate(t *testing.T) {
 			expectError:     false,
 			expectedContent: "#cloud-config",
 		},
+
+		{
+			name: "vendor_data_without_user_data",
+			config: &domain.CloudInit{
+				VendorData: domain.VendorData{
+					Password: "test-password",
+					SSHKey:   "test-sshkey",
+					Files: []domain.File{
+						{
+							Path:        "/here",
+							Content:     "test content",
+							Permissions: "0707",
+						},
+					},
+					Mounts: []domain.MountFileConfig{
+						{
+							Source:      "/source",
+							Tag:         "tag",
+							Destination: "/destination",
+						},
+					},
+					BootCMD: []string{"bootcmd1 arg arg", "bootcmd2 arg arg"},
+					RunCMD:  []string{"cmd1 arg arg", "cmd2 arg arg"},
+				},
+			},
+			templatePath: "/vendor-data.tmpl",
+			expectError:  false,
+			expectedContent: `#cloud-config
+password: test-password
+users:
+  - ssh-authorized-keys: test-sshkey
+mounts:  
+  - [ tag, /destination, "ext4", "defaults", "0", "2" ]
+write_files:  
+  - path: /here
+    content:  test content
+    permissions: '0707'
+    owner: root:root
+runcmd:  
+  - cmd1 arg arg  
+  - cmd2 arg arg
+bootcmd:  
+  - bootcmd1 arg arg  
+  - bootcmd2 arg arg`,
+		},
 		{
 			name: "vendor_data_with_user_data",
 			config: &domain.CloudInit{
@@ -182,7 +232,7 @@ func TestExecuteTemplate(t *testing.T) {
 					Files: []domain.File{
 						{
 							Path:        "/here",
-							Content:     "test content",
+							Content:     "\"test content\"",
 							Permissions: "0707",
 						},
 					},
@@ -200,76 +250,28 @@ func TestExecuteTemplate(t *testing.T) {
 			},
 			templatePath: "/vendor-data.tmpl",
 			expectError:  false,
-			expectedContent: `
-		#cloud-config
-		merge_how:
-		 - name: list
-		   settings: [prepend]
-		 - name: dict
-		   settings: [no_replace, recurse_dict]
-		password: test-password
-		users:
-		  - ssh-authorized-keys: test-sshkey
-		mounts:
-		  - [ tag, /destination, "ext4", "defaults", "0", "2" ]
-		write_files:
-		  - path: /here
-		    content:  test content
-		    permissions: '0707'
-		    owner: root:root
-		runcmd:
-		  - cmd1 arg arg
-		  - cmd2 arg arg
-		bootcmd:
-		  - bootcmd1 arg arg
-		  - bootcmd2 arg arg
-		`,
-		},
-		{
-			name: "vendor_data",
-			config: &domain.CloudInit{
-				VendorData: domain.VendorData{
-					Password: "test-password",
-					SSHKey:   "test-sshkey",
-					Files: []domain.File{
-						{
-							Path:        "/here",
-							Content:     "test content",
-							Permissions: "0707",
-						},
-					},
-					Mounts: []domain.MountFileConfig{
-						{
-							Source:      "/source",
-							Tag:         "tag",
-							Destination: "/destination",
-						},
-					},
-					BootCMD: []string{"bootcmd1 arg arg", "bootcmd2 arg arg"},
-					RunCMD:  []string{"cmd1 arg arg", "cmd2 arg arg"},
-				},
-			},
-			templatePath: "/vendor-data.tmpl",
-			expectError:  false,
-			expectedContent: `
-		#cloud-config
-		password: test-password
-		users:
-		  - ssh-authorized-keys: test-sshkey
-		mounts:
-		  - [ tag, /destination, "ext4", "defaults", "0", "2" ]
-		write_files:
-		  - path: /here
-		    content:  test content
-		    permissions: '0707'
-		    owner: root:root
-		runcmd:
-		  - cmd1 arg arg
-		  - cmd2 arg arg
-		bootcmd:
-		  - bootcmd1 arg arg
-		  - bootcmd2 arg arg
-		`,
+			expectedContent: `#cloud-config
+merge_how:
+ - name: list
+   settings: [prepend]
+ - name: dict
+   settings: [no_replace, recurse_dict]
+password: test-password
+users:
+  - ssh-authorized-keys: test-sshkey
+mounts:  
+  - [ tag, /destination, "ext4", "defaults", "0", "2" ]
+write_files:  
+  - path: /here
+    content:  "test content"
+    permissions: '0707'
+    owner: root:root
+runcmd:  
+  - cmd1 arg arg  
+  - cmd2 arg arg
+bootcmd:  
+  - bootcmd1 arg arg  
+  - bootcmd2 arg arg`,
 		},
 		{
 			name: "invalid_template_path",
@@ -292,7 +294,8 @@ func TestExecuteTemplate(t *testing.T) {
 				must.Error(t, err)
 			} else {
 				must.NoError(t, err)
-				must.StrContains(t, tt.expectedContent, out.String())
+				fmt.Printf(out.String())
+				assert.Equal(t, tt.expectedContent, out.String())
 			}
 		})
 	}
