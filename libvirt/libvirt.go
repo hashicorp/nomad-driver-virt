@@ -53,7 +53,7 @@ var (
 )
 
 type CloudInit interface {
-	WriteConfigToISO(ci *cloudinit.CloudInit, path string) error
+	WriteConfigToISO(ci *cloudinit.Config, path string) error
 }
 
 type driver struct {
@@ -277,12 +277,12 @@ func createEnvsFile(envs map[string]string) cloudinit.File {
 	}
 }
 
-func createCloudInitConfig(config *domain.Config) *cloudinit.CloudInit {
+func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 
 	files := createEnvsFile(config.Env)
 	mounts := addCMDsForMounts(config.Mounts)
 
-	return &cloudinit.CloudInit{
+	return &cloudinit.Config{
 		MetaData: cloudinit.MetaData{
 			InstanceID:    config.Name,
 			LocalHostname: config.HostName,
