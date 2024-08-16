@@ -70,7 +70,7 @@ func NewController(logger hclog.Logger) (*Controller, error) {
 	return c, nil
 }
 
-func (c *Controller) WriteConfigToISO(ci *Config, ciPath string) error {
+func (c *Controller) Apply(ci *Config, ciPath string) error {
 	c.logger.Debug("creating ci config with", fmt.Sprintf("%+v", ci), "in", ciPath)
 
 	mdb := &bytes.Buffer{}
