@@ -9,8 +9,6 @@ import (
 	"os"
 	"text/template"
 
-	domain "github/hashicorp/nomad-driver-virt/internal/shared"
-
 	"github.com/hashicorp/go-hclog"
 )
 
@@ -26,7 +24,7 @@ var (
 	metaDataTemplate   = "meta-data.tmpl"
 )
 
-type CloudInit struct {
+type Config struct {
 	VendorData   VendorData
 	MetaData     MetaData
 	UserDataPath string
@@ -72,7 +70,7 @@ func NewController(logger hclog.Logger) (*Controller, error) {
 	return c, nil
 }
 
-func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, ciPath string) error {
+func (c *Controller) WriteConfigToISO(ci *Config, ciPath string) error {
 	c.logger.Debug("creating ci config with", fmt.Sprintf("%+v", ci), "in", ciPath)
 
 	mdb := &bytes.Buffer{}
@@ -132,7 +130,7 @@ func (c *Controller) WriteConfigToISO(ci *domain.CloudInit, ciPath string) error
 	return nil
 }
 
-func executeTemplate(config *domain.CloudInit, in string, out io.Writer) error {
+func executeTemplate(config *Config, in string, out io.Writer) error {
 	fsys, err := fs.Sub(templateFS, templateFSRoot)
 	if err != nil {
 		return fmt.Errorf("cloud-init: unable to get templates fs: %w", err)
