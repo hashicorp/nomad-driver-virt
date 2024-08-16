@@ -1,0 +1,55 @@
+#cloud-config
+{{- if .UserDataPath}}
+merge_how:
+ - name: list
+   settings: [prepend]
+ - name: dict
+   settings: [no_replace, recurse_dict]
+{{- end}}
+
+{{- if .VendorData.Password }}
+password: {{.VendorData.Password}}
+{{- end }}
+
+{{- if .VendorData.SSHKey }}
+users:
+  {{- if .VendorData.SSHKey }}
+  - ssh-authorized-keys: {{.VendorData.SSHKey }}
+  {{- end }}
+{{- end}}
+
+
+{{- $length_mounts := len .VendorData.Mounts }} {{- if ne $length_mounts 0 }}
+mounts:
+  {{- range .VendorData.Mounts}}  
+  - [ {{.Tag}}, {{.Destination}}, "ext4", "defaults", "0", "2" ]
+  {{- end }}
+{{- end }}
+
+
+{{- $lenght_files := len .VendorData.Files }}{{- if ne $lenght_files 0}}
+write_files:
+  {{- range .VendorData.Files}}  
+  - path: {{.Path}}
+    {{- if .Encoding}} 
+    encoding: {{.Encoding}}
+    {{- end}}
+    content: {{.Content}}
+    permissions: '{{.Permissions}}'
+    owner: root:root
+  {{- end }}
+{{- end }}
+
+{{- $length_cmd := len .VendorData.RunCMD }} {{- if or (ne $length_cmd 0) }}
+runcmd:
+  {{- range .VendorData.RunCMD}}  
+  - {{.}}
+  {{- end }}
+{{- end }}
+
+{{- $length_bcmd := len .VendorData.BootCMD }} {{- if or (ne $length_bcmd 0) }}
+bootcmd:
+  {{- range .VendorData.BootCMD}}  
+  - {{.}}
+  {{- end }}
+{{- end }}

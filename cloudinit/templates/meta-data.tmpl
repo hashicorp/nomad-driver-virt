@@ -1,0 +1,5 @@
+{{- if .MetaData.InstanceID}}instance-id: {{.MetaData.InstanceID}} 
+{{- end }}
+{{- if.MetaData.LocalHostname}}
+local-hostname: {{.MetaData.LocalHostname}}
+{{- end}}
