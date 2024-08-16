@@ -56,10 +56,7 @@ type File struct {
 }
 
 type MountFileConfig struct {
-	Source      string
 	Destination string
-	ReadOnly    bool
-	AccessMode  string
 	Tag         string
 }
 
