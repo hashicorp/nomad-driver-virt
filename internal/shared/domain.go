@@ -111,7 +111,7 @@ type NetworkInterface struct {
 	PortMap     map[string]string
 }
 
-type VirttualizerInfo struct {
+type VirtualizerInfo struct {
 	Model           string
 	Memory          uint64
 	FreeMemory      uint64

@@ -24,16 +24,20 @@ const (
 	defaultURI               = "qemu:///system"
 	defaultVirtualizatioType = "hvm"
 	defaultAccelerator       = "kvm"
-	defaultSecurityMode      = "mapped" // "passthrough"
-	defaultInterfaceModel    = "virtio"
-	libvirtVirtioChannel     = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
+
+	// The mapped security model grants libvirt access to the mounted files
+	// with the same access as qemu has, which is necessary to execute the
+	// mounts and wrie files into the VM.
+	defaultSecurityMode   = "mapped"
+	defaultInterfaceModel = "virtio"
+	libvirtVirtioChannel  = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
 
 	defaultDataDir     = "/var/lib/virt"
-	dataDirPermissions = 777
+	dataDirPermissions = 600
 	storagePoolName    = "virt-sp"
 
 	envVariblesFilePath        = "/etc/profile.d/virt.sh" //Only valid for linux OS
-	envVariblesFilePermissions = "777"
+	envVariblesFilePermissions = "600"
 
 	DOMAIN_RUNNING     = "running"
 	DOMAIN_NOSTATE     = "unknown"
@@ -139,6 +143,8 @@ func (d *driver) monitorCtx(ctx context.Context) {
 	}
 }
 
+// lookForExistingStoragePool will look throught all the define storage pools in
+// the host for the one the plugin uses to create the cloud init configuration files.
 func (d *driver) lookForExistingStoragePool(name string) (*libvirt.StoragePool, error) {
 	sps, err := d.conn.ListAllStoragePools(libvirt.CONNECT_LIST_STORAGE_POOLS_ACTIVE)
 	if err != nil {
@@ -159,6 +165,8 @@ func (d *driver) lookForExistingStoragePool(name string) (*libvirt.StoragePool, 
 	return nil, nil
 }
 
+// New returns a new instance of a libvirt driver controller it will look for
+// an existing libvirt storage pool, and crete one if it is not present.
 func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, error) {
 	ci, err := cloudinit.NewController(logger)
 	if err != nil {
@@ -176,6 +184,8 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 		opt(d)
 	}
 
+	// TODO: verify the data directory exists.
+
 	conn, err := newConnection(d.uri, d.user, d.password)
 	if err != nil {
 		return nil, err
@@ -187,6 +197,8 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 
 	d.logger.Debug("setting up data directory", d.dataDir)
 
+	// For the VM to be able to see the cloudinit condiguration disk as a volume
+	// it needs to be part of a storage pool.
 	found, err := d.lookForExistingStoragePool(storagePoolName)
 	if err != nil {
 		return nil, fmt.Errorf("libvirt: unable to list existing storage pools: %w", err)
@@ -221,7 +233,9 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 	return d, nil
 }
 
-func (d *driver) GetInfo() (domain.VirttualizerInfo, error) {
+// GetInfo returns some basic information about the virtyalization
+// stack running on the host, including libvirt and emulator versions.
+func (d *driver) GetInfo() (domain.VirtualizerInfo, error) {
 	li := domain.VirttualizerInfo{}
 
 	ni, err := d.conn.GetNodeInfo()
@@ -271,7 +285,10 @@ func (d *driver) Close() (int, error) {
 	return d.conn.Close()
 }
 
-func createEnvsFile(envs map[string]string) cloudinit.File {
+// createEnvsFile will create a script that will export all the env variables
+// for the task, and will place i under a folder that garanties its execution
+// at start time.
+func createEnvsScript(envs map[string]string) cloudinit.File {
 	con := []string{}
 
 	for k, v := range envs {
@@ -288,7 +305,13 @@ func createEnvsFile(envs map[string]string) cloudinit.File {
 
 func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 
-	files := createEnvsFile(config.Env)
+	files := createEnvsScript(config.Env)
+
+	// The creation of the file mounts in the vm consists of two steps, the first
+	// is adding the folders as backing memory, which is done in the domain XML
+	// definition, the second part includes creating the folders inside the Vm
+	// and executng the mounts, the addCMDsForMounts function adds these command
+	// to the cloud init boot commands.
 	mounts := addCMDsForMounts(config.Mounts)
 
 	return &cloudinit.Config{
@@ -308,6 +331,8 @@ func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 	}
 }
 
+// addCMDsForMounts ranges over the defined mounts and creates a couple of commands
+// for each mount to create the directory inside the VM and executing the mount.
 func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
 	cmds := []string{}
 	for _, m := range mounts {
@@ -322,6 +347,8 @@ func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
 	return cmds
 }
 
+// getDomain  looks up a domain by name, it returns an error in case there is one
+// or nil if the domain is not found.
 func (d *driver) getDomain(name string) (*libvirt.Domain, error) {
 	dom, err := d.conn.LookupDomainByName(name)
 	if err != nil {
@@ -448,6 +475,8 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	return nil
 }
 
+// GetDomain looks up a domain by name and returns some basic statistics
+// on CPU and memory usage as well as the domain state.
 func (d *driver) GetDomain(name string) (*domain.Info, error) {
 	dom, err := d.getDomain(name)
 	if err != nil {
