@@ -34,6 +34,15 @@ const (
 
 	envVariblesFilePath        = "/etc/profile.d/virt.sh" //Only valid for linux OS
 	envVariblesFilePermissions = "777"
+
+	DOMAIN_RUNNING     = "running"
+	DOMAIN_NOSTATE     = "unknown"
+	DOMAIN_BLOCKED     = "blocked"
+	DOMAIN_PAUSED      = "paused"
+	DOMAIN_SHUTDOWN    = "shutdown"
+	DOMAIN_CRASHED     = "crashed"
+	DOMAIN_PMSUSPENDED = "pmsuspended"
+	DOMAIN_SHUTOFF     = "shutoff"
 )
 
 var (
