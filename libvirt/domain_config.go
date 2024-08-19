@@ -228,6 +228,7 @@ func parceConfiguration(config *domain.Config, cloudInitPath string) (string, er
 		Resource: &libvirtxml.DomainResource{
 			Partition: "/machine",
 		},
+		// TODO: Do the proper mapping between Nomad CPU values and Libvirt configurations
 		/*  CPU: &libvirtxml.DomainCPU{
 			Topology: &libvirtxml.DomainCPUTopology{
 				Cores:   config.CPUs,
