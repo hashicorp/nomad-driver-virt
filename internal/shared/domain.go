@@ -136,8 +136,8 @@ func IsValidLabel(name string) bool {
 	return validLabel.MatchString(name)
 }
 
-// ValidateName returns an error a name is not a valid resource name.
-// The error will contain reference to what constitutes a valid resource name.
+// ValidateHostName returns an error a name is not a valid resource name. The
+// error will contain reference to what constitutes a valid resource name.
 func ValidateHostName(name string) error {
 	if !IsValidLabel(name) || strings.ToLower(name) != name || len(name) > maxNameLength {
 		return ErrInvalidHostName
