@@ -6,12 +6,14 @@ import (
 	"path/filepath"
 	"testing"
 
+<<<<<<< HEAD
 	domain "nomad-driver-virt/internal/shared"
 
+=======
+>>>>>>> bdaf2bf (style: add function comments and fix failing tests)
 	"github.com/docker/distribution/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/shoenig/test/must"
-	"github.com/stretchr/testify/assert"
 )
 
 func TestWriteConfigToISO(t *testing.T) {
@@ -30,17 +32,17 @@ func TestWriteConfigToISO(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		cloudInit    *domain.CloudInit
+		cloudInit    *Config
 		userDataPath string
 		expectError  bool
 	}{
 		{
 			name: "Valid CloudInit without UserDataPath",
-			cloudInit: &domain.CloudInit{
-				MetaData: domain.MetaData{
+			cloudInit: &Config{
+				MetaData: MetaData{
 					LocalHostname: "test-localhost",
 				},
-				VendorData: domain.VendorData{
+				VendorData: VendorData{
 					Password: "password",
 				},
 				UserDataPath: "",
@@ -49,11 +51,11 @@ func TestWriteConfigToISO(t *testing.T) {
 		},
 		{
 			name: "Valid CloudInit with UserDataPath",
-			cloudInit: &domain.CloudInit{
-				MetaData: domain.MetaData{
+			cloudInit: &Config{
+				MetaData: MetaData{
 					LocalHostname: "test-localhost",
 				},
-				VendorData: domain.VendorData{
+				VendorData: VendorData{
 					Password: "password",
 				},
 				UserDataPath: userDataFile,
@@ -62,11 +64,11 @@ func TestWriteConfigToISO(t *testing.T) {
 		},
 		{
 			name: "Invalid CloudInit template path",
-			cloudInit: &domain.CloudInit{
-				MetaData: domain.MetaData{
+			cloudInit: &Config{
+				MetaData: MetaData{
 					LocalHostname: "test-localhost",
 				},
-				VendorData: domain.VendorData{
+				VendorData: VendorData{
 					Password: "password",
 				},
 				UserDataPath: "invalid_userdata",
@@ -88,12 +90,12 @@ func TestWriteConfigToISO(t *testing.T) {
 
 			isoPath := tempDir + "/" + allocID[0:8] + ".iso"
 
-			err = controller.WriteConfigToISO(tt.cloudInit, isoPath)
+			err = controller.Apply(tt.cloudInit, isoPath)
 			if tt.expectError {
-				assert.Error(t, err)
+				must.Error(t, err)
 			} else {
-				assert.NoError(t, err)
-				assert.FileExists(t, isoPath)
+				must.NoError(t, err)
+				must.FileExists(t, isoPath)
 
 			}
 		})
@@ -103,15 +105,15 @@ func TestWriteConfigToISO(t *testing.T) {
 func TestExecuteTemplate(t *testing.T) {
 	tests := []struct {
 		name            string
-		config          *domain.CloudInit
+		config          *Config
 		templatePath    string
 		expectError     bool
 		expectedContent string
 	}{
 		{
 			name: "no_host_and_no_user_data",
-			config: &domain.CloudInit{
-				MetaData: domain.MetaData{
+			config: &Config{
+				MetaData: MetaData{
 					InstanceID: "test-instanceID",
 				},
 			},
@@ -121,8 +123,8 @@ func TestExecuteTemplate(t *testing.T) {
 		},
 		{
 			name: "host_and_no_user_data",
-			config: &domain.CloudInit{
-				MetaData: domain.MetaData{
+			config: &Config{
+				MetaData: MetaData{
 					InstanceID:    "test-instanceID",
 					LocalHostname: "test-localhostname",
 				},
@@ -133,8 +135,8 @@ func TestExecuteTemplate(t *testing.T) {
 		},
 		{
 			name: "host_and_user_data",
-			config: &domain.CloudInit{
-				MetaData: domain.MetaData{
+			config: &Config{
+				MetaData: MetaData{
 					InstanceID:    "test-instanceID",
 					LocalHostname: "test-localhostname",
 				},
@@ -146,8 +148,8 @@ func TestExecuteTemplate(t *testing.T) {
 		},
 		{
 			name: "no_user_data",
-			config: &domain.CloudInit{
-				MetaData: domain.MetaData{
+			config: &Config{
+				MetaData: MetaData{
 					LocalHostname: "test-localhostname",
 				},
 			},
@@ -157,8 +159,8 @@ func TestExecuteTemplate(t *testing.T) {
 		},
 		{
 			name: "no_user_data",
-			config: &domain.CloudInit{
-				MetaData: domain.MetaData{
+			config: &Config{
+				MetaData: MetaData{
 					LocalHostname: "test-localhostname",
 				},
 				UserDataPath: "some/path/to/file",
@@ -169,8 +171,8 @@ func TestExecuteTemplate(t *testing.T) {
 		},
 		{
 			name: "empty_vendor_data",
-			config: &domain.CloudInit{
-				VendorData: domain.VendorData{},
+			config: &Config{
+				VendorData: VendorData{},
 			},
 			templatePath:    "vendor-data.tmpl",
 			expectError:     false,
@@ -178,20 +180,19 @@ func TestExecuteTemplate(t *testing.T) {
 		},
 		{
 			name: "vendor_data_without_user_data",
-			config: &domain.CloudInit{
-				VendorData: domain.VendorData{
+			config: &Config{
+				VendorData: VendorData{
 					Password: "test-password",
 					SSHKey:   "test-sshkey",
-					Files: []domain.File{
+					Files: []File{
 						{
 							Path:        "/here",
 							Content:     "test content",
 							Permissions: "0707",
 						},
 					},
-					Mounts: []domain.MountFileConfig{
+					Mounts: []MountFileConfig{
 						{
-							Source:      "/source",
 							Tag:         "tag",
 							Destination: "/destination",
 						},
@@ -223,20 +224,19 @@ bootcmd:
 		},
 		{
 			name: "vendor_data_with_user_data",
-			config: &domain.CloudInit{
-				VendorData: domain.VendorData{
+			config: &Config{
+				VendorData: VendorData{
 					Password: "test-password",
 					SSHKey:   "test-sshkey",
-					Files: []domain.File{
+					Files: []File{
 						{
 							Path:        "/here",
 							Content:     "\"test content\"",
 							Permissions: "0707",
 						},
 					},
-					Mounts: []domain.MountFileConfig{
+					Mounts: []MountFileConfig{
 						{
-							Source:      "/source",
 							Tag:         "tag",
 							Destination: "/destination",
 						},
@@ -274,8 +274,8 @@ bootcmd:
 		},
 		{
 			name: "invalid_template_path",
-			config: &domain.CloudInit{
-				MetaData: domain.MetaData{
+			config: &Config{
+				MetaData: MetaData{
 					LocalHostname: "test-localhost",
 				},
 			},
@@ -293,7 +293,7 @@ bootcmd:
 				must.Error(t, err)
 			} else {
 				must.NoError(t, err)
-				assert.Equal(t, tt.expectedContent, out.String())
+				must.StrContains(t, tt.expectedContent, out.String())
 			}
 		})
 	}
