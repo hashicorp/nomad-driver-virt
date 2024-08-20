@@ -15,7 +15,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/nomad v1.8.1
 	github.com/shoenig/test v1.7.1
-	github.com/stretchr/testify v1.9.0
 	libvirt.org/go/libvirt v1.10003.0
 	libvirt.org/libvirt-go-xml v7.4.0+incompatible
 )
@@ -129,7 +128,6 @@ require (
 	google.golang.org/protobuf v1.34.2 // indirect
 	gopkg.in/fsnotify.v1 v1.4.7 // indirect
 	gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 	kernel.org/pub/linux/libs/security/libcap/psx v1.2.69 // indirect
 	oss.indeed.com/go/libtime v1.6.0 // indirect
 )
