@@ -8,11 +8,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	domain "github/hashicorp/nomad-driver-virt/internal/shared"
 	"github/hashicorp/nomad-driver-virt/libvirt"
-	"github/hashicorp/nomad-driver-virt/virt"
-
-	"github.com/hashicorp/go-hclog"
 )
 
 func main() {
@@ -52,8 +50,8 @@ func main() {
 	}
 
 	ci := domain.CloudInit{
-		Enable:            true,
-		ProvideUserData:   false,
+		Enable:          true,
+		ProvideUserData: false,
 	}
 
 	mounts := []domain.MountFileConfig{
@@ -114,9 +112,4 @@ func main() {
 
 	// Serve the plugin
 	//plugins.Serve(factory)
-}
-
-// factory returns a new instance of a nomad driver plugin
-func factory(log hclog.Logger) interface{} {
-	return virt.NewPlugin(log)
 }

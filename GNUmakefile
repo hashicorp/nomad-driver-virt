@@ -9,7 +9,7 @@ GO111MODULE = on
 # Attempt to use gotestsum for running tests, otherwise fallback to go test.
 GO_TEST_CMD = $(if $(shell command -v gotestsum 2>/dev/null),gotestsum --,go test)
 
-default: check-go-mod test build
+default: check-go-mod lint test build
 
 .PHONY: clean
 clean: ## Remove build artifacts
@@ -21,6 +21,23 @@ clean: ## Remove build artifacts
 build: ## Compile the current driver codebase
 	@echo "==> Compiling binary..."
 	@go build -race -trimpath -o ${PLUGIN_BINARY} .
+	@echo "==> Done"
+
+.PHONY: lint
+lint: ## Lint and vet the codebase
+	@echo "==> Linting source code..."
+	@golangci-lint run .
+	@echo "==> Done"
+
+	@echo "==> Linting hclog statements..."
+	@hclogvet .
+	@echo "==> Done"
+
+.PHONY: lint-tools
+lint-tools: ## Install the tools used to run lint and vet
+	@echo "==> Installing lint and vet tools..."
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.60.1
+	go install github.com/hashicorp/go-hclog/hclogvet@v0.2.0
 	@echo "==> Done"
 
 .PHONY: test-tools
