@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	domain "github/hashicorp/nomad-driver-virt/internal/shared"
-	"github/hashicorp/nomad-driver-virt/libvirt"
+	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/libvirt"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"

@@ -12,7 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	domain "github/hashicorp/nomad-driver-virt/internal/shared"
+	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 
 	"github.com/hashicorp/go-hclog"
 	"libvirt.org/go/libvirt"

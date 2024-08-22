@@ -9,7 +9,7 @@ import (
 	"os"
 	"strings"
 
-	domain "github/hashicorp/nomad-driver-virt/internal/shared"
+	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 )
 
 type cloudinitConfig struct {

@@ -1,4 +1,4 @@
-module github/hashicorp/nomad-driver-virt
+module github.com/hashicorp/nomad-driver-virt
 
 go 1.22
 
