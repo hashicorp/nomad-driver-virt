@@ -12,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
-
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 
 	"github.com/hashicorp/go-hclog"
@@ -24,20 +23,16 @@ const (
 	defaultURI               = "qemu:///system"
 	defaultVirtualizatioType = "hvm"
 	defaultAccelerator       = "kvm"
+	defaultSecurityMode      = "mapped" // "passthrough"
+	defaultInterfaceModel    = "virtio"
+	libvirtVirtioChannel     = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
 
-	// The mapped security model grants libvirt access to the mounted files
-	// with the same access as qemu has, which is necessary to execute the
-	// mounts and wrie files into the VM.
-	defaultSecurityMode   = "mapped"
-	defaultInterfaceModel = "virtio"
-	libvirtVirtioChannel  = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
-
-	defaultDataDir     = "/var/lib/virt"
-	dataDirPermissions = 600
+	defaultDataDir     = "/opt/virt/"
+	dataDirPermissions = 777
 	storagePoolName    = "virt-sp"
 
 	envVariblesFilePath        = "/etc/profile.d/virt.sh" //Only valid for linux OS
-	envVariblesFilePermissions = "600"
+	envVariblesFilePermissions = "777"
 
 	DOMAIN_RUNNING     = "running"
 	DOMAIN_NOSTATE     = "unknown"
@@ -54,19 +49,19 @@ var (
 	ErrDomainNotFound = errors.New("the domain does not exist")
 
 	nomadDomainStates = map[libvirt.DomainState]string{
-		libvirt.DOMAIN_RUNNING:     "running",
-		libvirt.DOMAIN_NOSTATE:     "unknown",
-		libvirt.DOMAIN_BLOCKED:     "blocked",
-		libvirt.DOMAIN_PAUSED:      "paused",
-		libvirt.DOMAIN_SHUTDOWN:    "shutdown",
-		libvirt.DOMAIN_CRASHED:     "crashed",
-		libvirt.DOMAIN_PMSUSPENDED: "pmsuspended",
-		libvirt.DOMAIN_SHUTOFF:     "shutoff",
+		libvirt.DOMAIN_RUNNING:     DOMAIN_RUNNING,
+		libvirt.DOMAIN_NOSTATE:     DOMAIN_NOSTATE,
+		libvirt.DOMAIN_BLOCKED:     DOMAIN_BLOCKED,
+		libvirt.DOMAIN_PAUSED:      DOMAIN_PAUSED,
+		libvirt.DOMAIN_SHUTDOWN:    DOMAIN_SHUTDOWN,
+		libvirt.DOMAIN_CRASHED:     DOMAIN_CRASHED,
+		libvirt.DOMAIN_PMSUSPENDED: DOMAIN_PMSUSPENDED,
+		libvirt.DOMAIN_SHUTOFF:     DOMAIN_SHUTOFF,
 	}
 )
 
 type CloudInit interface {
-	WriteConfigToISO(ci *cloudinit.Config, path string) error
+	Apply(ci *cloudinit.Config, path string) error
 }
 
 type driver struct {
@@ -143,8 +138,6 @@ func (d *driver) monitorCtx(ctx context.Context) {
 	}
 }
 
-// lookForExistingStoragePool will look throught all the define storage pools in
-// the host for the one the plugin uses to create the cloud init configuration files.
 func (d *driver) lookForExistingStoragePool(name string) (*libvirt.StoragePool, error) {
 	sps, err := d.conn.ListAllStoragePools(libvirt.CONNECT_LIST_STORAGE_POOLS_ACTIVE)
 	if err != nil {
@@ -165,8 +158,6 @@ func (d *driver) lookForExistingStoragePool(name string) (*libvirt.StoragePool, 
 	return nil, nil
 }
 
-// New returns a new instance of a libvirt driver controller it will look for
-// an existing libvirt storage pool, and crete one if it is not present.
 func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, error) {
 	ci, err := cloudinit.NewController(logger)
 	if err != nil {
@@ -184,7 +175,10 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 		opt(d)
 	}
 
-	// TODO: verify the data directory exists.
+	err = createDataDirectory(d.dataDir)
+	if err != nil {
+		return nil, fmt.Errorf("libvirt: unable to create data dir: %w", err)
+	}
 
 	conn, err := newConnection(d.uri, d.user, d.password)
 	if err != nil {
@@ -195,10 +189,8 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 
 	go d.monitorCtx(ctx)
 
-	d.logger.Debug("setting up data directory", d.dataDir)
+	d.logger.Info("setting up data directory", d.dataDir)
 
-	// For the VM to be able to see the cloudinit condiguration disk as a volume
-	// it needs to be part of a storage pool.
 	found, err := d.lookForExistingStoragePool(storagePoolName)
 	if err != nil {
 		return nil, fmt.Errorf("libvirt: unable to list existing storage pools: %w", err)
@@ -219,7 +211,7 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 			return nil, err
 		}
 
-		d.logger.Debug("creating storage pool")
+		d.logger.Info("creating storage pool")
 		found, err = d.conn.StoragePoolCreateXML(spXML, 0)
 		if err != nil {
 			return nil, fmt.Errorf("libvirt: unable to create storage pool: %w", err)
@@ -227,16 +219,14 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 		}
 	}
 
-	d.logger.Debug("assigning storage pool")
+	d.logger.Info("assigning storage pool")
 	d.sp = found
 
 	return d, nil
 }
 
-// GetInfo returns some basic information about the virtyalization
-// stack running on the host, including libvirt and emulator versions.
 func (d *driver) GetInfo() (domain.VirtualizerInfo, error) {
-	li := domain.VirttualizerInfo{}
+	li := domain.VirtualizerInfo{}
 
 	ni, err := d.conn.GetNodeInfo()
 	if err != nil {
@@ -285,10 +275,7 @@ func (d *driver) Close() (int, error) {
 	return d.conn.Close()
 }
 
-// createEnvsFile will create a script that will export all the env variables
-// for the task, and will place i under a folder that garanties its execution
-// at start time.
-func createEnvsScript(envs map[string]string) cloudinit.File {
+func createEnvsFile(envs map[string]string) cloudinit.File {
 	con := []string{}
 
 	for k, v := range envs {
@@ -305,14 +292,37 @@ func createEnvsScript(envs map[string]string) cloudinit.File {
 
 func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 
-	files := createEnvsScript(config.Env)
+	ms := []cloudinit.MountFileConfig{}
+	for _, m := range config.Mounts {
+		mount := cloudinit.MountFileConfig{
+			Destination: m.Destination,
+			Tag:         m.Tag,
+		}
 
-	// The creation of the file mounts in the vm consists of two steps, the first
-	// is adding the folders as backing memory, which is done in the domain XML
-	// definition, the second part includes creating the folders inside the Vm
-	// and executng the mounts, the addCMDsForMounts function adds these command
-	// to the cloud init boot commands.
-	mounts := addCMDsForMounts(config.Mounts)
+		ms = append(ms, mount)
+	}
+
+	// The process to have directories mounted on the VM consists on two steps,
+	// one is declaring them as backing storage in the VM and the second is to
+	// create the directory inside the VM and executing the mount. These commands
+	// are added here for cloud init to execute on boot.
+	mountCMDs := addCMDsForMounts(ms)
+
+	fs := []cloudinit.File{}
+	for _, f := range config.Files {
+		file := cloudinit.File{
+			Path:        f.Path,
+			Content:     f.Content,
+			Permissions: f.Permissions,
+			Encoding:    f.Encoding,
+			Owner:       f.Owner,
+			Group:       f.Group,
+		}
+
+		fs = append(fs, file)
+	}
+
+	//fs = append(fs, envFile)
 
 	return &cloudinit.Config{
 		MetaData: cloudinit.MetaData{
@@ -320,10 +330,10 @@ func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 			LocalHostname: config.HostName,
 		},
 		VendorData: cloudinit.VendorData{
-			BootCMD:  append(config.BOOTCMDs, mounts...),
+			BootCMD:  append(config.BOOTCMDs, mountCMDs...),
 			RunCMD:   config.CMDs,
-			Mounts:   config.Mounts,
-			Files:    append(config.Files, files),
+			Mounts:   ms,
+			Files:    fs,
 			Password: config.Password,
 			SSHKey:   config.SSHKey,
 		},
@@ -331,9 +341,7 @@ func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 	}
 }
 
-// addCMDsForMounts ranges over the defined mounts and creates a couple of commands
-// for each mount to create the directory inside the VM and executing the mount.
-func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
+func addCMDsForMounts(mounts []cloudinit.MountFileConfig) []string {
 	cmds := []string{}
 	for _, m := range mounts {
 		c := []string{
@@ -347,8 +355,6 @@ func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
 	return cmds
 }
 
-// getDomain  looks up a domain by name, it returns an error in case there is one
-// or nil if the domain is not found.
 func (d *driver) getDomain(name string) (*libvirt.Domain, error) {
 	dom, err := d.conn.LookupDomainByName(name)
 	if err != nil {
@@ -364,7 +370,7 @@ func (d *driver) getDomain(name string) (*libvirt.Domain, error) {
 }
 
 func (d *driver) StopDomain(name string) error {
-	d.logger.Warn("suspending domain", name)
+	d.logger.Warn("stoping domain", name)
 	dom, err := d.getDomain(name)
 	if err != nil {
 		return err
@@ -383,7 +389,7 @@ func (d *driver) StopDomain(name string) error {
 }
 
 func (d *driver) DestroyDomain(name string) error {
-	d.logger.Info("destroying domain", name)
+	d.logger.Warn("destroying domain", "name", name)
 	dom, err := d.getDomain(name)
 	if err != nil {
 		return err
@@ -418,29 +424,22 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		return ErrDomainExists
 	}
 
-	d.logger.Debug("domain doesn't exits, creating it")
+	d.logger.Debug("domain doesn't exits, creating it", config.Name)
 
-	err = config.Validate()
-	if err != nil {
-		return err
-	}
-
-	d.logger.Debug("configuration is valid")
-
-	isoPath := d.dataDir + "/" + config.Name + ".iso"
+	cloudInitConfigPath := d.dataDir + "/" + config.Name + ".iso"
 	defer func() {
 		if config.RemoveConfigFiles {
-			err := os.Remove(isoPath)
+			err := os.Remove(cloudInitConfigPath)
 			if err != nil {
-				d.logger.Warn("unable to remove iso", err)
+				d.logger.Warn("unable to remove cloudinit configFile", err)
 			}
 		}
 	}()
 
 	cic := createCloudInitConfig(config)
-	d.logger.Debug("creating iso with data: ", fmt.Sprintf("%+v", cic))
+	d.logger.Debug("creating ci configuration: ", fmt.Sprintf("%+v", cic))
 
-	err = d.ci.WriteConfigToISO(cic, isoPath)
+	err = d.ci.Apply(cic, cloudInitConfigPath)
 	if err != nil {
 		return fmt.Errorf("libvirt: unable to create cidata: %w", err)
 	}
@@ -454,7 +453,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	if config.XMLConfig != "" {
 		domXML = config.XMLConfig
 	} else {
-		domXML, err = parceConfiguration(config, isoPath)
+		domXML, err = parceConfiguration(config, cloudInitConfigPath)
 		if err != nil {
 			return fmt.Errorf("libvirt: unable to parce domain configuration: %w", err)
 		}
@@ -475,8 +474,6 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	return nil
 }
 
-// GetDomain looks up a domain by name and returns some basic statistics
-// on CPU and memory usage as well as the domain state.
 func (d *driver) GetDomain(name string) (*domain.Info, error) {
 	dom, err := d.getDomain(name)
 	if err != nil {
@@ -492,10 +489,22 @@ func (d *driver) GetDomain(name string) (*domain.Info, error) {
 		return nil, fmt.Errorf("libvirt: unable to get domains: %w", err)
 	}
 
+	/* 	cpu_stats, err := dom.GetCPUStats(-1, 1, 0) // DomainCPUStats
+	   	if err != nil {
+	   		return nil, fmt.Errorf("libvirt: can not get cpu_stats: %w", err)
+	   	} */
+
+	/* RSSMem, err := dom.MemoryStats(uint32(libvirt.DOMAIN_MEMORY_STAT_RSS), 0) // MemoryStats
+	if err != nil {
+		return nil, fmt.Errorf("libvirt: can not get memory_stats: %w", err)
+	} */
+
 	return &domain.Info{
-		State:   nomadDomainStates[info.State],
-		Memory:  info.Memory,
-		CpuTime: info.CpuTime,
+		State:     nomadDomainStates[info.State],
+		Memory:    info.Memory,
+		MaxMemory: info.MaxMem,
+		CPUTime:   info.CpuTime,
+		NrVirtCPU: info.NrVirtCpu,
 	}, nil
 }
 
@@ -518,24 +527,10 @@ func (d *driver) GetAllDomains() ([]string, error) {
 	return dns, nil
 }
 
-func cleanUpDomainFolder(path string) error {
-	return deleteDir(path)
-}
-
-func dirExists(dirname string) bool {
-	info, err := os.Stat(dirname)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return info.IsDir()
-}
-
-func deleteDir(name string) error {
-	if dirExists(name) {
-		err := os.RemoveAll(name)
-		if err != nil {
-			return fmt.Errorf("libvirt: failed to delete directory: %w", err)
-		}
+func createDataDirectory(path string) error {
+	err := os.MkdirAll(path, dataDirPermissions)
+	if err != nil {
+		return err
 	}
 
 	return nil

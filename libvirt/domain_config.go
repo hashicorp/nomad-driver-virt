@@ -17,7 +17,7 @@ func parceConfiguration(config *domain.Config, cloudInitPath string) (string, er
 			Device: "disk",
 			Driver: &libvirtxml.DomainDiskDriver{
 				Name: "qemu",
-				Type: "qcow2",
+				Type: config.DiskFmt,
 			},
 			Source: &libvirtxml.DomainDiskSource{
 				File: &libvirtxml.DomainDiskSourceFile{
@@ -148,21 +148,15 @@ func parceConfiguration(config *domain.Config, cloudInitPath string) (string, er
 		},
 		Devices: &libvirtxml.DomainDeviceList{
 			Controllers: []libvirtxml.DomainController{
+				// Used for the base image disk
 				{
 					Type:  "virtio-serial",
 					Index: &cero,
 				},
+				// Used for the cloud init iso (CDROOM) disk
 				{
 					Type:  "sata",
 					Index: &cero,
-				},
-				{
-					Type:  "ide",
-					Index: &cero,
-				},
-				{
-					Type:  "pci",
-					Model: "pci-root",
 				},
 			},
 			Serials: []libvirtxml.DomainSerial{
@@ -228,7 +222,6 @@ func parceConfiguration(config *domain.Config, cloudInitPath string) (string, er
 		Resource: &libvirtxml.DomainResource{
 			Partition: "/machine",
 		},
-		// TODO: Do the proper mapping between Nomad CPU values and Libvirt configurations
 		/*  CPU: &libvirtxml.DomainCPU{
 			Topology: &libvirtxml.DomainCPUTopology{
 				Cores:   config.CPUs,

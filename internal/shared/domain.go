@@ -124,9 +124,11 @@ type VirtualizerInfo struct {
 }
 
 type Info struct {
-	State   string
-	Memory  uint64
-	CpuTime uint64
+	State     string
+	Memory    uint64
+	CPUTime   uint64
+	MaxMemory uint64
+	NrVirtCPU uint
 }
 
 // IsValidLabel returns true if the string given is a valid DNS label (RFC 1123).
