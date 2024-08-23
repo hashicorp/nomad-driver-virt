@@ -26,7 +26,7 @@ build: ## Compile the current driver codebase
 .PHONY: lint
 lint: ## Lint and vet the codebase
 	@echo "==> Linting source code..."
-	@golangci-lint run .
+	@golangci-lint run --timeout=5m .
 	@echo "==> Done"
 
 	@echo "==> Linting hclog statements..."

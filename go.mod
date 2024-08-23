@@ -9,9 +9,12 @@ toolchain go1.22.5
 replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.3
 
 require (
+	github.com/diskfs/go-diskfs v1.4.1
+	github.com/docker/distribution v2.8.3+incompatible
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/nomad v1.8.1
+	github.com/shoenig/test v1.7.1
 	libvirt.org/go/libvirt v1.10003.0
 	libvirt.org/libvirt-go-xml v7.4.0+incompatible
 )
@@ -30,6 +33,7 @@ require (
 	github.com/cenkalti/backoff/v3 v3.2.2 // indirect
 	github.com/container-storage-interface/spec v1.7.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/djherbis/times v1.6.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/fatih/color v1.17.0 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
@@ -102,7 +106,6 @@ require (
 	github.com/shirou/gopsutil/v3 v3.23.9 // indirect
 	github.com/shoenig/go-landlock v1.2.0 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
-	github.com/shoenig/test v1.7.1 // indirect
 	github.com/shopspring/decimal v1.3.1 // indirect
 	github.com/spf13/cast v1.5.0 // indirect
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
