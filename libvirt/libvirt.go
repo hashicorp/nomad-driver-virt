@@ -11,7 +11,7 @@ import (
 	"os"
 	"strings"
 
-	"github/hashicorp/nomad-driver-virt/cloudinit"
+	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 
