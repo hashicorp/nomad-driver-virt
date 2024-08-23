@@ -6,11 +6,6 @@ import (
 	"path/filepath"
 	"testing"
 
-<<<<<<< HEAD
-	domain "nomad-driver-virt/internal/shared"
-
-=======
->>>>>>> bdaf2bf (style: add function comments and fix failing tests)
 	"github.com/docker/distribution/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/shoenig/test/must"
