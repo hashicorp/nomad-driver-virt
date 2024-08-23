@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	domain "github/hashicorp/nomad-driver-virt/internal/shared"
-	"github/hashicorp/nomad-driver-virt/libvirt"
+	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/libvirt"
 )
 
 func main() {
