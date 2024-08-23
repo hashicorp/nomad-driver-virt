@@ -4,7 +4,7 @@
 package main
 
 import (
-	"github/hashicorp/nomad-driver-virt/virt"
+	"github.com/hashicorp/nomad-driver-virt/virt"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/plugins"
