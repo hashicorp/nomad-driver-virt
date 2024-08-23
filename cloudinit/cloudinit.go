@@ -37,14 +37,6 @@ type MetaData struct {
 	LocalHostname string
 }
 
-type MountFileConfig struct {
-	Source      string
-	Destination string
-	ReadOnly    bool
-	AccessMode  string
-	Tag         string
-}
-
 type VendorData struct {
 	Password string
 	SSHKey   string
@@ -61,6 +53,14 @@ type File struct {
 	Encoding    string
 	Owner       string
 	Group       string
+}
+
+type MountFileConfig struct {
+	Source      string
+	Destination string
+	ReadOnly    bool
+	AccessMode  string
+	Tag         string
 }
 
 type Controller struct {

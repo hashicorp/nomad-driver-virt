@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	domain "github/hashicorp/nomad-driver-virt/internal/shared"
+	domain "nomad-driver-virt/internal/shared"
 
 	"github.com/docker/distribution/uuid"
 	"github.com/hashicorp/go-hclog"
