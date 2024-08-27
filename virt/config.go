@@ -1,27 +1,31 @@
-// Copyright (c) HashiCorp, Inc.
-// SPDX-License-Identifier: MPL-2.0
-
 package virt
 
 import (
 	"time"
 
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 )
 
 var (
-	// configSpec is the specification of the plugin's configuration
-	// this is used to validate the configuration specified for the plugin
-	// on the client.
-	// this is not global, but can be specified on a per-client basis.
 	configSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-		"emulator": hclspec.NewDefault(
-			hclspec.NewAttr("emulator", "string", false),
-			hclspec.NewLiteral(`"/usr/bin/qemu-system-x86_64"`),
+		"emulator": hclspec.NewBlock("emulator", false, hclspec.NewObject(map[string]*hclspec.Spec{
+			"uri": hclspec.NewDefault(
+				hclspec.NewAttr("uri", "string", false),
+				hclspec.NewLiteral(`"qemu:///system"`),
+			),
+			"user":     hclspec.NewAttr("user", "string", false),
+			"password": hclspec.NewAttr("password", "string", false),
+		})),
+
+		"data_dir": hclspec.NewDefault(
+			hclspec.NewAttr("data_dir", "string", false),
+			hclspec.NewLiteral(`"/opt/virt"`),
 		),
+		"image_paths": hclspec.NewAttr("image_paths", "list(string)", false),
 	})
 
 	// taskConfigSpec is the specification of the plugin's configuration for
@@ -29,29 +33,21 @@ var (
 	// this is used to validated the configuration specified for the plugin
 	// when a job is submitted.
 	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-		"type": hclspec.NewAttr("type", "string", true),
-
-		"os": hclspec.NewBlock("os", true, hclspec.NewObject(map[string]*hclspec.Spec{
-			"arch":    hclspec.NewAttr("arch", "string", true),
-			"machine": hclspec.NewAttr("machine", "string", true),
-			"type":    hclspec.NewAttr("type", "string", true),
+		"use_thin_copy":                   hclspec.NewAttr("use_thin_copy", "bool", false),
+		"image":                           hclspec.NewAttr("image", "string", true),
+		"hostname":                        hclspec.NewAttr("hostname", "string", false),
+		"user_data":                       hclspec.NewAttr("user_data", "string", false),
+		"default_user_authorized_ssh_key": hclspec.NewAttr("default_user_authorized_ssh_key", "string", false),
+		"default_user_password":           hclspec.NewAttr("default_user_password", "string", false),
+		"cmds":                            hclspec.NewAttr("cmds", "list(string)", false),
+		"os": hclspec.NewBlock("os", false, hclspec.NewObject(map[string]*hclspec.Spec{
+			"arch":    hclspec.NewAttr("arch", "string", false),
+			"machine": hclspec.NewAttr("machine", "string", false),
 		})),
-
-		"disk": hclspec.NewBlockList("disk", hclspec.NewObject(map[string]*hclspec.Spec{
-			"source": hclspec.NewAttr("source", "string", true),
-			"driver": hclspec.NewBlock("driver", true, hclspec.NewObject(map[string]*hclspec.Spec{
-				"name": hclspec.NewAttr("name", "string", true),
-				"type": hclspec.NewAttr("type", "string", true),
-			})),
-			"target": hclspec.NewAttr("target", "string", true),
-			"device": hclspec.NewAttr("device", "string", true),
-		})),
-
-		"network_interface": net.NetworkInterfaceHCLSpec(),
-
-		"vnc": hclspec.NewBlock("vnc", false, hclspec.NewObject(map[string]*hclspec.Spec{
-			"port":      hclspec.NewAttr("port", "number", false),
-			"websocket": hclspec.NewAttr("websocket", "number", false),
+		"network_interface": hclspec.NewBlockList("network_interface", hclspec.NewObject(map[string]*hclspec.Spec{
+			"network_name": hclspec.NewAttr("network_name", "string", false),
+			"address":      hclspec.NewAttr("address", "string", false),
+			"port_map":     hclspec.NewAttr("port_map", "list(map(number))", false),
 		})),
 	})
 
@@ -85,21 +81,19 @@ var (
 	}
 )
 
-// Config contains configuration information for the plugin
-type Config struct {
-	URI string `codec:"uri"`
-}
-
 // TaskConfig contains configuration information for a task that runs within
 // this plugin.
 type TaskConfig struct {
-	ImagePath        string         `codec:"image"`
-	Type             string         `codec:"type"`
-	OSVariant        OS             `codec:"os"`
-	Disk             []Disk         `codec:"disk"`
-	VNC              *VNC           `codec:"vnc"`
-	TimeZone         *time.Location `codec:"timezone"`
-	WorkloadIdentity string         `codec:"workload_identity"`
+	ImagePath           string             `codec:"image"`
+	Hostname            string             `codec:"hostname"`
+	OS                  *OS                `codec:"os"`
+	UserData            string             `codec:"user_data"`
+	NetworkInterface    []NetworkInterface `codec:"network_interface"`
+	TimeZone            *time.Location     `codec:"timezone"`
+	CMDs                []string           `codec:"cmds"`
+	DefaultUserSSHKey   string             `codec:"default_user_authorized_ssh_key"`
+	DefaultUserPassword string             `codec:"default_user_password"`
+	UseThinCopy         bool               `codec:"use_thin_copy"`
 
 	// The list of network interfaces that should be added to the VM.
 	net.NetworkInterfacesConfig `codec:"network_interface"`
@@ -108,27 +102,24 @@ type TaskConfig struct {
 type OS struct {
 	Arch    string `codec:"arch"`
 	Machine string `codec:"machine"`
-	Type    string `codec:"type"`
-}
-
-type Disk struct {
-	Source string `codec:"source"`
-	Target string `codec:"target"`
-	Device string `codec:"device"`
-	Driver Driver `codec:"driver"`
-}
-
-type Driver struct {
-	Name string `codec:"name"`
-	Type string `codec:"type"`
 }
 
 type NetworkInterface struct {
-	NetworkName string `codec:"network_name"`
-	Address     string `codec:"address"`
+	NetworkName string             `codec:"network_name"`
+	Address     string             `codec:"address"`
+	PortMap     hclutils.MapStrInt `codec:"port_map"`
 }
 
-type VNC struct {
-	Port      int `codec:"port"`
-	Websocket int `codec:"websocket"`
+type Emulator struct {
+	URI      string `codec:"uri"`
+	User     string `codec:"user"`
+	Password string `codec:"password"`
+}
+
+// Config contains configuration information for the plugin
+type Config struct {
+	Emulator Emulator `codec:"emulator"`
+	DataDir  string   `codec:"data_dir"`
+	// ImagePaths is an allow-list of paths qemu is allowed to load an image from
+	ImagePaths []string `codec:"image_paths"`
 }
