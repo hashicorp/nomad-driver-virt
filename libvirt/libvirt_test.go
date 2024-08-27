@@ -259,7 +259,7 @@ func TestStartDomain(t *testing.T) {
 	}
 }
 
-func TestCreate_StopAndDestroyDomain(t *testing.T) {
+func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	tempDataDir, err := os.MkdirTemp("", "testdir_*")
 	must.NoError(t, err)
 
