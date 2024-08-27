@@ -186,7 +186,7 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 
 	go d.monitorCtx(ctx)
 
-	d.logger.Info("setting up data directory", d.dataDir)
+	d.logger.Info("setting up data directory", "path", d.dataDir)
 
 	found, err := d.lookForExistingStoragePool(storagePoolName)
 	if err != nil {
@@ -341,13 +341,15 @@ func addCMDsForMounts(mounts []cloudinit.MountFileConfig) []string {
 	return cmds
 }
 
+// getDomain looks up a domain by name, if an error ocurred, it will be returned.
+// If no domain is found, nil is returned.
 func (d *driver) getDomain(name string) (*libvirt.Domain, error) {
 	dom, err := d.conn.LookupDomainByName(name)
 	if err != nil {
 		lverr, ok := err.(libvirt.Error)
 		if ok {
 			if lverr.Code != libvirt.ERR_NO_DOMAIN {
-				return nil, fmt.Errorf("libvirt: unable to verify exiting domains: %w", err)
+				return nil, fmt.Errorf("libvirt: unable to verify exiting domains %s: %w", name, err)
 			}
 		}
 	}
@@ -355,8 +357,11 @@ func (d *driver) getDomain(name string) (*libvirt.Domain, error) {
 	return dom, nil
 }
 
+// StopDomain will set a domain to shutoff, but it will still be present as
+// inactive and can be restarted.
 func (d *driver) StopDomain(name string) error {
-	d.logger.Warn("stoping domain", name)
+	d.logger.Warn("stopping domain", "name", name)
+
 	dom, err := d.getDomain(name)
 	if err != nil {
 		return err
@@ -374,8 +379,11 @@ func (d *driver) StopDomain(name string) error {
 	return nil
 }
 
+// DestroyDomian destroys and undefines a domain, meaning it will be completely
+// removes it.
 func (d *driver) DestroyDomain(name string) error {
 	d.logger.Warn("destroying domain", "name", name)
+
 	dom, err := d.getDomain(name)
 	if err != nil {
 		return err
@@ -387,17 +395,20 @@ func (d *driver) DestroyDomain(name string) error {
 
 	err = dom.Destroy()
 	if err != nil {
+		// In case we want to destroy a domain that was previoulsy stopped, destroy
+		// is not idempotent and will throw the error operation invalid if the
+		// domain is already stopped.
 		lverr, ok := err.(libvirt.Error)
 		if ok {
 			if lverr.Code != libvirt.ERR_OPERATION_INVALID {
-				return fmt.Errorf("libvirt: unable to destroy domain: %w", err)
+				return fmt.Errorf("libvirt: unable to destroy domain %s: %w", name, err)
 			}
 		}
 	}
 
 	err = dom.Undefine()
 	if err != nil {
-		return fmt.Errorf("libvirt: unable to undefine doman %s: %w", name, err)
+		return fmt.Errorf("libvirt: unable to undefine domain %s: %w", name, err)
 	}
 
 	return nil
@@ -433,12 +444,12 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 
 	err = d.ci.Apply(cic, cloudInitConfigPath)
 	if err != nil {
-		return fmt.Errorf("libvirt: unable to create cidata: %w", err)
+		return fmt.Errorf("libvirt: unable to create cidata %s: %w", config.Name, err)
 	}
 
 	err = d.sp.Refresh(0)
 	if err != nil {
-		return fmt.Errorf("libvirt: to refresh storage pool: %w", err)
+		return fmt.Errorf("libvirt: unable to refresh storage pool %s: %w", config.Name, err)
 	}
 
 	var domXML string
@@ -447,7 +458,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	} else {
 		domXML, err = parceConfiguration(config, cloudInitConfigPath)
 		if err != nil {
-			return fmt.Errorf("libvirt: unable to parce domain configuration: %w", err)
+			return fmt.Errorf("libvirt: unable to parce domain configuration %s: %w", config.Name, err)
 		}
 	}
 
@@ -455,17 +466,19 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 
 	dom, err = d.conn.DomainDefineXML(domXML)
 	if err != nil {
-		return fmt.Errorf("libvirt: unable to define domain: %w", err)
+		return fmt.Errorf("libvirt: unable to define domain %s: %w", config.Name, err)
 	}
 
 	err = dom.Create()
 	if err != nil {
-		return fmt.Errorf("libvirt: unable to create domain: %w", err)
+		return fmt.Errorf("libvirt: unable to create domain %s: %w", config.Name, err)
 	}
 
 	return nil
 }
 
+// GetDomain find a domain by name and returns basic functionality information
+// including current state, memory and CPU. If no domain is found nil is returned.
 func (d *driver) GetDomain(name string) (*domain.Info, error) {
 	dom, err := d.getDomain(name)
 	if err != nil {
@@ -478,18 +491,8 @@ func (d *driver) GetDomain(name string) (*domain.Info, error) {
 
 	info, err := dom.GetInfo()
 	if err != nil {
-		return nil, fmt.Errorf("libvirt: unable to get domains: %w", err)
+		return nil, fmt.Errorf("libvirt: unable to get domain %s: %w", name, err)
 	}
-
-	/* 	cpu_stats, err := dom.GetCPUStats(-1, 1, 0) // DomainCPUStats
-	   	if err != nil {
-	   		return nil, fmt.Errorf("libvirt: can not get cpu_stats: %w", err)
-	   	} */
-
-	/* RSSMem, err := dom.MemoryStats(uint32(libvirt.DOMAIN_MEMORY_STAT_RSS), 0) // MemoryStats
-	if err != nil {
-		return nil, fmt.Errorf("libvirt: can not get memory_stats: %w", err)
-	} */
 
 	return &domain.Info{
 		State:     nomadDomainStates[info.State],
