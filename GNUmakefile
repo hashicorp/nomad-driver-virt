@@ -23,6 +23,12 @@ build: ## Compile the current driver codebase
 	@go build -race -trimpath -o ${PLUGIN_BINARY} .
 	@echo "==> Done"
 
+.PHONY: copywrite-headers
+copywrite-headers: ## Ensure files have the copywrite header
+	@echo "==> Checking copywrite headers..."
+	@copywrite headers --plan
+	@echo "==> Done"
+
 .PHONY: lint
 lint: ## Lint and vet the codebase
 	@echo "==> Linting source code..."
