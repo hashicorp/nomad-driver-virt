@@ -5,11 +5,10 @@ package libvirt
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
-	"strings"
+	"path/filepath"
 
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
@@ -27,12 +26,9 @@ const (
 	defaultInterfaceModel    = "virtio"
 	libvirtVirtioChannel     = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
 
-	defaultDataDir     = "/opt/virt/"
+	defaultDataDir     = "/home/ubuntu/virt/libvirt"
 	dataDirPermissions = 777
 	storagePoolName    = "virt-sp"
-
-	envVariblesFilePath        = "/etc/profile.d/virt.sh" //Only valid for linux OS
-	envVariblesFilePermissions = "777"
 
 	DOMAIN_RUNNING     = "running"
 	DOMAIN_NOSTATE     = "unknown"
@@ -60,6 +56,7 @@ var (
 	}
 )
 
+// TODO: Add function to test for userdata syntax, and dont use it if it fails.
 type CloudInit interface {
 	Apply(ci *cloudinit.Config, path string) error
 }
@@ -96,7 +93,7 @@ func WithAuth(user, password string) Option {
 	}
 }
 
-func WithCIController(ci *cloudinit.Controller) Option {
+func WithCIController(ci CloudInit) Option {
 	return func(d *driver) {
 		d.ci = ci
 	}
@@ -258,6 +255,11 @@ func (d *driver) GetInfo() (domain.VirtualizerInfo, error) {
 		return li, fmt.Errorf("libvirt: unable to get inactive domains: %w", err)
 	}
 
+	sps, err := d.conn.ListAllStoragePools(libvirt.CONNECT_LIST_STORAGE_POOLS_ACTIVE)
+	if err != nil {
+		return li, fmt.Errorf("libvirt: unable to get storage pools: %w", err)
+	}
+
 	li.Cores = ni.Cores
 	li.Memory = ni.Memory
 	li.Cpus = ni.Cpus
@@ -267,27 +269,13 @@ func (d *driver) GetInfo() (domain.VirtualizerInfo, error) {
 	li.FreeMemory = fm
 	li.RunningDomains = uint(len(aDoms))
 	li.InactiveDomains = uint(len(iDoms))
+	li.StoragePools = uint(len(sps))
 
 	return li, nil
 }
 
 func (d *driver) Close() (int, error) {
 	return d.conn.Close()
-}
-
-func createEnvsFile(envs map[string]string) cloudinit.File {
-	con := []string{}
-
-	for k, v := range envs {
-		con = append(con, fmt.Sprintf("export %s=%s", k, v))
-	}
-
-	return cloudinit.File{
-		Encoding:    "b64",
-		Path:        envVariblesFilePath,
-		Permissions: envVariblesFilePermissions,
-		Content:     base64.StdEncoding.EncodeToString([]byte(strings.Join(con, "\n\t"))),
-	}
 }
 
 func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
@@ -426,15 +414,16 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 
 	d.logger.Debug("domain doesn't exits, creating it", config.Name)
 
-	cloudInitConfigPath := d.dataDir + "/" + config.Name + ".iso"
-	defer func() {
-		if config.RemoveConfigFiles {
+	cloudInitConfigPath := filepath.Join(d.dataDir, config.Name+".iso")
+	if config.RemoveConfigFiles {
+		defer func() {
 			err := os.Remove(cloudInitConfigPath)
 			if err != nil {
 				d.logger.Warn("unable to remove cloudinit configFile", err)
 			}
-		}
-	}()
+
+		}()
+	}
 
 	cic := createCloudInitConfig(config)
 	d.logger.Debug("creating ci configuration: ", fmt.Sprintf("%+v", cic))
