@@ -281,7 +281,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	doms, err := ld.GetAllDomains()
 	must.NoError(t, err)
 
-	// The test driver has one running  machine from the start.
+	// The test hypervisor has one running  machine from the start.
 	must.Len(t, 1, doms)
 
 	domainName := "test-nomad-domain"
@@ -297,7 +297,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	doms, err = ld.GetAllDomains()
 	must.NoError(t, err)
 
-	// The initial test driver one plus the one that was just started.
+	// The initial test hypervisor has one plus the one that was just started.
 	must.Len(t, 2, doms)
 
 	err = ld.StopDomain(domainName)
@@ -312,7 +312,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	doms, err = ld.GetAllDomains()
 	must.NoError(t, err)
 
-	// Back to the initial test driver one.
+	// Back to the initial test hypervisor one.
 	must.Len(t, 1, doms)
 
 	info, err = ld.GetInfo()
