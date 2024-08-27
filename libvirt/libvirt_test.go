@@ -28,8 +28,14 @@ func (cim *cloudInitMock) Apply(ci *cloudinit.Config, path string) error {
 }
 
 func TestGetInfo(t *testing.T) {
+	tempDataDir, err := os.MkdirTemp("", "testdir_*")
+	must.NoError(t, err)
+
+	defer os.RemoveAll(tempDataDir)
+
 	ld, err := New(context.Background(), hclog.NewNullLogger(),
-		WithConnectionURI("test:///default"))
+		WithConnectionURI("test:///default"),
+		WithDataDirectory(tempDataDir))
 
 	must.NoError(t, err)
 	i, err := ld.GetInfo()

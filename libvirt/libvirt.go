@@ -412,7 +412,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		return ErrDomainExists
 	}
 
-	d.logger.Debug("domain doesn't exits, creating it", config.Name)
+	d.logger.Debug("domain doesn't exits, creating it", "name", config.Name)
 
 	cloudInitConfigPath := filepath.Join(d.dataDir, config.Name+".iso")
 	if config.RemoveConfigFiles {
