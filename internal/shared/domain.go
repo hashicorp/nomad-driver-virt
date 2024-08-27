@@ -121,6 +121,7 @@ type VirtualizerInfo struct {
 	LibvirtVersion  uint32
 	RunningDomains  uint
 	InactiveDomains uint
+	StoragePools    uint
 }
 
 type Info struct {
