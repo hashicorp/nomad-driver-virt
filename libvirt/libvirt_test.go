@@ -33,6 +33,8 @@ func TestGetInfo(t *testing.T) {
 
 	defer os.RemoveAll(tempDataDir)
 
+	// The "test:///default" uri connects to a mock hypervisor provided by libvirt
+	// to use for testing.
 	ld, err := New(context.Background(), hclog.NewNullLogger(),
 		WithConnectionURI("test:///default"),
 		WithDataDirectory(tempDataDir))
@@ -194,6 +196,8 @@ func TestStartDomain(t *testing.T) {
 				err: tt.ciError,
 			}
 
+			// The "test:///default" uri connects to a mock hypervisor provided by libvirt
+			// to use for testing.
 			ld, err := New(context.Background(), hclog.NewNullLogger(),
 				WithConnectionURI("test:///default"), WithCIController(cim),
 				WithDataDirectory(tempDataDir))
@@ -267,6 +271,8 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 
 	cim := &cloudInitMock{}
 
+	// The "test:///default" uri connects to a mock hypervisor provided by libvirt
+	// to use for testing.
 	ld, err := New(context.Background(), hclog.NewNullLogger(),
 		WithConnectionURI("test:///default"), WithCIController(cim),
 		WithDataDirectory(tempDataDir))
