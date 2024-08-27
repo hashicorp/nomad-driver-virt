@@ -310,8 +310,6 @@ func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 		fs = append(fs, file)
 	}
 
-	//fs = append(fs, envFile)
-
 	return &cloudinit.Config{
 		MetaData: cloudinit.MetaData{
 			InstanceID:    config.Name,
@@ -389,7 +387,12 @@ func (d *driver) DestroyDomain(name string) error {
 
 	err = dom.Destroy()
 	if err != nil {
-		return fmt.Errorf("libvirt: unable to destroy domain%s: %w", name, err)
+		lverr, ok := err.(libvirt.Error)
+		if ok {
+			if lverr.Code != libvirt.ERR_OPERATION_INVALID {
+				return fmt.Errorf("libvirt: unable to destroy domain: %w", err)
+			}
+		}
 	}
 
 	err = dom.Undefine()
@@ -409,7 +412,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	}
 
 	if dom != nil {
-		return ErrDomainExists
+		return fmt.Errorf("libvirt: %s: %w", config.Name, ErrDomainExists)
 	}
 
 	d.logger.Debug("domain doesn't exits, creating it", "name", config.Name)
@@ -506,7 +509,7 @@ func (d *driver) GetAllDomains() ([]string, error) {
 	dns := []string{}
 	for _, dom := range doms {
 		name, err := dom.GetName()
-		if err == nil {
+		if err != nil {
 			return nil, fmt.Errorf("libvirt: unable get domain name: %w", err)
 		}
 		dns = append(dns, name)

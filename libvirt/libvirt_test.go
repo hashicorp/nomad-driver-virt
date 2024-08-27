@@ -2,6 +2,7 @@ package libvirt
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 
@@ -13,7 +14,6 @@ import (
 
 type cloudInitMock struct {
 	passedConfig *cloudinit.Config
-	passedPath   string
 	err          error
 }
 
@@ -44,6 +44,9 @@ func TestGetInfo(t *testing.T) {
 	must.NonZero(t, i.LibvirtVersion)
 	must.NonZero(t, i.EmulatorVersion)
 	must.NonZero(t, i.StoragePools)
+	// The test driver has one running  machine.
+	must.One(t, i.RunningDomains)
+	must.Zero(t, i.InactiveDomains)
 
 	ld.Close()
 }
@@ -61,13 +64,16 @@ func fileExists(t *testing.T, filePath string) bool {
 func TestStartDomain(t *testing.T) {
 	t.Parallel()
 
+	testError := errors.New("oh no! there is an error")
+
 	tests := []struct {
 		name              string
 		domainName        string
 		removeConfigFiles bool
 		ciUserDataPath    string
-		expectError       bool
+		expectError       error
 		expectedCIConfig  *cloudinit.Config
+		ciError           error
 		expectedPath      string
 	}{
 		{
@@ -80,13 +86,100 @@ func TestStartDomain(t *testing.T) {
 					Password: "test-password",
 					SSHKey:   "sshkey lkbfubwfu...",
 					RunCMD:   []string{"cmd arg arg", "cmd arg arg"},
-					BootCMD:  []string{"cmd arg arg", "cmd arg arg"},
-					Mounts:   []cloudinit.MountFileConfig{},
-					Files:    []cloudinit.File{},
+					BootCMD: []string{
+						"cmd arg arg",
+						"cmd arg arg",
+						"mkdir -p /path/to/file/one",
+						"mountpoint -q /path/to/file/one || mount -t 9p -o trans=virtio tagOne /path/to/file/one",
+						"mkdir -p /path/to/file/two",
+						"mountpoint -q /path/to/file/two || mount -t 9p -o trans=virtio tagTwo /path/to/file/two",
+					},
+					Mounts: []cloudinit.MountFileConfig{
+						{
+							Destination: "/path/to/file/one",
+							Tag:         "tagOne",
+						},
+						{
+							Destination: "/path/to/file/two",
+							Tag:         "tagTwo",
+						},
+					},
+					Files: []cloudinit.File{
+						{
+							Path:        "/path/to/file/one",
+							Content:     "content",
+							Permissions: "444",
+							Encoding:    "b64",
+						},
+						{
+							Path:        "/path/to/file/two",
+							Content:     "content",
+							Permissions: "666",
+						},
+					},
 				},
 				MetaData:     cloudinit.MetaData{InstanceID: "domain-1", LocalHostname: "test-hostname"},
 				UserDataPath: "/path/to/user/data",
 			},
+		},
+		{
+			name:              "domain_created_successfully_remove_files_with_userdata",
+			domainName:        "domain-2",
+			removeConfigFiles: true,
+			ciUserDataPath:    "/path/to/user/data",
+			expectedCIConfig: &cloudinit.Config{
+				VendorData: cloudinit.VendorData{
+					Password: "test-password",
+					SSHKey:   "sshkey lkbfubwfu...",
+					RunCMD:   []string{"cmd arg arg", "cmd arg arg"},
+					BootCMD: []string{
+						"cmd arg arg",
+						"cmd arg arg",
+						"mkdir -p /path/to/file/one",
+						"mountpoint -q /path/to/file/one || mount -t 9p -o trans=virtio tagOne /path/to/file/one",
+						"mkdir -p /path/to/file/two",
+						"mountpoint -q /path/to/file/two || mount -t 9p -o trans=virtio tagTwo /path/to/file/two",
+					},
+					Mounts: []cloudinit.MountFileConfig{
+						{
+							Destination: "/path/to/file/one",
+							Tag:         "tagOne",
+						},
+						{
+							Destination: "/path/to/file/two",
+							Tag:         "tagTwo",
+						},
+					},
+					Files: []cloudinit.File{
+						{
+							Path:        "/path/to/file/one",
+							Content:     "content",
+							Permissions: "444",
+							Encoding:    "b64",
+						},
+						{
+							Path:        "/path/to/file/two",
+							Content:     "content",
+							Permissions: "666",
+						},
+					},
+				},
+				MetaData: cloudinit.MetaData{
+					InstanceID:    "domain-2",
+					LocalHostname: "test-hostname"},
+				UserDataPath: "/path/to/user/data",
+			},
+		},
+		{
+			name:        "duplicated_domain_error",
+			domainName:  "domain-2",
+			expectError: ErrDomainExists,
+		},
+		{
+			name:        "cloud_init_error_propagation",
+			domainName:  "domain-3",
+			expectError: testError,
+			ciError:     testError,
 		},
 	}
 
@@ -98,13 +191,14 @@ func TestStartDomain(t *testing.T) {
 			defer os.RemoveAll(tempDataDir)
 
 			cim := &cloudInitMock{
-				err: nil,
+				err: tt.ciError,
 			}
 
 			ld, err := New(context.Background(), hclog.NewNullLogger(),
 				WithConnectionURI("test:///default"), WithCIController(cim),
 				WithDataDirectory(tempDataDir))
 			must.NoError(t, err)
+			defer ld.Close()
 
 			i, err := ld.GetInfo()
 			must.NoError(t, err)
@@ -123,19 +217,115 @@ func TestStartDomain(t *testing.T) {
 				CMDs:              []string{"cmd arg arg", "cmd arg arg"},
 				BOOTCMDs:          []string{"cmd arg arg", "cmd arg arg"},
 				CIUserData:        tt.ciUserDataPath,
+				Mounts: []domain.MountFileConfig{
+					{
+						Source:      "/mount/source/one",
+						Destination: "/path/to/file/one",
+						Tag:         "tagOne",
+						ReadOnly:    true,
+					},
+					{Source: "/mount/source/two",
+						Destination: "/path/to/file/two",
+						Tag:         "tagTwo",
+						ReadOnly:    false},
+				},
+				Files: []domain.File{
+					{
+						Path:        "/path/to/file/one",
+						Content:     "content",
+						Permissions: "444",
+						Encoding:    "b64",
+					},
+					{
+						Path:        "/path/to/file/two",
+						Content:     "content",
+						Permissions: "666",
+					},
+				},
 			}
 
 			err = ld.CreateDomain(domConfig)
+			must.Eq(t, tt.expectError, errors.Unwrap(err))
+			if err == nil {
+				i, err = ld.GetInfo()
+				must.NoError(t, err)
 
-			must.NoError(t, err)
-
-			i, err = ld.GetInfo()
-			must.NoError(t, err)
-
-			isoPath := ld.dataDir + "/" + domConfig.Name + ".iso"
-			must.Eq(t, tt.removeConfigFiles, !fileExists(t, isoPath))
-			must.One(t, i.RunningDomains-runningDomains)
-			must.Eq(t, tt.expectedCIConfig, cim.passedConfig)
+				isoPath := ld.dataDir + "/" + domConfig.Name + ".iso"
+				must.Eq(t, tt.removeConfigFiles, !fileExists(t, isoPath))
+				must.One(t, i.RunningDomains-runningDomains)
+				must.Eq(t, tt.expectedCIConfig, cim.passedConfig)
+			}
 		})
 	}
+}
+
+func TestCreate_StopAndDestroyDomain(t *testing.T) {
+	tempDataDir, err := os.MkdirTemp("", "testdir_*")
+	must.NoError(t, err)
+
+	defer os.RemoveAll(tempDataDir)
+
+	cim := &cloudInitMock{}
+
+	ld, err := New(context.Background(), hclog.NewNullLogger(),
+		WithConnectionURI("test:///default"), WithCIController(cim),
+		WithDataDirectory(tempDataDir))
+	must.NoError(t, err)
+	defer ld.Close()
+
+	info, err := ld.GetInfo()
+	must.NoError(t, err)
+
+	must.Zero(t, info.InactiveDomains)
+
+	doms, err := ld.GetAllDomains()
+	must.NoError(t, err)
+
+	// The test driver has one running  machine from the start.
+	must.Len(t, 1, doms)
+
+	domainName := "test-nomad-domain"
+	err = ld.CreateDomain(&domain.Config{
+		RemoveConfigFiles: true,
+		Name:              domainName,
+		Memory:            66600,
+		CPUs:              6,
+		BaseImage:         "/path/to/test/image",
+	})
+	must.NoError(t, err)
+
+	doms, err = ld.GetAllDomains()
+	must.NoError(t, err)
+
+	// The initial test driver one plus the one that was just started.
+	must.Len(t, 2, doms)
+
+	err = ld.StopDomain(domainName)
+	must.NoError(t, err)
+
+	info, err = ld.GetInfo()
+	must.NoError(t, err)
+
+	// The stopped domain.
+	must.One(t, info.InactiveDomains)
+
+	doms, err = ld.GetAllDomains()
+	must.NoError(t, err)
+
+	// Back to the initial test driver one.
+	must.Len(t, 1, doms)
+
+	info, err = ld.GetInfo()
+	must.NoError(t, err)
+	// The domain is still present, but inactive
+	must.One(t, info.InactiveDomains)
+
+	err = ld.DestroyDomain(domainName)
+	must.NoError(t, err)
+
+	info, err = ld.GetInfo()
+	must.NoError(t, err)
+
+	// The domain is present as inactive anymore.
+	must.Zero(t, info.InactiveDomains)
 }
