@@ -462,7 +462,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		}
 	}
 
-	d.logger.Debug("creating domain with", domXML)
+	d.logger.Debug("creating domain", "xml", domXML)
 
 	dom, err = d.conn.DomainDefineXML(domXML)
 	if err != nil {
