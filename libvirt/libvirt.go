@@ -26,18 +26,18 @@ const (
 	defaultInterfaceModel    = "virtio"
 	libvirtVirtioChannel     = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
 
-	defaultDataDir     = "/home/ubuntu/virt/libvirt"
+	defaultDataDir     = "/var/lib/"
 	dataDirPermissions = 777
 	storagePoolName    = "virt-sp"
 
-	DOMAIN_RUNNING     = "running"
-	DOMAIN_NOSTATE     = "unknown"
-	DOMAIN_BLOCKED     = "blocked"
-	DOMAIN_PAUSED      = "paused"
-	DOMAIN_SHUTDOWN    = "shutdown"
-	DOMAIN_CRASHED     = "crashed"
-	DOMAIN_PMSUSPENDED = "pmsuspended"
-	DOMAIN_SHUTOFF     = "shutoff"
+	DomainRunning     = "running"
+	DomainNoState     = "unknown"
+	DomainBlocked     = "blocked"
+	DomainPaused      = "paused"
+	DomainShutdown    = "shutdown"
+	DomainCrashed     = "crashed"
+	DomainPMSuspended = "pmsuspended"
+	DomainShutOff     = "shutoff"
 )
 
 var (
@@ -45,14 +45,14 @@ var (
 	ErrDomainNotFound = errors.New("the domain does not exist")
 
 	nomadDomainStates = map[libvirt.DomainState]string{
-		libvirt.DOMAIN_RUNNING:     DOMAIN_RUNNING,
-		libvirt.DOMAIN_NOSTATE:     DOMAIN_NOSTATE,
-		libvirt.DOMAIN_BLOCKED:     DOMAIN_BLOCKED,
-		libvirt.DOMAIN_PAUSED:      DOMAIN_PAUSED,
-		libvirt.DOMAIN_SHUTDOWN:    DOMAIN_SHUTDOWN,
-		libvirt.DOMAIN_CRASHED:     DOMAIN_CRASHED,
-		libvirt.DOMAIN_PMSUSPENDED: DOMAIN_PMSUSPENDED,
-		libvirt.DOMAIN_SHUTOFF:     DOMAIN_SHUTOFF,
+		libvirt.DOMAIN_RUNNING:     DomainRunning,
+		libvirt.DOMAIN_NOSTATE:     DomainNoState,
+		libvirt.DOMAIN_BLOCKED:     DomainBlocked,
+		libvirt.DOMAIN_PAUSED:      DomainPaused,
+		libvirt.DOMAIN_SHUTDOWN:    DomainShutdown,
+		libvirt.DOMAIN_CRASHED:     DomainCrashed,
+		libvirt.DOMAIN_PMSUSPENDED: DomainPMSuspended,
+		libvirt.DOMAIN_SHUTOFF:     DomainShutOff,
 	}
 )
 
@@ -456,9 +456,9 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	if config.XMLConfig != "" {
 		domXML = config.XMLConfig
 	} else {
-		domXML, err = parceConfiguration(config, cloudInitConfigPath)
+		domXML, err = parseConfiguration(config, cloudInitConfigPath)
 		if err != nil {
-			return fmt.Errorf("libvirt: unable to parce domain configuration %s: %w", config.Name, err)
+			return fmt.Errorf("libvirt: unable to parse domain configuration %s: %w", config.Name, err)
 		}
 	}
 
@@ -516,7 +516,10 @@ func (d *driver) GetAllDomains() ([]string, error) {
 			return nil, fmt.Errorf("libvirt: unable get domain name: %w", err)
 		}
 		dns = append(dns, name)
-		dom.Free()
+		err = dom.Free()
+		if err != nil {
+			d.logger.Error("unable to free domain", "name", name)
+		}
 	}
 
 	return dns, nil

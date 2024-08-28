@@ -151,19 +151,19 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 				// Used for the base image disk
 				{
 					Type:  "virtio-serial",
-					Index: &cero,
+					Index: &zero,
 				},
 				// Used for the cloud init iso (CDROOM) disk
 				{
 					Type:  "sata",
-					Index: &cero,
+					Index: &zero,
 				},
 			},
 			Serials: []libvirtxml.DomainSerial{
 				{
 					Target: &libvirtxml.DomainSerialTarget{
 						Type: "isa-serial",
-						Port: &cero,
+						Port: &zero,
 						Model: &libvirtxml.DomainSerialTargetModel{
 							Name: "isa-serial",
 						},
@@ -174,7 +174,7 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 				{
 					Target: &libvirtxml.DomainConsoleTarget{
 						Type: "serial",
-						Port: &cero,
+						Port: &zero,
 					},
 				},
 			},
