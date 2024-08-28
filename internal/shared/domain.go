@@ -84,10 +84,10 @@ func (dc *Config) Validate(allowedPaths []string) error {
 
 	if dc.BaseImage == "" {
 		_ = multierror.Append(&mErr, ErrMissingImage)
-	}
-
-	if !isAllowedImagePath(allowedPaths, dc.BaseImage) {
-		_ = multierror.Append(&mErr, ErrPathNotAllowed)
+	} else {
+		if !isAllowedImagePath(allowedPaths, dc.BaseImage) {
+			_ = multierror.Append(&mErr, ErrPathNotAllowed)
+		}
 	}
 
 	if dc.Memory < mimMemoryMB {
