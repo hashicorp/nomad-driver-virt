@@ -1,3 +1,6 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 package libvirt
 
 // ConnectShim is the shim interface that wraps libvirt connectivity. This
