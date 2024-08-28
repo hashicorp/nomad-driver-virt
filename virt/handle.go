@@ -103,7 +103,7 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 				return
 			}
 
-			if domain.State != libvirt.DOMAIN_RUNNING {
+			if domain.State != libvirt.DomainRunning {
 
 				er := fillExitResult(domain)
 
@@ -127,10 +127,10 @@ func fillExitResult(info *domain.Info) *drivers.ExitResult {
 	er := &drivers.ExitResult{}
 
 	switch info.State {
-	case libvirt.DOMAIN_CRASHED:
+	case libvirt.DomainCrashed:
 		er.ExitCode = 1
 		er.Err = ErrTaskCrashed
-	case libvirt.DOMAIN_SHUTDOWN, libvirt.DOMAIN_SHUTOFF:
+	case libvirt.DomainShutdown, libvirt.DomainShutOff:
 		er.ExitCode = 0
 	default:
 		er.ExitCode = 1

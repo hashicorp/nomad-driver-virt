@@ -652,9 +652,9 @@ func (d *VirtDriverPlugin) createThinCopy(basePath string, destination string, s
 
 func setUpTaskState(vmState string) drivers.TaskState {
 	switch vmState {
-	case libvirt.DOMAIN_RUNNING:
+	case libvirt.DomainRunning:
 		return drivers.TaskStateRunning
-	case libvirt.DOMAIN_SHUTDOWN, libvirt.DOMAIN_SHUTOFF, libvirt.DOMAIN_CRASHED:
+	case libvirt.DomainShutdown, libvirt.DomainShutOff, libvirt.DomainCrashed:
 		return drivers.TaskStateExited
 	default:
 		return drivers.TaskStateUnknown
