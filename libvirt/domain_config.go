@@ -4,137 +4,232 @@
 package libvirt
 
 import (
-	"fmt"
-	"html/template"
-	"os"
-	"strings"
-
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+
+	"libvirt.org/go/libvirtxml"
 )
 
-type cloudinitConfig struct {
-	domainDir           string
-	metadataPath        string
-	userdataPath        string
-	cleanUpAfterInstall bool
-}
+func parseConfiguration(config *domain.Config, cloudInitPath string) (string, error) {
+	zero := uint(0)
 
-func dirExists(dirname string) bool {
-	info, err := os.Stat(dirname)
-	if os.IsNotExist(err) {
-		return false
+	disks := []libvirtxml.DomainDisk{
+		{
+			Device: "disk",
+			Driver: &libvirtxml.DomainDiskDriver{
+				Name: "qemu",
+				Type: config.DiskFmt,
+			},
+			Source: &libvirtxml.DomainDiskSource{
+				File: &libvirtxml.DomainDiskSourceFile{
+					File: config.BaseImage,
+				},
+			},
+			Target: &libvirtxml.DomainDiskTarget{
+				Dev: "vda",
+				Bus: "virtio",
+			},
+		},
+		{
+			Device: "cdrom",
+			Driver: &libvirtxml.DomainDiskDriver{
+				Name: "qemu",
+				Type: "raw",
+			},
+			Source: &libvirtxml.DomainDiskSource{
+				File: &libvirtxml.DomainDiskSourceFile{
+					File: cloudInitPath,
+				},
+			},
+			Target: &libvirtxml.DomainDiskTarget{
+				Dev: "sda",
+				Bus: "sata",
+			},
+		},
 	}
-	return info.IsDir()
-}
 
-func deleteDir(name string) error {
-	if dirExists(name) {
-		err := os.RemoveAll(name)
-		if err != nil {
-			return fmt.Errorf("libvirt: failed to delete directory: %w", err)
+	mounts := []libvirtxml.DomainFilesystem{}
+	for _, m := range config.Mounts {
+
+		var ro *libvirtxml.DomainFilesystemReadOnly
+		if m.ReadOnly {
+			ro = &libvirtxml.DomainFilesystemReadOnly{}
 		}
-	}
 
-	return nil
-}
-
-func (cic *cloudinitConfig) createAndpopulateFiles(config *domain.Config) error {
-	mdf, err := os.Create(cic.domainDir + "/meta-data")
-	defer mdf.Close()
-	if err != nil {
-		return fmt.Errorf("libvirt: create file: %w", err)
-	}
-
-	err = executeTemplate(config, metaDataTemplate, mdf)
-	if err != nil {
-		return err
-	}
-
-	udf, err := os.Create(cic.domainDir + "/user-data")
-	defer udf.Close()
-	if err != nil {
-		return fmt.Errorf("libvirt: create file: %w", err)
-	}
-
-	err = executeTemplate(config, userDataTemplate, udf)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func executeTemplate(config *domain.Config, in string, out *os.File) error {
-	pwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to get path: %w", err)
-	}
-
-	tmpl, err := template.ParseFiles(pwd + in)
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to parse template: %w", err)
-	}
-
-	err = tmpl.Execute(out, config)
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to execute template: %w", err)
-	}
-	return nil
-}
-
-func createDomainFolder(path string) error {
-	err := os.MkdirAll(path, userDataDirPermissions)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func cleanUpDomainFolder(path string) error {
-	return deleteDir(path)
-}
-
-func (d *driver) parceConfiguration(dc *domain.Config, ci *cloudinitConfig) []string {
-
-	args := []string{
-		"--debug",
-		fmt.Sprintf("--connect=%s", d.uri),
-		fmt.Sprintf("--name=%s", dc.Name),
-		fmt.Sprintf("--ram=%d", dc.Memory),
-		fmt.Sprintf("--vcpus=%d,cores=%d", dc.CPUs, dc.Cores),
-		fmt.Sprintf("--os-variant=%s", dc.OsVariant),
-		"--import", "--disk", fmt.Sprintf("path=%s,format=%s", dc.CloudImgPath, dc.DiskFmt),
-		"--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s,disable=on", ci.userdataPath, ci.metadataPath),
-		"--noautoconsole",
-	}
-
-	if dc.CloudInit.Enable {
-		args = append(args, "--cloud-init", fmt.Sprintf("user-data=%s,meta-data=%s,disable=on", ci.userdataPath, ci.metadataPath))
-	}
-
-	for _, ni := range dc.NetworkInterfaces {
-		args = append(args, "--network", fmt.Sprintf("bridge=%s,model=virtio", ni))
-	}
-
-	if len(dc.Mounts) > 0 {
-
-		args = append(args, "--memorybacking=source.type=memfd,access.mode=shared")
-
-		for _, m := range dc.Mounts {
-			mArgs := []string{
-				m.Source,
-				m.Tag,
-				"driver.type=virtiofs",
-			}
-
-			if m.AccessMode != "" {
-				mArgs = append(mArgs, fmt.Sprintf("accessmode=%s", m.AccessMode))
-			}
-
-			args = append(args, fmt.Sprintf("--filesystem=%s", strings.Join(mArgs, ",")))
+		m := libvirtxml.DomainFilesystem{
+			AccessMode: defaultSecurityMode,
+			ReadOnly:   ro,
+			Source: &libvirtxml.DomainFilesystemSource{
+				Mount: &libvirtxml.DomainFilesystemSourceMount{
+					Dir: m.Source,
+				},
+			},
+			Target: &libvirtxml.DomainFilesystemTarget{
+				Dir: m.Tag,
+			},
 		}
+		mounts = append(mounts, m)
 	}
 
-	return args
+	osType := &libvirtxml.DomainOSType{
+		Type: defaultVirtualizatioType,
+	}
+
+	if config.OsVariant != nil {
+		osType.Arch = config.OsVariant.Arch
+		osType.Machine = config.OsVariant.Machine
+	}
+
+	interfaces := []libvirtxml.DomainInterface{}
+	for _, ni := range config.NetworkInterfaces {
+		i := libvirtxml.DomainInterface{
+			Source: &libvirtxml.DomainInterfaceSource{
+				Bridge: &libvirtxml.DomainInterfaceSourceBridge{
+					Bridge: ni,
+				},
+			},
+			Model: &libvirtxml.DomainInterfaceModel{
+				Type: defaultInterfaceModel,
+			},
+		}
+
+		interfaces = append(interfaces, i)
+	}
+
+	domcfg := &libvirtxml.Domain{
+		MemoryTune: &libvirtxml.DomainMemoryTune{
+			HardLimit: &libvirtxml.DomainMemoryTuneLimit{
+				Value: uint64(config.Memory),
+				Unit:  "M",
+			},
+		},
+		MemoryBacking: &libvirtxml.DomainMemoryBacking{
+			MemorySource: &libvirtxml.DomainMemorySource{
+				Type: "memfd",
+			},
+			MemoryAccess: &libvirtxml.DomainMemoryAccess{
+				Mode: "shared",
+			},
+		},
+		OnPoweroff: "destroy",
+		OnReboot:   "destroy",
+		OnCrash:    "destroy",
+		PM: &libvirtxml.DomainPM{
+			SuspendToMem: &libvirtxml.DomainPMPolicy{
+				Enabled: "no",
+			},
+			SuspendToDisk: &libvirtxml.DomainPMPolicy{
+				Enabled: "no",
+			},
+		},
+		Features: &libvirtxml.DomainFeatureList{
+			VMPort: &libvirtxml.DomainFeatureState{
+				State: "off",
+			},
+		},
+		SysInfo: []libvirtxml.DomainSysInfo{
+			{
+				SMBIOS: &libvirtxml.DomainSysInfoSMBIOS{
+					System: &libvirtxml.DomainSysInfoSystem{
+						Entry: []libvirtxml.DomainSysInfoEntry{
+							{
+								Name:  "serial",
+								Value: "ds=nocloud;",
+							},
+						},
+					},
+				},
+			},
+		},
+		OS: &libvirtxml.DomainOS{
+			Type: osType,
+			SMBios: &libvirtxml.DomainSMBios{
+				Mode: "sysinfo",
+			},
+		},
+		Devices: &libvirtxml.DomainDeviceList{
+			Controllers: []libvirtxml.DomainController{
+				// Used for the base image disk
+				{
+					Type:  "virtio-serial",
+					Index: &zero,
+				},
+				// Used for the cloud init iso (CDROOM) disk
+				{
+					Type:  "sata",
+					Index: &zero,
+				},
+			},
+			Serials: []libvirtxml.DomainSerial{
+				{
+					Target: &libvirtxml.DomainSerialTarget{
+						Type: "isa-serial",
+						Port: &zero,
+						Model: &libvirtxml.DomainSerialTargetModel{
+							Name: "isa-serial",
+						},
+					},
+				},
+			},
+			Consoles: []libvirtxml.DomainConsole{
+				{
+					Target: &libvirtxml.DomainConsoleTarget{
+						Type: "serial",
+						Port: &zero,
+					},
+				},
+			},
+			RNGs: []libvirtxml.DomainRNG{
+				{
+					Model: "virtio",
+					Backend: &libvirtxml.DomainRNGBackend{
+						Random: &libvirtxml.DomainRNGBackendRandom{
+							Device: "/dev/urandom",
+						},
+					},
+				},
+			},
+			Channels: []libvirtxml.DomainChannel{
+				// This is necessary for qemu agent, but it needs to be started inside the vm
+				/* 	{
+
+					Source: &libvirtxml.DomainChardevSource{
+						UNIX: &libvirtxml.DomainChardevSourceUNIX{
+							Mode: "bind",
+							Path: "/var/lib/libvirt/qemu/f16x86_64.agent",
+						},
+					},
+					Target: &libvirtxml.DomainChannelTarget{
+						VirtIO: &libvirtxml.DomainChannelTargetVirtIO{
+							Name: libvirtVirtioChannel,
+						},
+					},
+				}, */
+			},
+			Disks:       disks,
+			Filesystems: mounts,
+			Interfaces:  interfaces,
+		},
+		Type: defaultAccelerator,
+		Name: config.Name,
+		Memory: &libvirtxml.DomainMemory{
+			Value: config.Memory,
+			Unit:  "M",
+		},
+		VCPU: &libvirtxml.DomainVCPU{
+			Placement: "static",
+			Value:     uint(config.CPUs),
+		},
+		Resource: &libvirtxml.DomainResource{
+			Partition: "/machine",
+		},
+		/*  CPU: &libvirtxml.DomainCPU{
+			Topology: &libvirtxml.DomainCPUTopology{
+				Cores:   config.CPUs,
+				Sockets: 2,
+				Threads: 1,
+			},
+		}, */
+	}
+
+	return domcfg.Marshal()
 }

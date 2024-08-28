@@ -2,8 +2,6 @@ module github.com/hashicorp/nomad-driver-virt
 
 go 1.22
 
-toolchain go1.22.5
-
 // Fix error tidying due to Nomad downstream dependencies and the recent
 // migration of the metrics library.
 replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.3
@@ -16,7 +14,7 @@ require (
 	github.com/hashicorp/nomad v1.8.1
 	github.com/shoenig/test v1.7.1
 	libvirt.org/go/libvirt v1.10003.0
-	libvirt.org/libvirt-go-xml v7.4.0+incompatible
+	libvirt.org/go/libvirtxml v1.10006.0
 )
 
 require (
