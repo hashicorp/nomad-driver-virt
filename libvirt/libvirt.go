@@ -433,7 +433,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		defer func() {
 			err := os.Remove(cloudInitConfigPath)
 			if err != nil {
-				d.logger.Warn("unable to remove cloudinit configFile", err)
+				d.logger.Warn("unable to remove cloudinit configFile", "error", err)
 			}
 
 		}()
