@@ -9,7 +9,7 @@ import (
 	"libvirt.org/go/libvirtxml"
 )
 
-func parceConfiguration(config *domain.Config, cloudInitPath string) (string, error) {
+func parseConfiguration(config *domain.Config, cloudInitPath string) (string, error) {
 	cero := uint(0)
 
 	disks := []libvirtxml.DomainDisk{
