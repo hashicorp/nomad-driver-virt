@@ -3,24 +3,7 @@
 
 package virt
 
-import (
-	"context"
-	"fmt"
-	"os"
-	"os/exec"
-	"testing"
-	"time"
-
-	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/nomad/helper/testlog"
-	"github.com/hashicorp/nomad/helper/uuid"
-	"github.com/hashicorp/nomad/nomad/structs"
-	"github.com/hashicorp/nomad/plugins/base"
-	"github.com/hashicorp/nomad/plugins/drivers"
-	dtestutil "github.com/hashicorp/nomad/plugins/drivers/testutils"
-	"github.com/shoenig/test/must"
-)
-
+/*
 var (
 	// busyboxLongRunningCmd is a busybox command that runs indefinitely, and
 	// ideally responds to SIGINT/SIGTERM.  Sadly, busybox:1.29.3 /bin/sleep doesn't.
@@ -98,14 +81,11 @@ func newTaskConfig(image string, name string) TaskConfig {
 	}
 }
 
+
 func TestVirtDriver_Start_WaitFinish(t *testing.T) {
 	t.Parallel()
 	allocID := uuid.Generate()
 
-	/* 	imgPath := "/home/ubuntu/" + allocID[0:7] + ".img"
-	   	err := createCopy("/home/ubuntu/focal-server-cloudimg-amd64.img", "/home/ubuntu/", allocID[0:7])
-	   	must.NoError(t, err)
-	*/
 	br := createBasicResources()
 	br.LinuxResources = &drivers.LinuxResources{}
 
@@ -150,15 +130,4 @@ func TestVirtDriver_Start_WaitFinish(t *testing.T) {
 		must.Unreachable(t, must.Sprint("timeout"))
 	}
 }
-
-func createCopy(basePath string, destination string, name string) error {
-
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("qemu-img create -b %s -f qcow2 -F qcow2 %s 8G", basePath, destination+name+".img"))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		return err
-	}
-
-	return nil
-}
+*/

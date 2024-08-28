@@ -38,9 +38,6 @@ type taskHandle struct {
 	exitResult  *drivers.ExitResult
 
 	taskGetter DomainGetter
-
-	//exitChannel chan *drivers.ExitResult
-	//statsChannel chan *drivers.TaskResourceUsage
 }
 
 func (h *taskHandle) TaskStatus() *drivers.TaskStatus {
@@ -60,11 +57,11 @@ func (h *taskHandle) TaskStatus() *drivers.TaskStatus {
 func (h *taskHandle) GetStats() (*drivers.TaskResourceUsage, error) {
 	domain, err := h.taskGetter.GetDomain(h.name)
 	if err != nil {
-		return nil, fmt.Errorf("virt: unable to gte task %s stats: %w", h.name, err)
+		return nil, fmt.Errorf("virt: unable to get task %s stats: %w", h.name, err)
 	}
 
 	if domain == nil {
-		return nil, drivers.ErrTaskNotFound
+		return nil, fmt.Errorf("virt: task not found %s stats: %w", h.name, drivers.ErrTaskNotFound)
 	}
 
 	return fillStats(domain), nil
