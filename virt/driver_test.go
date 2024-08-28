@@ -4,6 +4,22 @@
 package virt
 
 /*
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad/helper/testlog"
+	"github.com/hashicorp/nomad/helper/uuid"
+	"github.com/hashicorp/nomad/nomad/structs"
+	"github.com/hashicorp/nomad/plugins/base"
+	"github.com/hashicorp/nomad/plugins/drivers"
+	dtestutil "github.com/hashicorp/nomad/plugins/drivers/testutils"
+	"github.com/shoenig/test/must"
+)
+
 var (
 	// busyboxLongRunningCmd is a busybox command that runs indefinitely, and
 	// ideally responds to SIGINT/SIGTERM.  Sadly, busybox:1.29.3 /bin/sleep doesn't.
@@ -80,7 +96,6 @@ func newTaskConfig(image string, name string) TaskConfig {
 		UseThinCopy:         true,
 	}
 }
-
 
 func TestVirtDriver_Start_WaitFinish(t *testing.T) {
 	t.Parallel()

@@ -247,7 +247,13 @@ func (d *VirtDriverPlugin) WaitTask(ctx context.Context, taskID string) (<-chan 
 		return nil, drivers.ErrTaskNotFound
 	}
 
-	go handle.monitor(ctx, exitChannel)
+	go func(ctx context.Context, handle *taskHandle, exitCh chan *drivers.ExitResult) {
+		defer close(exitCh)
+		d.logger.Info("monitoring task", "taskID", handle.name)
+
+		handle.monitor(ctx, exitCh)
+
+	}(ctx, handle, exitChannel)
 
 	return exitChannel, nil
 }
@@ -256,7 +262,7 @@ func (d *VirtDriverPlugin) WaitTask(ctx context.Context, taskID string) (<-chan 
 // If the task does not stop during the given timeout, the driver must forcefully kill the task.
 // StopTask does not clean up resources of the task or remove it from the driver's internal state.
 func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal string) error {
-	d.logger.Info("stoping task %s", taskID)
+	d.logger.Info("stopping task", "taskID", taskID)
 
 	_, ok := d.tasks.Get(taskID)
 	if !ok {
@@ -322,7 +328,8 @@ func (d *VirtDriverPlugin) TaskStats(ctx context.Context, taskID string, interva
 	return statsChannel, nil
 }
 
-func (d *VirtDriverPlugin) publishStats(ctx context.Context, interval time.Duration, sch chan<- *drivers.TaskResourceUsage, handle *taskHandle) {
+func (d *VirtDriverPlugin) publishStats(ctx context.Context, interval time.Duration,
+	sch chan<- *drivers.TaskResourceUsage, handle *taskHandle) {
 	defer close(sch)
 
 	ticker := time.NewTicker(interval)
@@ -445,7 +452,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	taskName := domainNameFromTaskID(cfg.ID)
 
-	d.logger.Info("starting task %s", taskName)
+	d.logger.Info("starting task", "name", taskName)
 
 	h := &taskHandle{
 		taskConfig: cfg,
@@ -476,11 +483,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		hostname = driverConfig.Hostname
 	}
 
-	diskFormat, err := d.getImageFormat(driverConfig.ImagePath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
-	}
-
 	// The alloc directory and plugin data directory are always an allowed path to load images from.
 	allowedPaths := append(d.config.ImagePaths, d.dataDir, cfg.AllocDir)
 
@@ -495,11 +497,17 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		}
 	}
 
+	diskFormat, err := d.getImageFormat(diskImagePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("virt: unable to get disk format %s: %w", cfg.AllocID, err)
+	}
+
 	if driverConfig.UseThinCopy {
 		copyPath := filepath.Join(d.dataDir, taskName+".img")
 
+		d.logger.Error("creating thin copy at", "path", copyPath) //TODO: change to info
 		if err := d.createThinCopy(diskImagePath, copyPath, cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
-			return nil, nil, fmt.Errorf("virt: unable to create disk copy for %s %w", taskName, err)
+			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w", taskName, err)
 		}
 
 		diskImagePath = copyPath
@@ -593,6 +601,17 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 	return nil
 }
 
+func setUpTaskState(vmState string) drivers.TaskState {
+	switch vmState {
+	case libvirt.DomainRunning:
+		return drivers.TaskStateRunning
+	case libvirt.DomainShutdown, libvirt.DomainShutOff, libvirt.DomainCrashed:
+		return drivers.TaskStateExited
+	default:
+		return drivers.TaskStateUnknown
+	}
+}
+
 func buildHostname(taskName string) string {
 	return fmt.Sprintf("nomad-%s", taskName)
 }
@@ -603,20 +622,21 @@ func (d *VirtDriverPlugin) getImageFormat(basePath string) (string, error) {
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	cmd := exec.Command("qemu-img", "info", "--output=json", basePath)
+	cmd := exec.Command("bash", "-c", fmt.Sprintf("qemu-img info --output=json %s", basePath))
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
 	err := cmd.Run()
 	if err != nil {
 		d.logger.Error("qemu-img read image", "stderr", stderrBuf.String())
+		d.logger.Debug("qemu-img read image", "stdout", stdoutBuf.String())
 		return "", err
 	}
 
 	d.logger.Debug("qemu-img read image", "stdout", stdoutBuf.String())
 
-	// The qemu command resturs more information, but for now, only the format
-	// is neccessary.
+	// The qemu command returns more information, but for now, only the format
+	// is necessary.
 	var output = struct {
 		Format string `json:"format"`
 	}{}
@@ -634,29 +654,18 @@ func (d *VirtDriverPlugin) createThinCopy(basePath string, destination string, s
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("qemu-img create -b %s -f qcow2 -F qcow2 %s %dM", basePath, destination, sizeM))
+	cmd := exec.Command("bash", "-c", fmt.Sprintf("qemu-img create -b %s -f qcow2 -F qcow2 %s %dM",
+		basePath, destination, sizeM))
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
 	err := cmd.Run()
 	if err != nil {
-		d.logger.Debug("\n \n qemu-img create output", "stderr", stderrBuf.String())
-		d.logger.Debug("\n \n qemu-img create output", "stdout", stdoutBuf.String())
-		fmt.Println("qemu-img create output", "stderr\n", stderrBuf.String())
+		d.logger.Error("qemu-img create output", "stderr", stderrBuf.String())
+		d.logger.Debug("qemu-img create output", "stdout", stdoutBuf.String())
 		return err
 	}
 
 	d.logger.Debug("qemu-img create output", "stdout", stdoutBuf.String())
 	return nil
-}
-
-func setUpTaskState(vmState string) drivers.TaskState {
-	switch vmState {
-	case libvirt.DomainRunning:
-		return drivers.TaskStateRunning
-	case libvirt.DomainShutdown, libvirt.DomainShutOff, libvirt.DomainCrashed:
-		return drivers.TaskStateExited
-	default:
-		return drivers.TaskStateUnknown
-	}
 }

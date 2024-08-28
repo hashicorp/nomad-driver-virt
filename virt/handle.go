@@ -61,7 +61,7 @@ func (h *taskHandle) GetStats() (*drivers.TaskResourceUsage, error) {
 	}
 
 	if domain == nil {
-		return nil, fmt.Errorf("virt: task not found %s stats: %w", h.name, drivers.ErrTaskNotFound)
+		return nil, fmt.Errorf("virt: task not found %s: %w", h.name, drivers.ErrTaskNotFound)
 	}
 
 	return fillStats(domain), nil
@@ -74,9 +74,8 @@ func (h *taskHandle) IsRunning() bool {
 }
 
 // Run is in charge of monitoring and updating the task status. It  will only return
-// when the task is stoped or no longer present or when the context is cancelled.
+// when the task is stopped or no longer present or when the context is cancelled.
 func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitResult) {
-	defer close(exitCh) // We need to find a better place for this
 
 	ticker := time.NewTicker(defaultMonitorInterval)
 	defer ticker.Stop()
