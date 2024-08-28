@@ -426,7 +426,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		return fmt.Errorf("libvirt: %s: %w", config.Name, ErrDomainExists)
 	}
 
-	d.logger.Debug("domain doesn't exits, creating it", "name", config.Name)
+	d.logger.Debug("domain doesn't exist, creating it", "name", config.Name)
 
 	cloudInitConfigPath := filepath.Join(d.dataDir, config.Name+".iso")
 	if config.RemoveConfigFiles {
