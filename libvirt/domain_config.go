@@ -10,7 +10,7 @@ import (
 )
 
 func parseConfiguration(config *domain.Config, cloudInitPath string) (string, error) {
-	cero := uint(0)
+	zero := uint(0)
 
 	disks := []libvirtxml.DomainDisk{
 		{
