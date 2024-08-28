@@ -10,3 +10,5 @@ import (
 )
 
 func (c *Controller) Fingerprint(_ map[string]*structs.Attribute) {}
+
+func (c *Controller) Init() error { return nil }

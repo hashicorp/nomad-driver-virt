@@ -9,6 +9,7 @@ toolchain go1.22.5
 replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.3
 
 require (
+	github.com/coreos/go-iptables v0.6.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/nomad v1.8.1
@@ -36,6 +37,7 @@ require (
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-jose/go-jose/v3 v3.0.3 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/go-test/deep v1.0.8 // indirect
 	github.com/gojuno/minimock/v3 v3.0.6 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.1.2 // indirect
