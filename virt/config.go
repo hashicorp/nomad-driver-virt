@@ -6,6 +6,7 @@ package virt
 import (
 	"time"
 
+	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
@@ -46,10 +47,7 @@ var (
 			"device": hclspec.NewAttr("device", "string", true),
 		})),
 
-		"network_interface": hclspec.NewBlockList("network_interface", hclspec.NewObject(map[string]*hclspec.Spec{
-			"network_name": hclspec.NewAttr("network_name", "string", true),
-			"address":      hclspec.NewAttr("address", "string", false),
-		})),
+		"network_interface": net.NetworkInterfaceHCLSpec(),
 
 		"vnc": hclspec.NewBlock("vnc", false, hclspec.NewObject(map[string]*hclspec.Spec{
 			"port":      hclspec.NewAttr("port", "number", false),
@@ -60,7 +58,7 @@ var (
 	// capabilities indicates what optional features this driver supports
 	// this should be set according to the target run time.
 	capabilities = &drivers.Capabilities{
-		// TODO: set plugin's capabilities
+		// TODO: set all the plugin's capabilities
 		//
 		// The plugin's capabilities signal Nomad which extra functionalities
 		// are supported. For a list of available options check the docs page:
@@ -69,8 +67,18 @@ var (
 		Exec:                 true,
 		DisableLogCollection: true,
 		FSIsolation:          fsisolation.Image,
-		//NetIsolationModes: []NetIsolationMode{},
-		//MustInitiateNetwork: false,
+
+		// NetIsolationModes details that this driver only supports the network
+		// isolation of host.
+		NetIsolationModes: []drivers.NetIsolationMode{
+			drivers.NetIsolationModeHost,
+		},
+
+		// MustInitiateNetwork is set to false, indicating the driver does not
+		// implement and thus satisfy the Nomad drivers.DriverNetworkManager
+		// interface.
+		MustInitiateNetwork: false,
+
 		//MountConfigs: MountConfigSupport
 		//RemoteTasks: bool
 		//DynamicWorkloadUsers: bool
@@ -85,14 +93,16 @@ type Config struct {
 // TaskConfig contains configuration information for a task that runs within
 // this plugin.
 type TaskConfig struct {
-	ImagePath        string             `codec:"image"`
-	Type             string             `codec:"type"`
-	OSVariant        OS                 `codec:"os_variant"`
-	Disk             []Disk             `codec:"disk"`
-	NetworkInterface []NetworkInterface `codec:"network_interface"`
-	VNC              *VNC               `codec:"vnc"`
-	TimeZone         *time.Location     `codec:"timezone"`
-	WorkloadIdentity string             `codec:"workload_identity"`
+	ImagePath        string         `codec:"image"`
+	Type             string         `codec:"type"`
+	OSVariant        OS             `codec:"os"`
+	Disk             []Disk         `codec:"disk"`
+	VNC              *VNC           `codec:"vnc"`
+	TimeZone         *time.Location `codec:"timezone"`
+	WorkloadIdentity string         `codec:"workload_identity"`
+
+	// The list of network interfaces that should be added to the VM.
+	net.NetworkInterfacesConfig `codec:"network_interface"`
 }
 
 type OS struct {
