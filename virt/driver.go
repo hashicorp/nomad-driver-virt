@@ -45,7 +45,7 @@ const (
 	// used by the plugin
 	taskHandleVersion = 1
 
-	defaultDataDir     = "/home/ubuntu/virt"
+	defaultDataDir     = "/var/lib/virt"
 	dataDirPermissions = 777
 
 	envVariblesFilePath        = "/etc/profile.d/virt.sh" //Only valid for linux OS
