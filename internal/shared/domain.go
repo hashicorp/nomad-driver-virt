@@ -24,8 +24,8 @@ var (
 	// characters according to the RFC
 	validLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
 
-	ErrEmptyName           = errors.New("domain name can't be emtpy")
-	ErrMissingImage        = errors.New("image path cant be empty")
+	ErrEmptyName           = errors.New("domain name can not be emtpy")
+	ErrMissingImage        = errors.New("image path can not be empty")
 	ErrNotEnoughDisk       = errors.New("not enough disk space assigned to task")
 	ErrIncompleteOSVariant = errors.New("provided os information is incomplete: arch and machine are mandatory ")
 	ErrInvalidHostName     = fmt.Errorf("a resource name must consist of lower case alphanumeric characters or '-', must start and end with an alphanumeric character and be less than %d characters", maxNameLength+1)
