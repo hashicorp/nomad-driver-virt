@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	mimMemoryMB   = 25600 // Minimun recommended for running linux distributions.
+	mimMemoryMB   = 25600 // Minimum recommended for running linux distributions.
 	maxNameLength = 63
 )
 
