@@ -58,7 +58,6 @@ type Config struct {
 	XMLConfig         string
 	Name              string
 	Memory            uint
-	//DiskSize          int
 	Cores             uint
 	CPUs              int
 	OsVariant         *OSVariant
