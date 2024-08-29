@@ -36,6 +36,7 @@ var (
 	// this is used to validated the configuration specified for the plugin
 	// when a job is submitted.
 	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
+		"network_interface":               net.NetworkInterfaceHCLSpec(),
 		"use_thin_copy":                   hclspec.NewAttr("use_thin_copy", "bool", false),
 		"image":                           hclspec.NewAttr("image", "string", true),
 		"hostname":                        hclspec.NewAttr("hostname", "string", false),
@@ -46,11 +47,6 @@ var (
 		"os": hclspec.NewBlock("os", false, hclspec.NewObject(map[string]*hclspec.Spec{
 			"arch":    hclspec.NewAttr("arch", "string", false),
 			"machine": hclspec.NewAttr("machine", "string", false),
-		})),
-		"network_interface": hclspec.NewBlockList("network_interface", hclspec.NewObject(map[string]*hclspec.Spec{
-			"network_name": hclspec.NewAttr("network_name", "string", false),
-			"address":      hclspec.NewAttr("address", "string", false),
-			"port_map":     hclspec.NewAttr("port_map", "list(map(number))", false),
 		})),
 	})
 
@@ -87,17 +83,15 @@ var (
 // TaskConfig contains configuration information for a task that runs within
 // this plugin.
 type TaskConfig struct {
-	ImagePath           string             `codec:"image"`
-	Hostname            string             `codec:"hostname"`
-	OS                  *OS                `codec:"os"`
-	UserData            string             `codec:"user_data"`
-	NetworkInterface    []NetworkInterface `codec:"network_interface"`
-	TimeZone            *time.Location     `codec:"timezone"`
-	CMDs                []string           `codec:"cmds"`
-	DefaultUserSSHKey   string             `codec:"default_user_authorized_ssh_key"`
-	DefaultUserPassword string             `codec:"default_user_password"`
-	UseThinCopy         bool               `codec:"use_thin_copy"`
-
+	ImagePath           string         `codec:"image"`
+	Hostname            string         `codec:"hostname"`
+	OS                  *OS            `codec:"os"`
+	UserData            string         `codec:"user_data"`
+	TimeZone            *time.Location `codec:"timezone"`
+	CMDs                []string       `codec:"cmds"`
+	DefaultUserSSHKey   string         `codec:"default_user_authorized_ssh_key"`
+	DefaultUserPassword string         `codec:"default_user_password"`
+	UseThinCopy         bool           `codec:"use_thin_copy"`
 	// The list of network interfaces that should be added to the VM.
 	net.NetworkInterfacesConfig `codec:"network_interface"`
 }
