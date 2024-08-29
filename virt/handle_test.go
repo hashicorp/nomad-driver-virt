@@ -4,9 +4,12 @@
 package virt
 
 import (
+	"context"
 	"errors"
 	"testing"
+	"time"
 
+	"github.com/hashicorp/go-hclog"
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad/client/structs"
 	"github.com/hashicorp/nomad/plugins/drivers"
@@ -84,5 +87,51 @@ func Test_GetStats(t *testing.T) {
 }
 
 func Test_Monitor(t *testing.T) {
+	dgm := &domainGetterMock{
+		info: &domain.Info{
+			State: "running",
+		},
+	}
 
+	th := &taskHandle{
+		logger:     hclog.NewNullLogger(),
+		name:       "test-domain",
+		taskGetter: dgm,
+		procState:  drivers.TaskStateRunning,
+	}
+
+	exitChannel := make(chan *drivers.ExitResult, 1)
+	defer close(exitChannel)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	go th.monitor(ctx, exitChannel)
+
+	time.Sleep(2 * time.Second)
+
+	must.Zero(t, len(exitChannel))
+	must.Eq(t, drivers.TaskStateRunning, th.procState)
+
+	// An error from the domain getter should cause the task to move
+	// to an unknown state.
+	dgm.err = errors.New("oh no! an error!")
+	time.Sleep(2 * time.Second)
+
+	must.Eq(t, drivers.TaskStateUnknown, th.procState)
+
+	// A domain reporting a crash should force the monitor to send an exit
+	// result and return.
+	dgm.err = nil
+	dgm.info.State = "crashed"
+
+	time.Sleep(2 * time.Second)
+
+	must.One(t, len(exitChannel))
+
+	res := <-exitChannel
+
+	must.One(t, res.ExitCode)
+	must.Eq(t, ErrTaskCrashed, res.Err)
+	must.Eq(t, drivers.TaskStateExited, th.procState)
 }
