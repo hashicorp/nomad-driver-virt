@@ -111,14 +111,19 @@ func Test_Monitor(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	must.Zero(t, len(exitChannel))
+
+	h.stateLock.Lock()
 	must.Eq(t, drivers.TaskStateRunning, th.procState)
+	h.stateLock.Unlock()
 
 	// An error from the domain getter should cause the task to move
 	// to an unknown state.
 	dgm.err = errors.New("oh no! an error!")
 	time.Sleep(2 * time.Second)
 
+	h.stateLock.Lock()
 	must.Eq(t, drivers.TaskStateUnknown, th.procState)
+	h.stateLock.Unlock()
 
 	// A domain reporting a crash should force the monitor to send an exit
 	// result and return.
@@ -133,5 +138,8 @@ func Test_Monitor(t *testing.T) {
 
 	must.One(t, res.ExitCode)
 	must.Eq(t, ErrTaskCrashed, res.Err)
+
+	h.stateLock.Lock()
 	must.Eq(t, drivers.TaskStateExited, th.procState)
+	h.stateLock.Unlock()
 }

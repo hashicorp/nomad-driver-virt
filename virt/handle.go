@@ -96,6 +96,8 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 
 			if domain == nil {
 				// What else should we return here? This state should never happen
+				// The vm no longer exists, it might cause the monitor to block
+				// forever.
 				return
 			}
 
