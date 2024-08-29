@@ -24,7 +24,7 @@ var (
 	// characters according to the RFC
 	validLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
 
-	ErrEmptyName           = errors.New("domain name can not be emtpy")
+	ErrEmptyName           = errors.New("domain name can not be empty")
 	ErrMissingImage        = errors.New("image path can not be empty")
 	ErrNotEnoughDisk       = errors.New("not enough disk space assigned to task")
 	ErrIncompleteOSVariant = errors.New("provided os information is incomplete: arch and machine are mandatory ")
