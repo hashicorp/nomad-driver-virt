@@ -6,6 +6,7 @@ package virt
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -17,14 +18,27 @@ import (
 )
 
 type domainGetterMock struct {
+	lock sync.RWMutex
 	name string
 	info *domain.Info
 	err  error
 }
 
 func (dgm *domainGetterMock) GetDomain(name string) (*domain.Info, error) {
+	dgm.lock.Lock()
 	dgm.name = name
-	return dgm.info, dgm.err
+
+	info := &domain.Info{}
+	if dgm.info != nil {
+		*info = *dgm.info
+	} else {
+ 		info = nil
+	}
+
+	err := dgm.err
+	dgm.lock.Unlock()
+
+	return info, err
 }
 
 func Test_GetStats(t *testing.T) {
@@ -79,7 +93,10 @@ func Test_GetStats(t *testing.T) {
 			stats, err := th.GetStats()
 			must.Eq(t, tt.expectedError, errors.Unwrap(err))
 			if err == nil {
+				dgm.lock.Lock()
 				must.StrContains(t, "test-domain", dgm.name)
+				dgm.lock.Unlock()
+
 				must.Eq(t, tt.expectedResult.ResourceUsage, stats.ResourceUsage)
 			}
 		})
@@ -112,23 +129,28 @@ func Test_Monitor(t *testing.T) {
 
 	must.Zero(t, len(exitChannel))
 
-	h.stateLock.Lock()
+	th.stateLock.Lock()
 	must.Eq(t, drivers.TaskStateRunning, th.procState)
-	h.stateLock.Unlock()
+	th.stateLock.Unlock()
 
 	// An error from the domain getter should cause the task to move
 	// to an unknown state.
+	dgm.lock.Lock()
 	dgm.err = errors.New("oh no! an error!")
+	dgm.lock.Unlock()
+
 	time.Sleep(2 * time.Second)
 
-	h.stateLock.Lock()
+	th.stateLock.Lock()
 	must.Eq(t, drivers.TaskStateUnknown, th.procState)
-	h.stateLock.Unlock()
+	th.stateLock.Unlock()
 
 	// A domain reporting a crash should force the monitor to send an exit
 	// result and return.
+	dgm.lock.Lock()
 	dgm.err = nil
 	dgm.info.State = "crashed"
+	dgm.lock.Unlock()
 
 	time.Sleep(2 * time.Second)
 
@@ -139,7 +161,7 @@ func Test_Monitor(t *testing.T) {
 	must.One(t, res.ExitCode)
 	must.Eq(t, ErrTaskCrashed, res.Err)
 
-	h.stateLock.Lock()
+	th.stateLock.Lock()
 	must.Eq(t, drivers.TaskStateExited, th.procState)
-	h.stateLock.Unlock()
+	th.stateLock.Unlock()
 }
