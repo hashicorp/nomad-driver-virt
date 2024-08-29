@@ -11,52 +11,6 @@ import (
 	"github.com/shoenig/test/must"
 )
 
-func Test_taskConfigSpec(t *testing.T) {
-	testCases := []struct {
-		name           string
-		inputConfig    string
-		expectedOutput TaskConfig
-	}{
-		{
-			name: "network interface with required",
-			inputConfig: `
-config {
-  type = "kvm"
-  os {
-    arch    = "x86_64"
-    machine = "pc-i440fx-jammy"
-    type    = "qemu"
-  }
-  network_interface {
-    bridge {
-      name  = "virbr0"
-      ports = ["ssh"]
-    }
-  }
-}
-`,
-			expectedOutput: TaskConfig{
-				NetworkInterfacesConfig: []*net.NetworkInterfaceConfig{
-					{
-						Bridge: &net.NetworkInterfaceBridgeConfig{
-							Name:  "virbr0",
-							Ports: []string{"ssh"},
-						},
-					},
-				}},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-
-			var actualOutput TaskConfig
-
-			hclutils.NewConfigParser(taskConfigSpec).ParseHCL(t, tc.inputConfig, &actualOutput)
-			must.Eq(t, tc.expectedOutput, actualOutput)
-		})
-	}
-}
 func TestConfig_Task(t *testing.T) {
 	t.Parallel()
 
@@ -133,4 +87,55 @@ func TestConfig_Plugin(t *testing.T) {
 	must.StrContains(t, expectedURI, cs.Emulator.URI)
 	must.StrContains(t, expectedUser, cs.Emulator.User)
 	must.StrContains(t, expectedPassword, cs.Emulator.Password)
+}
+
+func Test_taskConfigSpec(t *testing.T) {
+	testCases := []struct {
+		name           string
+		inputConfig    string
+		expectedOutput TaskConfig
+	}{
+		{
+			name: "network interface with required",
+			inputConfig: `
+config {
+  image = "/path/to/image/here"
+  os {
+    arch    = "x86_64"
+    machine = "pc-i440fx-jammy"
+  }
+  network_interface {
+    bridge {
+      name  = "virbr0"
+      ports = ["ssh"]
+    }
+  }
+}
+`,
+			expectedOutput: TaskConfig{
+				ImagePath: "/path/to/image/here",
+				OS: &OS{
+					Arch:    "x86_64",
+					Machine: "pc-i440fx-jammy",
+				},
+				NetworkInterfacesConfig: []*net.NetworkInterfaceConfig{
+					{
+						Bridge: &net.NetworkInterfaceBridgeConfig{
+							Name:  "virbr0",
+							Ports: []string{"ssh"},
+						},
+					},
+				}},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+
+			var actualOutput TaskConfig
+
+			hclutils.NewConfigParser(taskConfigSpec).ParseHCL(t, tc.inputConfig, &actualOutput)
+			must.Eq(t, tc.expectedOutput, actualOutput)
+		})
+	}
 }
