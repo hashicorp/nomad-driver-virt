@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -50,6 +51,8 @@ const (
 
 	envVariblesFilePath        = "/etc/profile.d/virt.sh" //Only valid for linux OS
 	envVariblesFilePermissions = "777"
+
+	defaultDefaultVolumeSizeMB = 10 * 1024 // 10GB
 )
 
 var (
@@ -435,6 +438,15 @@ func fileExists(path string) bool {
 
 // StartTask returns a task handle and a driver network if necessary.
 func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drivers.DriverNetwork, error) {
+	defer func() {
+		r := recover()
+		if r != nil {
+			d.logger.Error("RECOVERED PANIC", "r", r)
+			debug.PrintStack()
+			panic(r)
+		}
+	}()
+
 	if _, ok := d.tasks.Get(cfg.ID); ok {
 		return nil, nil, fmt.Errorf("task with ID %q already started", cfg.ID)
 	}
@@ -501,38 +513,68 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		return nil, nil, fmt.Errorf("virt: unable to get disk format %s: %w", cfg.AllocID, err)
 	}
 
+	backingStore := ""
 	if driverConfig.UseThinCopy {
 		copyPath := filepath.Join(d.dataDir, taskName+".img")
 
 		d.logger.Info("creating thin copy at", "path", copyPath)
-		if err := d.createThinCopy(diskImagePath, copyPath, cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
+		if err := d.createThinCopy(
+			diskImagePath,
+			copyPath,
+			driverConfig.DefaultVolumeSize,
+		); err != nil {
 			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w", taskName, err)
 		}
 
+		backingStore = diskImagePath
 		diskImagePath = copyPath
 		diskFormat = "qcow2"
+	}
+
+	d.logger.Debug("nomad job resources", "res", cfg.Resources)
+
+	cpus := 0
+	if cfg.Resources.LinuxResources != nil && cfg.Resources.LinuxResources.CpusetCpus != "" {
+		cores := strings.Split(cfg.Resources.LinuxResources.CpusetCpus, ",")
+		cpus = len(cores)
 	}
 
 	dc := &domain.Config{
 		RemoveConfigFiles: true,
 		Name:              taskName,
 		Memory:            uint(cfg.Resources.NomadResources.Memory.MemoryMB),
-		//Cores:             int(cfg.Resources.NomadResources.Cpu.ReservedCores[]),
-		CPUs:      int(cfg.Resources.NomadResources.Cpu.CpuShares),
-		Cores:     2,
-		OsVariant: osVariant,
-		BaseImage: diskImagePath,
-		DiskFmt:   diskFormat,
+		CPUs:              cpus,
+		OsVariant:         osVariant,
+		BackingStore:      backingStore,
+		BaseImage:         diskImagePath,
+		DiskFmt:           diskFormat,
 		//DiskSize:          1,
-		NetworkInterfaces: []string{"virbr0"},
-		HostName:          hostname,
-		Mounts:            allocFSMounts,
-		CMDs:              driverConfig.CMDs,
-		CIUserData:        driverConfig.UserData,
-		Password:          driverConfig.DefaultUserPassword,
-		SSHKey:            driverConfig.DefaultUserSSHKey,
+		HostName:       hostname,
+		Mounts:         allocFSMounts,
+		CMDs:           driverConfig.CMDs,
+		CIUserData:     driverConfig.UserData,
+		CIUserDataPath: driverConfig.UserDataPath,
+		Password:       driverConfig.DefaultUserPassword,
+		SSHKey:         driverConfig.DefaultUserSSHKey,
 		//Env:               cfg.Env,
 		Files: []domain.File{createEnvsFile(cfg.Env)},
+	}
+
+	if driverConfig.DefaultVolumeSize < 1 {
+		driverConfig.DefaultVolumeSize = defaultDefaultVolumeSizeMB
+	}
+
+	// There is exactly one.
+	if len(driverConfig.NetworkInterfacesConfig) > 0 {
+		bridgeNet := driverConfig.NetworkInterfacesConfig[0].Bridge
+		dc.NetworkInterfaces = []domain.NetworkInterfaceConfig{{
+			Name: bridgeNet.Name,
+			MAC:  bridgeNet.MAC,
+		}}
+	} else {
+		dc.NetworkInterfaces = []domain.NetworkInterfaceConfig{{
+			Name: "virbr0",
+		}}
 	}
 
 	if err := dc.Validate(allowedPaths); err != nil {
@@ -621,7 +663,7 @@ func (d *VirtDriverPlugin) getImageFormat(basePath string) (string, error) {
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("qemu-img info --output=json %s", basePath))
+	cmd := exec.Command("qemu-img", "info", "--output=json", basePath)
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
@@ -648,13 +690,26 @@ func (d *VirtDriverPlugin) getImageFormat(basePath string) (string, error) {
 	return output.Format, nil
 }
 
-func (d *VirtDriverPlugin) createThinCopy(basePath string, destination string, sizeM int64) error {
-	d.logger.Debug("creating thin copy", "base", basePath, "dest", destination)
+func (d *VirtDriverPlugin) createThinCopy(
+	basePath string,
+	destination string,
+	sizeM int64,
+) error {
+	d.logger.Debug("creating thin copy",
+		"base", basePath,
+		"dest", destination,
+		"size", sizeM,
+	)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("qemu-img create -b %s -f qcow2 -F qcow2 %s %dM",
-		basePath, destination, sizeM))
+	cmd := exec.Command("qemu-img", "create",
+		"-b", basePath,
+		"-f", "qcow2",
+		"-F", "qcow2",
+		destination,
+		fmt.Sprintf("%dM", sizeM),
+	)
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 

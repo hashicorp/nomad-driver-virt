@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	mimMemoryMB   = 25600 // Minimum recommended for running linux distributions.
-	maxNameLength = 63    // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
+	// mimMemoryMB   = 25600 // Minimum recommended for running linux distributions.
+	minMemoryMB   = 500 // 500MB; Minimum size of AWS instance type.
+	maxNameLength = 63  // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 )
 
 var (
@@ -26,6 +27,7 @@ var (
 
 	ErrEmptyName           = errors.New("domain name can not be empty")
 	ErrMissingImage        = errors.New("image path can not be empty")
+	ErrNotEnoughMemory     = errors.New("not enough memory assigned to task")
 	ErrNotEnoughDisk       = errors.New("not enough disk space assigned to task")
 	ErrIncompleteOSVariant = errors.New("provided os information is incomplete: arch and machine are mandatory ")
 	ErrInvalidHostName     = fmt.Errorf("a resource name must consist of lower case alphanumeric characters or '-', must start and end with an alphanumeric character and be less than %d characters", maxNameLength+1)
@@ -58,12 +60,13 @@ type Config struct {
 	XMLConfig         string
 	Name              string
 	Memory            uint
-	Cores             uint
+	// Cores             uint // unused?
 	CPUs              int
 	OsVariant         *OSVariant
+	BackingStore      string
 	BaseImage         string
 	DiskFmt           string
-	NetworkInterfaces []string
+	NetworkInterfaces []NetworkInterfaceConfig
 	HostName          string
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
@@ -73,36 +76,53 @@ type Config struct {
 	CMDs              []string
 	BOOTCMDs          []string
 	CIUserData        string
+	CIUserDataPath    string
+}
+
+type NetworkInterfaceConfig struct {
+	Name  string // required
+	MAC   string // optional;<random>
+	Model string // optional;virtio
 }
 
 func (dc *Config) Validate(allowedPaths []string) error {
-	var mErr multierror.Error
+	var mErr *multierror.Error
 	if dc.Name == "" {
-		_ = multierror.Append(&mErr, ErrEmptyName)
+		mErr = multierror.Append(mErr, ErrEmptyName)
 	}
 
 	if dc.BaseImage == "" {
-		_ = multierror.Append(&mErr, ErrMissingImage)
+		mErr = multierror.Append(mErr, ErrMissingImage)
 	} else {
 		if !isAllowedImagePath(allowedPaths, dc.BaseImage) {
-			_ = multierror.Append(&mErr, ErrPathNotAllowed)
+			mErr = multierror.Append(mErr, ErrPathNotAllowed)
 		}
 	}
 
-	if dc.Memory < mimMemoryMB {
-		_ = multierror.Append(&mErr, ErrNotEnoughDisk)
+	if dc.CPUs < 1 {
+		mErr = multierror.Append(mErr, errors.New("no cpus configured"))
+	}
+
+	if dc.Memory < minMemoryMB {
+		mErr = multierror.Append(mErr, ErrNotEnoughMemory)
 	}
 
 	if dc.OsVariant != nil {
 		if dc.OsVariant.Arch == "" &&
 			dc.OsVariant.Machine == "" {
-			_ = multierror.Append(&mErr, ErrIncompleteOSVariant)
+			mErr = multierror.Append(mErr, ErrIncompleteOSVariant)
 		}
 
 	}
 
 	if dc.HostName != "" && !IsValidLabel(dc.HostName) {
-		_ = multierror.Append(&mErr, ErrInvalidHostName)
+		mErr = multierror.Append(mErr, ErrInvalidHostName)
+	}
+
+	if dc.CIUserData != "" && dc.CIUserDataPath != "" {
+		mErr = multierror.Append(mErr, errors.New(
+			"cannot specify both user_data and user_data_path",
+		))
 	}
 
 	return mErr.ErrorOrNil()
@@ -119,7 +139,7 @@ type VirtualizerInfo struct {
 	Memory          uint64
 	FreeMemory      uint64
 	Cpus            uint
-	Cores           uint32
+	Cores           uint32 // unused?
 	EmulatorVersion uint32
 	LibvirtVersion  uint32
 	RunningDomains  uint

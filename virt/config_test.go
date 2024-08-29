@@ -26,6 +26,7 @@ func TestConfig_Task(t *testing.T) {
 	expectedUseThinCopy := true
 	expectedARCH := "arm78"
 	expectedMachine := "R2D2"
+	expectedDefaultVolumeSize := int64(1024)
 
 	validHCL := `
   config {
@@ -36,6 +37,7 @@ func TestConfig_Task(t *testing.T) {
 	default_user_authorized_ssh_key =  "ssh-ed25519 testtesttest..."
 	default_user_password = "password"
 	use_thin_copy = true
+	default_volume_size = 1024
 	os {
 		arch = "arm78"
 		machine = "R2D2"
@@ -47,7 +49,8 @@ func TestConfig_Task(t *testing.T) {
 	parser.ParseHCL(t, validHCL, &tc)
 	must.SliceContainsAll(t, expectedCmds, tc.CMDs)
 	must.StrContains(t, expectedImg, tc.ImagePath)
-	must.True(t, expectedUseThinCopy)
+	must.Eq(t, expectedUseThinCopy, tc.UseThinCopy)
+	must.Eq(t, expectedDefaultVolumeSize, tc.DefaultVolumeSize)
 	must.StrContains(t, expectedDefaultUserSSHKey, tc.DefaultUserSSHKey)
 	must.StrContains(t, expectedDefaultUserPassword, tc.DefaultUserPassword)
 	must.StrContains(t, expectedHostname, tc.Hostname)

@@ -6,6 +6,7 @@ package net
 import (
 	"errors"
 	"fmt"
+	"net"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
@@ -28,10 +29,13 @@ type NetworkInterfaceConfig struct {
 // NetworkInterfaceBridgeConfig is the network object when a VM is attached to
 // a bridged network interface.
 type NetworkInterfaceBridgeConfig struct {
-
 	// Name is the name of the bridge interface to use. This relates to the
 	// output seen from commands such as "ip addr show" or "virsh net-info".
 	Name string `codec:"name"`
+
+	// MAC is the user-provided mac address to use when using this bridge
+	// device. If not provided it will be generated.
+	MAC string `codec:"mac"`
 
 	// Ports contains a list of port labels which will be exposed on the host
 	// via mapping to the network interface. These labels must exist within the
@@ -43,27 +47,35 @@ type NetworkInterfaceBridgeConfig struct {
 // driver. Any error returned here should be considered terminal for a task
 // and stop the process execution.
 func (n *NetworkInterfacesConfig) Validate() error {
-
 	if n == nil {
 		return nil
 	}
 
-	var mErr multierror.Error
+	var mErr *multierror.Error
 
 	// The driver only currently supports a single network interface per VM due
 	// to constraints on Nomad's network mapping handling and the driver
 	// itself.
-	if len(*n) > 1 {
-		mErr.Errors = append(mErr.Errors,
+	if len(*n) != 1 {
+		mErr = multierror.Append(mErr,
 			errors.New("only one network interface can be configured"))
 	}
 
 	// Iterate the network interfaces and validate each object to be correct
 	// according to their type.
 	for i, netInterface := range *n {
-		if netInterface.Bridge != nil && netInterface.Bridge.Name == "" {
-			mErr.Errors = append(mErr.Errors,
-				fmt.Errorf("network interface bridge '%v' requires name parameter", i))
+		if netInterface.Bridge != nil {
+			if netInterface.Bridge.Name == "" {
+				mErr = multierror.Append(mErr,
+					fmt.Errorf("network interface bridge '%v' requires name parameter", i))
+			}
+
+			if netInterface.Bridge.MAC != "" {
+				if _, err := net.ParseMAC(netInterface.Bridge.MAC); err != nil {
+					mErr = multierror.Append(mErr,
+						fmt.Errorf("network interface bridge '%v' optional MAC is invalid %q", i, netInterface.Bridge.MAC))
+				}
+			}
 		}
 	}
 

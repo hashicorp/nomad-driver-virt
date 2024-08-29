@@ -26,7 +26,7 @@ func TestNetworkInterfaces_Validate(t *testing.T) {
 		{
 			name:                   "empty list",
 			inputNetworkInterfaces: &NetworkInterfacesConfig{},
-			expectedOutput:         nil,
+			expectedOutput:         errors.New("only one network interface can be configured"),
 		},
 		{
 			name: "one interface",
