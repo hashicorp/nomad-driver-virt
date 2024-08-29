@@ -20,20 +20,18 @@ job "e" {
 
       driver = "nomad-driver-virt"
     
-/*       artifact {
+       artifact {
         source =  "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
         destination = "tinycore.qcow2"
         mode = "file"
-      }  */ 
-
+      }  
 
       config {
-        //image = "tinycore.qcow2"
-        image ="/home/ubuntu/juana13.img"
-        password = "password"
-        cmds = [" touch /home/ubuntu/fede.txt"]
-        //user_data = "/home/ubuntu/cc/user-data" //TODO: verify user data!!!
-        authorized_ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1/cUhjyA8aznoy9FlwU4d6p/zfxP5RqRxhCWzGK juanita.delacuestamorales@hashicorp.com"
+        image = "tinycore.qcow2"
+        use_thin_copy = true
+        default_user_password = "password"
+        cmds = [" touch /home/ubuntu/file.txt"]
+        default_user_authorized_ssh_key = "ssh-ed25519 AAAAC3Nza..."
       }
 
       resources {
