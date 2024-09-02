@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
-	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
@@ -99,12 +98,6 @@ type TaskConfig struct {
 type OS struct {
 	Arch    string `codec:"arch"`
 	Machine string `codec:"machine"`
-}
-
-type NetworkInterface struct {
-	NetworkName string             `codec:"network_name"`
-	Address     string             `codec:"address"`
-	PortMap     hclutils.MapStrInt `codec:"port_map"`
 }
 
 type Emulator struct {

@@ -1,4 +1,4 @@
-job "e" {
+job "virt-example" {
   datacenters = ["dc1"]
 
   group "virt-group" {
@@ -22,15 +22,15 @@ job "e" {
     
        artifact {
         source =  "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
-        destination = "tinycore.qcow2"
+        destination = "focal-server-cloudimg-amd64.img"
         mode = "file"
       }  
 
       config {
-        image = "tinycore.qcow2"
+        image = "focal-server-cloudimg-amd64.img"
         use_thin_copy = true
         default_user_password = "password"
-        cmds = [" touch /home/ubuntu/file.txt"]
+        cmds = ["touch /home/ubuntu/file.txt"]
         default_user_authorized_ssh_key = "ssh-ed25519 AAAAC3Nza..."
       }
 

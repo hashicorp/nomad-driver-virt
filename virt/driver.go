@@ -72,7 +72,6 @@ var (
 // This information is needed to rebuild the task state and handler during
 // recovery.
 type TaskState struct {
-	//ReattachConfig *structs.ReattachConfig
 	TaskConfig *drivers.TaskConfig
 	StartedAt  time.Time
 }
@@ -221,8 +220,8 @@ func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 	attrs["driver.virt"] = structs.NewBoolAttribute(true)
 	attrs["driver.virt.libvirt.version"] = structs.NewIntAttribute(int64(virtInfo.LibvirtVersion), "")
 	attrs["driver.virt.emulator.version"] = structs.NewIntAttribute(int64(virtInfo.EmulatorVersion), "")
-	attrs["driver.virt.active"] = structs.NewIntAttribute(int64(virtInfo.FreeMemory), "")
-	attrs["driver.virt.inactive"] = structs.NewIntAttribute(int64(virtInfo.FreeMemory), "bytes")
+	attrs["driver.virt.active"] = structs.NewIntAttribute(int64(virtInfo.RunningDomains), "")
+	attrs["driver.virt.inactive"] = structs.NewIntAttribute(int64(virtInfo.InactiveDomains), "bytes")
 
 	fp := &drivers.Fingerprint{
 		Attributes:        attrs,
@@ -266,7 +265,7 @@ func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal
 
 	_, ok := d.tasks.Get(taskID)
 	if !ok {
-		d.logger.Warn("task to stop not found")
+		d.logger.Warn("task to stop not found", "taskID", taskID)
 		return nil
 	}
 
@@ -281,7 +280,7 @@ func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal
 // DestroyTask function cleans up and removes a task that has terminated.
 // If force is set to true, the driver must destroy the task even if it is still running.
 func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
-	d.logger.Info("destroying task %s", taskID)
+	d.logger.Info("destroying task", "taskID", taskID)
 
 	handle, ok := d.tasks.Get(taskID)
 	if !ok {
@@ -340,10 +339,10 @@ func (d *VirtDriverPlugin) publishStats(ctx context.Context, interval time.Durat
 		case <-ticker.C:
 			stats, err := handle.GetStats()
 			if err != nil {
-				d.logger.Error("error while reading stast from the task", "task", handle.name, "error", err)
+				d.logger.Error("error while reading stats from the task", "task", handle.name, "error", err)
 			}
 
-			d.logger.Debug("publishing stats", "values", fmt.Sprintf("%+v", stats.ResourceUsage.MemoryStats))
+			d.logger.Trace("publishing stats", "values", fmt.Sprintf("%+v", stats.ResourceUsage.MemoryStats))
 			sch <- stats
 
 		case <-ctx.Done():
@@ -505,7 +504,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	if driverConfig.UseThinCopy {
 		copyPath := filepath.Join(d.dataDir, taskName+".img")
 
-		d.logger.Error("creating thin copy at", "path", copyPath) //TODO: change to info
+		d.logger.Info("creating thin copy at", "path", copyPath)
 		if err := d.createThinCopy(diskImagePath, copyPath, cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
 			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w", taskName, err)
 		}

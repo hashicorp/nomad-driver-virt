@@ -16,12 +16,12 @@ import (
 
 const (
 	mimMemoryMB   = 25600 // Minimum recommended for running linux distributions.
-	maxNameLength = 63
+	maxNameLength = 63    //according to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 )
 
 var (
-	// matches valid DNS labels according to RFC 1123, should be at most 63
-	// characters according to the RFC
+	// matches valid DNS labels according to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html),
+	// should be at most 63 characters according to the RFC
 	validLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
 
 	ErrEmptyName           = errors.New("domain name can not be empty")
@@ -142,7 +142,7 @@ func IsValidLabel(name string) bool {
 	return validLabel.MatchString(name)
 }
 
-// ValidateName returns an error a name is not a valid resource name.
+// ValidateHostName returns an error a name is not a valid resource name.
 // The error will contain reference to what constitutes a valid resource name.
 func ValidateHostName(name string) error {
 	if !IsValidLabel(name) || strings.ToLower(name) != name || len(name) > maxNameLength {
