@@ -544,7 +544,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
-	d.logger.Info("task started succesfully", "taskName", taskName)
+	d.logger.Info("task started successfully", "taskName", taskName)
 
 	if err := handle.SetDriverState(&driverState); err != nil {
 		return nil, nil, fmt.Errorf("failed to set driver state: %v", err)
