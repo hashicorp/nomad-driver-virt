@@ -16,7 +16,7 @@ import (
 
 const (
 	mimMemoryMB   = 25600 // Minimum recommended for running linux distributions.
-	maxNameLength = 63    //according to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
+	maxNameLength = 63    // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 )
 
 var (
