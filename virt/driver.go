@@ -248,7 +248,7 @@ func (d *VirtDriverPlugin) WaitTask(ctx context.Context, taskID string) (<-chan 
 
 	go func(ctx context.Context, handle *taskHandle, exitCh chan *drivers.ExitResult) {
 		defer close(exitCh)
-		d.logger.Info("monitoring task", task_id, handle.name)
+		d.logger.Info("monitoring task", "task_id", handle.name)
 
 		handle.monitor(ctx, exitCh)
 
@@ -261,11 +261,11 @@ func (d *VirtDriverPlugin) WaitTask(ctx context.Context, taskID string) (<-chan 
 // If the task does not stop during the given timeout, the driver must forcefully kill the task.
 // StopTask does not clean up resources of the task or remove it from the driver's internal state.
 func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal string) error {
-	d.logger.Info("stopping task", task_id, taskID)
+	d.logger.Info("stopping task", "task_id", taskID)
 
 	_, ok := d.tasks.Get(taskID)
 	if !ok {
-		d.logger.Warn("task to stop not found", task_id, taskID)
+		d.logger.Warn("task to stop not found", "task_id", taskID)
 		return nil
 	}
 
@@ -280,11 +280,11 @@ func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal
 // DestroyTask function cleans up and removes a task that has terminated.
 // If force is set to true, the driver must destroy the task even if it is still running.
 func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
-	d.logger.Info("destroying task", task_id, taskID)
+	d.logger.Info("destroying task", "task_id", taskID)
 
 	handle, ok := d.tasks.Get(taskID)
 	if !ok {
-		d.logger.Warn("task to destroy not found", task_id, taskID)
+		d.logger.Warn("task to destroy not found", "task_id", taskID)
 		return nil
 	}
 
