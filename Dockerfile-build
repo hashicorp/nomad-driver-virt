@@ -1,0 +1,31 @@
+FROM ubuntu:jammy
+
+ARG GO_VERSION="1.23.0"
+ARG USER_ID
+ARG GROUP_ID
+
+RUN apt-get update
+
+######################### install go
+RUN apt install -yq wget
+RUN wget "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" && \
+    rm -rf /usr/local/go && \
+    tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz" && \
+    rm -f "${GO_VERSION}.linux-amd64.tar.gz"
+
+RUN ln -sf /usr/local/go/bin/go /usr/local/bin/go
+RUN ln -sf /usr/local/go/bin/gofmt /usr/local/bin/gofmt
+
+########################### install stuff to build libvirt drivers
+RUN apt install -yq build-essential git libvirt-dev
+
+#################### create unprivileged user
+RUN addgroup --gid $GROUP_ID build && \
+    adduser --disabled-password --uid $USER_ID --gid $GROUP_ID build
+USER build
+
+############ setup slight caching
+RUN mkdir -p /home/build/go/pkg/mod
+
+ENV GOMODCACHE=/home/build/go/pkg/mod
+ENV GOPATH=/home/build/go
