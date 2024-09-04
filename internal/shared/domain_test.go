@@ -10,17 +10,19 @@ import (
 )
 
 func TestConfig_Validate(t *testing.T) {
+	allowedPath := "/allowed/path/"
+
 	tests := []struct {
 		name    string
 		config  Config
 		wantErr error
 	}{
 		{
-			name: "Valid configuration",
+			name: "Valid_configuration",
 			config: Config{
 				Name:      "test-domain",
 				Memory:    26000,
-				BaseImage: "/path/to/image.qcow2",
+				BaseImage: allowedPath + "image.qcow2",
 				OsVariant: &OSVariant{
 					Arch:    "x86_64",
 					Machine: "pc-i440fx-2.9",
@@ -29,10 +31,23 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "Missing domain name",
+			name: "Image_path_not_alloweds",
+			config: Config{
+				Name:      "test-domain",
+				Memory:    26000,
+				BaseImage: "/path/not/allowed/image.qcow2",
+				OsVariant: &OSVariant{
+					Arch:    "x86_64",
+					Machine: "pc-i440fx-2.9",
+				},
+			},
+			wantErr: multierror.Append(nil, ErrPathNotAllowed),
+		},
+		{
+			name: "Missing_domain_name",
 			config: Config{
 				Memory:    26000,
-				BaseImage: "/path/to/image.qcow2",
+				BaseImage: allowedPath + "image.qcow2",
 				OsVariant: &OSVariant{
 					Arch:    "x86_64",
 					Machine: "pc-i440fx-2.9",
@@ -41,7 +56,7 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: multierror.Append(nil, ErrEmptyName),
 		},
 		{
-			name: "Missing base image",
+			name: "Missing_base_image",
 			config: Config{
 				Name:   "test-domain",
 				Memory: 26000,
@@ -53,11 +68,11 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: multierror.Append(nil, ErrMissingImage),
 		},
 		{
-			name: "Not enough memory",
+			name: "Not_enough_memory",
 			config: Config{
 				Name:      "test-domain",
 				Memory:    25000,
-				BaseImage: "/path/to/image.qcow2",
+				BaseImage: allowedPath + "image.qcow2",
 				OsVariant: &OSVariant{
 					Arch:    "x86_64",
 					Machine: "pc-i440fx-2.9",
@@ -66,11 +81,11 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: multierror.Append(nil, ErrNotEnoughDisk),
 		},
 		{
-			name: "Incomplete OS variant",
+			name: "Incomplete_OS_variant",
 			config: Config{
 				Name:      "test-domain",
 				Memory:    26000,
-				BaseImage: "/path/to/image.qcow2",
+				BaseImage: allowedPath + "image.qcow2",
 				OsVariant: &OSVariant{
 					Arch:    "",
 					Machine: "",
@@ -79,7 +94,7 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: multierror.Append(nil, ErrIncompleteOSVariant),
 		},
 		{
-			name: "All errors",
+			name: "All_errors",
 			config: Config{
 				Name:   "",
 				Memory: 25000,
@@ -94,7 +109,7 @@ func TestConfig_Validate(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := tt.config.Validate()
+			err := tt.config.Validate([]string{allowedPath})
 			if err != nil && tt.wantErr == nil {
 				t.Errorf("expected no error, got %v", err)
 			} else if err == nil && tt.wantErr != nil {

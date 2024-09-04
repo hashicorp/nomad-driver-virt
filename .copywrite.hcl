@@ -9,6 +9,6 @@ project {
 
   header_ignore = [
     ".github/**",
-    "*.nomad.hcl"
+    "examples/**"
   ]
 }

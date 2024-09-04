@@ -7,12 +7,6 @@ import (
 	"sync"
 )
 
-type Storage interface {
-	Set(id string, handle *taskHandle)
-	Get(id string) (*taskHandle, bool)
-	Delete(id string)
-}
-
 // taskStore provides a mechanism to store and retrieve
 // task handles given a string identifier. The ID should
 // be unique per task

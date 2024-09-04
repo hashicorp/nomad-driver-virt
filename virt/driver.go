@@ -4,15 +4,23 @@
 package virt
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad/client/taskenv"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
 	"github.com/hashicorp/nomad/plugins/base"
 	"github.com/hashicorp/nomad/plugins/drivers"
@@ -36,6 +44,12 @@ const (
 	// this is used to allow modification and migration of the task schema
 	// used by the plugin
 	taskHandleVersion = 1
+
+	defaultDataDir     = "/var/lib/virt"
+	dataDirPermissions = 777
+
+	envVariblesFilePath        = "/etc/profile.d/virt.sh" //Only valid for linux OS
+	envVariblesFilePermissions = "777"
 )
 
 var (
@@ -49,6 +63,8 @@ var (
 
 	ErrExistingTaks    = errors.New("task is already running")
 	ErrStartingLibvirt = errors.New("unable to start libvirt")
+	ErrImageNotFound   = errors.New("disk image not found at path")
+	ErrTaskCrashed     = errors.New("task has crashed")
 )
 
 // TaskState is the runtime state which is encoded in the handle returned to
@@ -56,9 +72,8 @@ var (
 // This information is needed to rebuild the task state and handler during
 // recovery.
 type TaskState struct {
-	ReattachConfig *structs.ReattachConfig
-	TaskConfig     *drivers.TaskConfig
-	StartedAt      time.Time
+	TaskConfig *drivers.TaskConfig
+	StartedAt  time.Time
 }
 
 type Virtualizer interface {
@@ -68,14 +83,20 @@ type Virtualizer interface {
 	GetInfo() (domain.VirtualizerInfo, error)
 }
 
+type DomainGetter interface {
+	GetDomain(name string) (*domain.Info, error)
+}
+
 type VirtDriverPlugin struct {
 	eventer        *eventer.Eventer
 	virtualizer    Virtualizer
+	taskGetter     DomainGetter
 	config         *Config
 	nomadConfig    *base.ClientDriverConfig
 	tasks          *taskStore
 	signalShutdown context.CancelFunc
 	logger         hclog.Logger
+	dataDir        string
 }
 
 // NewPlugin returns a new driver plugin
@@ -83,14 +104,11 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 	ctx, cancel := context.WithCancel(context.Background())
 	logger = logger.Named(pluginName)
 
-	v, err := libvirt.New(ctx, logger)
-	if err != nil {
-		print(err)
-	}
-
+	// Should we check if extentions and kernel modules are there?
+	// grep -E 'svm|vmx' /proc/cpuinfo
+	// lsmod | grep kvm -> kvm_intel, kvm_amd, nvme-tcp
 	return &VirtDriverPlugin{
 		eventer:        eventer.NewEventer(ctx, logger),
-		virtualizer:    v,
 		config:         &Config{},
 		tasks:          newTaskStore(),
 		signalShutdown: cancel,
@@ -120,29 +138,29 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 	// Save the configuration to the plugin
 	d.config = &config
 
-	// TODO: parse and validated any configuration value if necessary.
-	//
-	// If your driver agent configuration requires any complex validation
-	// (some dependency between attributes) or special data parsing (the
-	// string "10s" into a time.Interval) you can do it here and update the
-	// value in d.config.
-	//
-	// In the example below we check if the shell specified by the user is
-	// supported by the plugin.
-	/* 	shell := d.config.Shell
-	   	if shell != "bash" && shell != "fish" {
-	   		return fmt.Errorf("invalid shell %s", d.config.Shell)
-	   	}
-	*/
 	// Save the Nomad agent configuration
 	if cfg.AgentConfig != nil {
 		d.nomadConfig = cfg.AgentConfig.Driver
 	}
 
-	// TODO: initialize any extra requirements if necessary.
-	//
-	// Here you can use the config values to initialize any resources that are
-	// shared by all tasks that use this driver, such as a daemon process.
+	if d.config.DataDir != "" {
+		d.dataDir = config.DataDir
+	} else {
+		d.dataDir = defaultDataDir
+	}
+
+	err := createDataDirectory(d.dataDir)
+	if err != nil {
+		return fmt.Errorf("virt: unable to create data dir: %w", err)
+	}
+
+	v, err := libvirt.New(context.TODO(), d.logger, libvirt.WithDataDirectory(d.dataDir))
+	if err != nil {
+		return err
+	}
+
+	d.virtualizer = v
+	d.taskGetter = v
 
 	return nil
 }
@@ -161,7 +179,9 @@ func (d *VirtDriverPlugin) Capabilities() (*drivers.Capabilities, error) {
 // and other driver specific node attributes.
 func (d *VirtDriverPlugin) Fingerprint(ctx context.Context) (<-chan *drivers.Fingerprint, error) {
 	ch := make(chan *drivers.Fingerprint)
+
 	go d.handleFingerprint(ctx, ch)
+
 	return ch, nil
 }
 
@@ -170,15 +190,16 @@ func (d *VirtDriverPlugin) handleFingerprint(ctx context.Context, ch chan<- *dri
 	defer close(ch)
 
 	// Nomad expects the initial fingerprint to be sent immediately
-	ticker := time.NewTimer(0)
+	ch <- d.buildFingerprint()
+
+	ticker := time.NewTicker(fingerprintPeriod)
+	defer ticker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			// after the initial fingerprint we can set the proper fingerprint
-			// period
-			ticker.Reset(fingerprintPeriod)
 			ch <- d.buildFingerprint()
 		}
 	}
@@ -186,7 +207,6 @@ func (d *VirtDriverPlugin) handleFingerprint(ctx context.Context, ch chan<- *dri
 
 // buildFingerprint returns the driver's fingerprint data
 func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
-
 	virtInfo, err := d.virtualizer.GetInfo()
 	if err != nil {
 		return &drivers.Fingerprint{
@@ -200,10 +220,11 @@ func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 	attrs["driver.virt"] = structs.NewBoolAttribute(true)
 	attrs["driver.virt.libvirt.version"] = structs.NewIntAttribute(int64(virtInfo.LibvirtVersion), "")
 	attrs["driver.virt.emulator.version"] = structs.NewIntAttribute(int64(virtInfo.EmulatorVersion), "")
-	attrs["driver.virt.freememory"] = structs.NewIntAttribute(int64(virtInfo.FreeMemory), "bytes")
+	attrs["driver.virt.active"] = structs.NewIntAttribute(int64(virtInfo.RunningDomains), "")
+	attrs["driver.virt.inactive"] = structs.NewIntAttribute(int64(virtInfo.InactiveDomains), "bytes")
 
 	fp := &drivers.Fingerprint{
-		Attributes:        map[string]*structs.Attribute{},
+		Attributes:        attrs,
 		Health:            drivers.HealthStateHealthy,
 		HealthDescription: drivers.DriverHealthy,
 	}
@@ -211,207 +232,74 @@ func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 	return fp
 }
 
-// StartTask returns a task handle and a driver network if necessary.
-func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drivers.DriverNetwork, error) {
-	if _, ok := d.tasks.Get(cfg.ID); ok {
-		return nil, nil, fmt.Errorf("task with ID %q already started", cfg.ID)
-	}
-
-	var driverConfig TaskConfig
-	if err := cfg.DecodeDriverConfig(&driverConfig); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode driver config: %v", err)
-	}
-
-	d.logger.Info("starting task", "driver_cfg", hclog.Fmt("%+v", driverConfig))
-	handle := drivers.NewTaskHandle(taskHandleVersion)
-	handle.Config = cfg
-
-	h := &taskHandle{
-		taskConfig: cfg,
-		procState:  drivers.TaskStateRunning,
-		startedAt:  time.Now().Round(time.Millisecond),
-		logger:     d.logger,
-		virtURI:    d.config.URI,
-	}
-
-	driverState := TaskState{
-		//ReattachConfig: structs.ReattachConfigFromGoPlugin(pluginClient.ReattachConfig()),
-		TaskConfig: cfg,
-		StartedAt:  h.startedAt,
-	}
-
-	if err := d.virtualizer.CreateDomain(&domain.Config{
-		Name: cfg.ID,
-		/* 	Files:             "",
-		EnvVariables:      "",
-		RemoveConfigFiles: "",
-		Timezone:          "", */
-	}); err != nil {
-		return nil, nil, fmt.Errorf("failed to start task: %w", err)
-	}
-
-	if err := handle.SetDriverState(&driverState); err != nil {
-		return nil, nil, fmt.Errorf("failed to set driver state: %v", err)
-	}
-
-	d.tasks.Set(cfg.ID, h)
-	go h.run()
-	return handle, nil, nil
-}
-
-// RecoverTask recreates the in-memory state of a task from a TaskHandle.
-func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
-	if handle == nil {
-		return errors.New("error: handle cannot be nil")
-	}
-
-	if _, ok := d.tasks.Get(handle.Config.ID); ok {
-		return nil
-	}
-
-	var taskState TaskState
-	if err := handle.GetDriverState(&taskState); err != nil {
-		return fmt.Errorf("failed to decode task state from handle: %v", err)
-	}
-
-	var driverConfig TaskConfig
-	if err := taskState.TaskConfig.DecodeDriverConfig(&driverConfig); err != nil {
-		return fmt.Errorf("failed to decode driver config: %v", err)
-	}
-	/*
-			// TODO: implement driver specific logic to recover a task.
-			//
-			// Recovering a task involves recreating and storing a taskHandle as if the
-			// task was just started.
-			//
-			// In the example below we use the executor to re-attach to the process
-			// that was created when the task first started.
-			plugRC, err := structs.ReattachConfigToGoPlugin(taskState.ReattachConfig)
-			if err != nil {
-				return fmt.Errorf("failed to build ReattachConfig from taskConfig state: %v", err)
-			}
-
-		 execImpl, pluginClient, err := executor.ReattachToExecutor(plugRC, d.logger)
-			if err != nil {
-				return fmt.Errorf("failed to reattach to executor: %v", err)
-			}
-	*/
-	h := &taskHandle{
-		//	exec:         execImpl,
-		//	pluginClient: pluginClient,
-		taskConfig: taskState.TaskConfig,
-		procState:  drivers.TaskStateRunning,
-		startedAt:  taskState.StartedAt,
-		exitResult: &drivers.ExitResult{},
-	}
-
-	d.tasks.Set(taskState.TaskConfig.ID, h)
-
-	go h.run()
-	return nil
-}
-
-// WaitTask returns a channel used to notify Nomad when a task exits.
+// WaitTask function is expected to return a channel that will send an *ExitResult when the task
+// exits or close the channel when the context is canceled. It is also expected that calling
+// WaitTask on an exited task will immediately send an *ExitResult on the returned channel.
+// A call to WaitTask after StopTask is valid and should be handled.
+// If WaitTask is called after DestroyTask, it should return drivers.ErrTaskNotFound as
+// no task state should exist after DestroyTask is called.
 func (d *VirtDriverPlugin) WaitTask(ctx context.Context, taskID string) (<-chan *drivers.ExitResult, error) {
+	exitChannel := make(chan *drivers.ExitResult, 1)
+
 	handle, ok := d.tasks.Get(taskID)
 	if !ok {
 		return nil, drivers.ErrTaskNotFound
 	}
 
-	ch := make(chan *drivers.ExitResult)
-	go d.handleWait(ctx, handle, ch)
-	return ch, nil
+	go func(ctx context.Context, handle *taskHandle, exitCh chan *drivers.ExitResult) {
+		defer close(exitCh)
+		d.logger.Info("monitoring task", "task_id", handle.name)
+
+		handle.monitor(ctx, exitCh)
+
+	}(ctx, handle, exitChannel)
+
+	return exitChannel, nil
 }
 
-func (d *VirtDriverPlugin) handleWait(ctx context.Context, handle *taskHandle, ch chan *drivers.ExitResult) {
-	defer close(ch)
-	var result *drivers.ExitResult
-
-	// TODO: implement driver specific logic to notify Nomad the task has been
-	// completed and what was the exit result.
-	//
-	// When a result is sent in the result channel Nomad will stop the task and
-	// emit an event that an operator can use to get an insight on why the task
-	// stopped.
-	//
-	// In the example below we block and wait until the executor finishes
-	// running, at which point we send the exit code and signal in the result
-	// channel.
-	/* 	ps, err := handle.exec.Wait(ctx)
-	   	if err != nil {
-	   		result = &drivers.ExitResult{
-	   			Err: fmt.Errorf("executor: error waiting on process: %v", err),
-	   		}
-	   	} else {
-	   		result = &drivers.ExitResult{
-	   			ExitCode: ps.ExitCode,
-	   			Signal:   ps.Signal,
-	   		}
-	   	} */
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case ch <- result:
-		}
-	}
-}
-
-// StopTask stops a running task with the given signal and within the timeout window.
+// StopTask function is expected to stop a running task by sending the given signal to it.
+// If the task does not stop during the given timeout, the driver must forcefully kill the task.
+// StopTask does not clean up resources of the task or remove it from the driver's internal state.
 func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal string) error {
+	d.logger.Info("stopping task", "task_id", taskID)
+
 	_, ok := d.tasks.Get(taskID)
 	if !ok {
-		return drivers.ErrTaskNotFound
+		d.logger.Warn("task to stop not found", "task_id", taskID)
+		return nil
 	}
 
-	// TODO: implement driver specific logic to stop a task.
-	//
-	// The StopTask function is expected to stop a running task by sending the
-	// given signal to it. If the task does not stop during the given timeout,
-	// the driver must forcefully kill the task.
-	//
-	// In the example below we let the executor handle the task shutdown
-	// process for us, but you might need to customize this for your own
-	// implementation.
-	/* 	if err := handle.exec.Shutdown(signal, timeout); err != nil {
-	   		if handle.pluginClient.Exited() {
-	   			return nil
-	   		}
-	   		return fmt.Errorf("executor Shutdown failed: %v", err)
-	   	}
-	*/
+	err := d.virtualizer.StopDomain(domainNameFromTaskID(taskID))
+	if err != nil {
+		return fmt.Errorf("virt: unable to stop task %s: %w", taskID, err)
+	}
+
 	return nil
 }
 
-// DestroyTask cleans up and removes a task that has terminated.
+// DestroyTask function cleans up and removes a task that has terminated.
+// If force is set to true, the driver must destroy the task even if it is still running.
 func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
+	d.logger.Info("destroying task", "task_id", taskID)
+
 	handle, ok := d.tasks.Get(taskID)
 	if !ok {
-		return drivers.ErrTaskNotFound
+		d.logger.Warn("task to destroy not found", "task_id", taskID)
+		return nil
 	}
 
+	taskName := domainNameFromTaskID(taskID)
 	if handle.IsRunning() && !force {
-		return errors.New("cannot destroy running task")
+		return errors.New("cannot destroy a running task")
 	}
 
-	// TODO: implement driver specific logic to destroy a complete task.
-	//
-	// Destroying a task includes removing any resources used by task and any
-	// local references in the plugin. If force is set to true the task should
-	// be destroyed even if it's currently running.
-	//
-	// In the example below we use the executor to force shutdown the task
-	// (timeout equals 0).
-	/* 	if !handle.pluginClient.Exited() {
-		if err := handle.exec.Shutdown("", 0); err != nil {
-			handle.logger.Error("destroying executor failed", "err", err)
-		}
+	err := d.virtualizer.DestroyDomain(taskName)
+	if err != nil {
+		return fmt.Errorf("virt: unable to destroy task %s: %w", taskID, err)
+	}
 
-		handle.pluginClient.Kill()
-	} */
+	d.tasks.Delete(taskName)
 
-	d.tasks.Delete(taskID)
 	return nil
 }
 
@@ -427,21 +315,40 @@ func (d *VirtDriverPlugin) InspectTask(taskID string) (*drivers.TaskStatus, erro
 
 // TaskStats returns a channel which the driver should send stats to at the given interval.
 func (d *VirtDriverPlugin) TaskStats(ctx context.Context, taskID string, interval time.Duration) (<-chan *drivers.TaskResourceUsage, error) {
-	_, ok := d.tasks.Get(taskID)
+	handle, ok := d.tasks.Get(taskID)
 	if !ok {
 		return nil, drivers.ErrTaskNotFound
 	}
 
-	// TODO: implement driver specific logic to send task stats.
-	//
-	// This function returns a channel that Nomad will use to listen for task
-	// stats (e.g., CPU and memory usage) in a given interval. It should send
-	// stats until the context is canceled or the task stops running.
-	//
-	// In the example below we use the Stats function provided by the executor,
-	// but you can build a set of functions similar to the fingerprint process.
-	//return handle.exec.Stats(ctx, interval)
-	return nil, nil
+	statsChannel := make(chan *drivers.TaskResourceUsage)
+
+	go d.publishStats(ctx, interval, statsChannel, handle)
+
+	return statsChannel, nil
+}
+
+func (d *VirtDriverPlugin) publishStats(ctx context.Context, interval time.Duration,
+	sch chan<- *drivers.TaskResourceUsage, handle *taskHandle) {
+	defer close(sch)
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ticker.C:
+			stats, err := handle.GetStats()
+			if err != nil {
+				d.logger.Error("error while reading stats from the task", "task", handle.name, "error", err)
+			}
+
+			d.logger.Trace("publishing stats", "values", fmt.Sprintf("%+v", stats.ResourceUsage.MemoryStats))
+			sch <- stats
+
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // TaskEvents returns a channel that the plugin can use to emit task related events.
@@ -450,33 +357,314 @@ func (d *VirtDriverPlugin) TaskEvents(ctx context.Context) (<-chan *drivers.Task
 }
 
 // SignalTask forwards a signal to a task.
-// This is an optional capability.
+// This is an optional capability, currently not supported by the virt driver.
 func (d *VirtDriverPlugin) SignalTask(taskID string, signal string) error {
-	_, ok := d.tasks.Get(taskID)
-	if !ok {
-		return drivers.ErrTaskNotFound
-	}
-
-	// TODO: implement driver specific signal handling logic.
-	//
-	// The given signal must be forwarded to the target taskID. If this plugin
-	// doesn't support receiving signals (capability SendSignals is set to
-	// false) you can just return nil.
-	/* sig := os.Interrupt
-	if s, ok := signals.SignalLookup[signal]; ok {
-		sig = s
-	} else {
-		d.logger.Warn("unknown signal to send to task, using SIGINT instead", "signal", signal, "task_id", handle.taskConfig.ID)
-
-	}
-	return handle.exec.Signal(sig) */
-	return nil
-
+	return errors.New("This driver does not support signaling")
 }
 
 // ExecTask returns the result of executing the given command inside a task.
-// This is an optional capability.
+// This is an optional capability, currently not supported by the virt driver.
 func (d *VirtDriverPlugin) ExecTask(taskID string, cmd []string, timeout time.Duration) (*drivers.ExecTaskResult, error) {
-	// TODO: implement driver specific logic to execute commands in a task.
 	return nil, errors.New("This driver does not support exec")
+}
+
+// domainNameFromTaskID creates a name to be used for the vms, using the
+// last 8 chars of the taskName which should be unique per task.
+func domainNameFromTaskID(taskID string) string {
+	return taskID[len(taskID)-8:]
+}
+
+func createDataDirectory(path string) error {
+	err := os.MkdirAll(path, dataDirPermissions)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func createAllocFileMounts(task *drivers.TaskConfig) []domain.MountFileConfig {
+	mounts := []domain.MountFileConfig{
+		{
+			Source:      task.TaskDir().SharedAllocDir,
+			Tag:         "allocDir",
+			Destination: task.Env[taskenv.AllocDir],
+			ReadOnly:    true,
+		},
+		{
+			Source:      task.TaskDir().LocalDir,
+			Tag:         "localDir",
+			Destination: task.Env[taskenv.TaskLocalDir],
+			ReadOnly:    true,
+		},
+		{
+			Source:      task.TaskDir().SecretsDir,
+			Tag:         "secretsDir",
+			Destination: task.Env[taskenv.SecretsDir],
+			ReadOnly:    true,
+		},
+	}
+
+	return mounts
+}
+
+// To create the alloc env vars, they are all writtent into a scripy in
+// /etc/profile.d/virt.sh where the OS will take care of executing it at start.
+func createEnvsFile(envs map[string]string) domain.File {
+	con := []string{}
+
+	for k, v := range envs {
+		con = append(con, fmt.Sprintf("export %s=%s", k, v))
+	}
+
+	return domain.File{
+		Encoding:    "b64",
+		Path:        envVariblesFilePath,
+		Permissions: envVariblesFilePermissions,
+		Content:     base64.StdEncoding.EncodeToString([]byte(strings.Join(con, "\n\t"))),
+	}
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
+}
+
+// StartTask returns a task handle and a driver network if necessary.
+func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drivers.DriverNetwork, error) {
+	if _, ok := d.tasks.Get(cfg.ID); ok {
+		return nil, nil, fmt.Errorf("task with ID %q already started", cfg.ID)
+	}
+
+	var driverConfig TaskConfig
+	if err := cfg.DecodeDriverConfig(&driverConfig); err != nil {
+		return nil, nil, fmt.Errorf("failed to decode driver config: %v", err)
+	}
+
+	d.logger.Debug("starting task", "driver_cfg", hclog.Fmt("%+v", driverConfig))
+
+	handle := drivers.NewTaskHandle(taskHandleVersion)
+	handle.Config = cfg
+
+	taskName := domainNameFromTaskID(cfg.ID)
+
+	d.logger.Info("starting task", "name", taskName)
+
+	h := &taskHandle{
+		taskConfig: cfg,
+		procState:  drivers.TaskStateRunning,
+		startedAt:  time.Now().Round(time.Millisecond),
+		logger:     d.logger.Named("handle").With(cfg.AllocID),
+		taskGetter: d.taskGetter,
+		name:       taskName,
+	}
+
+	driverState := TaskState{
+		TaskConfig: cfg,
+		StartedAt:  h.startedAt,
+	}
+
+	allocFSMounts := createAllocFileMounts(cfg)
+
+	var osVariant *domain.OSVariant
+	if driverConfig.OS != nil {
+		osVariant = &domain.OSVariant{
+			Machine: driverConfig.OS.Machine,
+			Arch:    driverConfig.OS.Arch,
+		}
+	}
+
+	hostname := buildHostname(taskName)
+	if driverConfig.Hostname != "" {
+		hostname = driverConfig.Hostname
+	}
+
+	// The alloc directory and plugin data directory are always an allowed path to load images from.
+	allowedPaths := append(d.config.ImagePaths, d.dataDir, cfg.AllocDir)
+
+	diskImagePath := driverConfig.ImagePath
+	if !fileExists(diskImagePath) {
+
+		// Assume the image was downloaded using artifacts and will be placed
+		// somewhere in the alloc's filesystem.
+		diskImagePath = filepath.Join(cfg.TaskDir().Dir, diskImagePath)
+		if !fileExists(diskImagePath) {
+			return nil, nil, ErrImageNotFound
+		}
+	}
+
+	diskFormat, err := d.getImageFormat(diskImagePath)
+	if err != nil {
+		return nil, nil, fmt.Errorf("virt: unable to get disk format %s: %w", cfg.AllocID, err)
+	}
+
+	if driverConfig.UseThinCopy {
+		copyPath := filepath.Join(d.dataDir, taskName+".img")
+
+		d.logger.Info("creating thin copy at", "path", copyPath)
+		if err := d.createThinCopy(diskImagePath, copyPath, cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
+			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w", taskName, err)
+		}
+
+		diskImagePath = copyPath
+		diskFormat = "qcow2"
+	}
+
+	dc := &domain.Config{
+		RemoveConfigFiles: true,
+		Name:              taskName,
+		Memory:            uint(cfg.Resources.NomadResources.Memory.MemoryMB),
+		//Cores:             int(cfg.Resources.NomadResources.Cpu.ReservedCores[]),
+		CPUs:      int(cfg.Resources.NomadResources.Cpu.CpuShares),
+		Cores:     2,
+		OsVariant: osVariant,
+		BaseImage: diskImagePath,
+		DiskFmt:   diskFormat,
+		//DiskSize:          1,
+		NetworkInterfaces: []string{"virbr0"},
+		HostName:          hostname,
+		Mounts:            allocFSMounts,
+		CMDs:              driverConfig.CMDs,
+		CIUserData:        driverConfig.UserData,
+		Password:          driverConfig.DefaultUserPassword,
+		SSHKey:            driverConfig.DefaultUserSSHKey,
+		//Env:               cfg.Env,
+		Files: []domain.File{createEnvsFile(cfg.Env)},
+	}
+
+	if err := dc.Validate(allowedPaths); err != nil {
+		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
+	}
+
+	if err := d.virtualizer.CreateDomain(dc); err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
+	}
+
+	d.logger.Info("task started successfully", "taskName", taskName)
+
+	if err := handle.SetDriverState(&driverState); err != nil {
+		return nil, nil, fmt.Errorf("failed to set driver state: %v", err)
+	}
+
+	d.tasks.Set(cfg.ID, h)
+
+	return handle, nil, nil
+}
+
+// RecoverTask recreates the in-memory state of a task from a TaskHandle.
+func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
+	if handle == nil {
+		return errors.New("virt: handle cannot be nil")
+	}
+
+	if _, ok := d.tasks.Get(handle.Config.ID); ok {
+		return nil
+	}
+
+	var taskState TaskState
+	if err := handle.GetDriverState(&taskState); err != nil {
+		return fmt.Errorf("virt: failed to decode task state from handle %s: %v",
+			handle.Config.ID, err)
+	}
+
+	var driverConfig TaskConfig
+	if err := taskState.TaskConfig.DecodeDriverConfig(&driverConfig); err != nil {
+		return fmt.Errorf("virt: failed to decode driver config %s: %v", handle.Config.ID, err)
+	}
+
+	h := &taskHandle{
+		name:       domainNameFromTaskID(handle.Config.ID),
+		logger:     d.logger.Named("handle").With(handle.Config.AllocID),
+		taskConfig: taskState.TaskConfig,
+		startedAt:  taskState.StartedAt,
+		taskGetter: d.taskGetter,
+	}
+
+	vm, err := h.taskGetter.GetDomain(h.name)
+	if err != nil {
+		d.logger.Warn("Recovery restart failed, unknown task state", "task", handle.Config.ID)
+		return fmt.Errorf("virt: failed to recover task %s: %v", handle.Config.ID, err)
+	}
+
+	if vm == nil {
+		return drivers.ErrTaskNotFound
+	}
+
+	h.procState = setUpTaskState(vm.State)
+
+	d.tasks.Set(handle.Config.ID, h)
+
+	return nil
+}
+
+func setUpTaskState(vmState string) drivers.TaskState {
+	switch vmState {
+	case libvirt.DomainRunning:
+		return drivers.TaskStateRunning
+	case libvirt.DomainShutdown, libvirt.DomainShutOff, libvirt.DomainCrashed:
+		return drivers.TaskStateExited
+	default:
+		return drivers.TaskStateUnknown
+	}
+}
+
+func buildHostname(taskName string) string {
+	return fmt.Sprintf("nomad-%s", taskName)
+}
+
+// GetImageFormat runs `qemu-img info` to get the format of a disk image.
+func (d *VirtDriverPlugin) getImageFormat(basePath string) (string, error) {
+	d.logger.Debug("reading the disk format", "base", basePath)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	cmd := exec.Command("bash", "-c", fmt.Sprintf("qemu-img info --output=json %s", basePath))
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	err := cmd.Run()
+	if err != nil {
+		d.logger.Error("qemu-img read image", "stderr", stderrBuf.String())
+		d.logger.Debug("qemu-img read image", "stdout", stdoutBuf.String())
+		return "", err
+	}
+
+	d.logger.Debug("qemu-img read image", "stdout", stdoutBuf.String())
+
+	// The qemu command returns more information, but for now, only the format
+	// is necessary.
+	var output = struct {
+		Format string `json:"format"`
+	}{}
+
+	err = json.Unmarshal(stdoutBuf.Bytes(), &output)
+	if err != nil {
+		return "", fmt.Errorf("qemu-img: unable read info response %s: %w", basePath, err)
+	}
+
+	return output.Format, nil
+}
+
+func (d *VirtDriverPlugin) createThinCopy(basePath string, destination string, sizeM int64) error {
+	d.logger.Debug("creating thin copy", "base", basePath, "dest", destination)
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	cmd := exec.Command("bash", "-c", fmt.Sprintf("qemu-img create -b %s -f qcow2 -F qcow2 %s %dM",
+		basePath, destination, sizeM))
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	err := cmd.Run()
+	if err != nil {
+		d.logger.Error("qemu-img create output", "stderr", stderrBuf.String())
+		d.logger.Debug("qemu-img create output", "stdout", stdoutBuf.String())
+		return err
+	}
+
+	d.logger.Debug("qemu-img create output", "stdout", stdoutBuf.String())
+	return nil
 }
