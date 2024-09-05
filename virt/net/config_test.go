@@ -105,6 +105,30 @@ func Test_InterfaceHCLSpecification(t *testing.T) {
 		expectedOutput TaskConfig
 	}{
 		{
+			name: "full bridge with mac",
+			inputConfig: `
+config {
+  network_interface {
+    bridge {
+      name  = "virbr0"
+      mac   = "12:7c:5b:ce:49:54"
+      ports = ["ssh"]
+    }
+  }
+}
+`,
+			expectedOutput: TaskConfig{
+				NetworkInterfacesConfig: []*NetworkInterfaceConfig{
+					{
+						Bridge: &NetworkInterfaceBridgeConfig{
+							Name:  "virbr0",
+							MAC:   "12:7c:5b:ce:49:54",
+							Ports: []string{"ssh"},
+						},
+					},
+				}},
+		},
+		{
 			name: "full bridge",
 			inputConfig: `
 config {

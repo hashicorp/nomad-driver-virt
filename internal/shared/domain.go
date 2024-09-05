@@ -56,6 +56,11 @@ type OSVariant struct {
 }
 
 type Config struct {
+	NomadNamespace string
+	NomadJob       string
+	NomadAlloc     string
+	NomadTask      string
+	//
 	RemoveConfigFiles bool
 	XMLConfig         string
 	Name              string

@@ -540,6 +540,11 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	}
 
 	dc := &domain.Config{
+		NomadNamespace: cfg.Namespace,
+		NomadJob:       cfg.JobName, // cfg.JobID???
+		NomadAlloc:     cfg.AllocID,
+		NomadTask:      cfg.Name,
+		//
 		RemoveConfigFiles: true,
 		Name:              taskName,
 		Memory:            uint(cfg.Resources.NomadResources.Memory.MemoryMB),

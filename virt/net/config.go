@@ -88,6 +88,7 @@ func NetworkInterfaceHCLSpec() *hclspec.Spec {
 	return hclspec.NewBlockList("network_interface", hclspec.NewObject(map[string]*hclspec.Spec{
 		"bridge": hclspec.NewBlock("bridge", false, hclspec.NewObject(map[string]*hclspec.Spec{
 			"name":  hclspec.NewAttr("name", "string", true),
+			"mac":   hclspec.NewAttr("mac", "string", false),
 			"ports": hclspec.NewAttr("ports", "list(string)", false),
 		})),
 	}))

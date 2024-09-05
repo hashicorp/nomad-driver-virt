@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/libvirt/metadata"
 
 	"libvirt.org/go/libvirtxml"
 )
@@ -115,13 +116,29 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 	    </interface>
 	*/
 
+	/*
+		52:c2:77:20:f7:39
+		    <interface type='network'>
+		      <mac address='52:54:00:2d:87:b2'/>
+		      <source network='default' portid='8529546c-ea2b-4692-885c-f374ead687a6' bridge='virbr0'/>
+		      <target dev='vnet26'/>
+		      <model type='virtio'/>
+		      <alias name='net0'/>
+		      <address type='pci' domain='0x0000' bus='0x01' slot='0x00' function='0x0'/>
+		    </interface>
+
+	*/
+
 	interfaces := []libvirtxml.DomainInterface{}
 	for i, ni := range config.NetworkInterfaces {
 		i := libvirtxml.DomainInterface{
 			Source: &libvirtxml.DomainInterfaceSource{
-				Bridge: &libvirtxml.DomainInterfaceSourceBridge{
-					Bridge: ni.Name,
+				Network: &libvirtxml.DomainInterfaceSourceNetwork{
+					Network: ni.Name,
 				},
+				// Bridge: &libvirtxml.DomainInterfaceSourceBridge{
+				// 	Bridge: ni.Name,
+				// },
 			},
 			Model: &libvirtxml.DomainInterfaceModel{},
 			Target: &libvirtxml.DomainInterfaceTarget{
@@ -142,7 +159,45 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 		interfaces = append(interfaces, i)
 	}
 
+	virtMeta := &metadata.DriverDomain{
+		Nomad: &metadata.DriverDomainNomad{
+			Namespace: config.NomadNamespace,
+			Job:       config.NomadJob,
+			Alloc:     config.NomadAlloc,
+			Task:      config.NomadTask,
+		},
+	}
+
+	// virtMetaXML, err := xml.MarshalIndent(virtMeta, "", "  ")
+	virtMetaXML, err := virtMeta.XMLString()
+	if err != nil {
+		return "", err
+	}
+
+	/*
+		<nova:instance xmlns:nova="http://openstack.org/xmlns/libvirt/nova/1.0">
+		      <nova:package version="2015.1"/>
+		      <nova:name>vm1</nova:name>
+		      <nova:creationTime>2015-02-19 18:23:44</nova:creationTime>
+		      <nova:flavor name="m1.tiny">
+		        <nova:memory>512</nova:memory>
+		        <nova:disk>1</nova:disk>
+		        <nova:swap>0</nova:swap>
+		        <nova:ephemeral>0</nova:ephemeral>
+		        <nova:vcpus>1</nova:vcpus>
+		      </nova:flavor>
+		      <nova:owner>
+		        <nova:user uuid="ef53a6031fc643f2af7add439ece7e9d">admin</nova:user>
+		        <nova:project uuid="60a60883d7de429aa45f8f9d689c1fd6">demo</nova:project>
+		      </nova:owner>
+		      <nova:root type="image" uuid="2344a0fc-a34b-4e2d-888e-01db795fc89a"/>
+		    </nova:instance>
+	*/
+
 	domcfg := &libvirtxml.Domain{
+		Metadata: &libvirtxml.DomainMetadata{
+			XML: string(virtMetaXML),
+		},
 		MemoryTune: &libvirtxml.DomainMemoryTune{
 			HardLimit: &libvirtxml.DomainMemoryTuneLimit{
 				Value: uint64(config.Memory),
