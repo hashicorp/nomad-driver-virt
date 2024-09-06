@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	mimMemoryMB   = 25600 // Minimum recommended for running linux distributions.
+	minDiskMB     = 25600 // Minimum recommended for running linux distributions.
+	minMemoryMB   = 500   // Minimum recommended for running linux distributions.
 	maxNameLength = 63    // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 )
 
@@ -27,6 +28,8 @@ var (
 	ErrEmptyName           = errors.New("domain name can not be empty")
 	ErrMissingImage        = errors.New("image path can not be empty")
 	ErrNotEnoughDisk       = errors.New("not enough disk space assigned to task")
+	ErrNoCPUS              = errors.New("no cpus configured")
+	ErrNotEnoughMemory     = errors.New("not enough memory assigned to task")
 	ErrIncompleteOSVariant = errors.New("provided os information is incomplete: arch and machine are mandatory ")
 	ErrInvalidHostName     = fmt.Errorf("a resource name must consist of lower case alphanumeric characters or '-', must start and end with an alphanumeric character and be less than %d characters", maxNameLength+1)
 	ErrPathNotAllowed      = fmt.Errorf("base_image is not in the allowed paths")
@@ -59,10 +62,12 @@ type Config struct {
 	Name              string
 	Memory            uint
 	Cores             uint
-	CPUs              int
+	CPUs              uint
+	Disk              int64
 	OsVariant         *OSVariant
 	BaseImage         string
 	DiskFmt           string
+	DiskSize          uint64
 	NetworkInterfaces []string
 	HostName          string
 	Timezone          *time.Location
@@ -76,33 +81,40 @@ type Config struct {
 }
 
 func (dc *Config) Validate(allowedPaths []string) error {
-	var mErr multierror.Error
+	var mErr *multierror.Error
 	if dc.Name == "" {
-		_ = multierror.Append(&mErr, ErrEmptyName)
+		_ = multierror.Append(mErr, ErrEmptyName)
 	}
 
 	if dc.BaseImage == "" {
-		_ = multierror.Append(&mErr, ErrMissingImage)
+		_ = multierror.Append(mErr, ErrMissingImage)
 	} else {
 		if !isAllowedImagePath(allowedPaths, dc.BaseImage) {
-			_ = multierror.Append(&mErr, ErrPathNotAllowed)
+			_ = multierror.Append(mErr, ErrPathNotAllowed)
 		}
 	}
 
-	if dc.Memory < mimMemoryMB {
-		_ = multierror.Append(&mErr, ErrNotEnoughDisk)
+	if dc.Disk < minDiskMB {
+		_ = multierror.Append(mErr, ErrNotEnoughDisk)
+	}
+
+	if dc.Memory < minMemoryMB {
+		_ = multierror.Append(mErr, ErrNotEnoughMemory)
 	}
 
 	if dc.OsVariant != nil {
 		if dc.OsVariant.Arch == "" &&
 			dc.OsVariant.Machine == "" {
-			_ = multierror.Append(&mErr, ErrIncompleteOSVariant)
+			mErr = multierror.Append(mErr, ErrIncompleteOSVariant)
 		}
+	}
 
+	if dc.CPUs < 1 {
+		mErr = multierror.Append(mErr, ErrNoCPUS)
 	}
 
 	if dc.HostName != "" && !IsValidLabel(dc.HostName) {
-		_ = multierror.Append(&mErr, ErrInvalidHostName)
+		mErr = multierror.Append(mErr, ErrInvalidHostName)
 	}
 
 	return mErr.ErrorOrNil()

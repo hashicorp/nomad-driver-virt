@@ -513,26 +513,28 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		diskFormat = "qcow2"
 	}
 
+	cpus := uint(0)
+	if cfg.Resources.LinuxResources != nil && cfg.Resources.LinuxResources.CpusetCpus != "" {
+		cores := strings.Split(cfg.Resources.LinuxResources.CpusetCpus, ",")
+		cpus = uint(len(cores))
+	}
+
 	dc := &domain.Config{
 		RemoveConfigFiles: true,
 		Name:              taskName,
 		Memory:            uint(cfg.Resources.NomadResources.Memory.MemoryMB),
-		//Cores:             int(cfg.Resources.NomadResources.Cpu.ReservedCores[]),
-		CPUs:      int(cfg.Resources.NomadResources.Cpu.CpuShares),
-		Cores:     2,
-		OsVariant: osVariant,
-		BaseImage: diskImagePath,
-		DiskFmt:   diskFormat,
-		//DiskSize:          1,
-		NetworkInterfaces: []string{"virbr0"},
+		CPUs:              cpus,
+		OsVariant:         osVariant,
+		BaseImage:         diskImagePath,
+		DiskFmt:           diskFormat,
+		DiskSize:          driverConfig.Disk,
 		HostName:          hostname,
 		Mounts:            allocFSMounts,
 		CMDs:              driverConfig.CMDs,
 		CIUserData:        driverConfig.UserData,
 		Password:          driverConfig.DefaultUserPassword,
 		SSHKey:            driverConfig.DefaultUserSSHKey,
-		//Env:               cfg.Env,
-		Files: []domain.File{createEnvsFile(cfg.Env)},
+		Files:             []domain.File{createEnvsFile(cfg.Env)},
 	}
 
 	if err := dc.Validate(allowedPaths); err != nil {

@@ -429,26 +429,25 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	d.logger.Debug("domain doesn't exist, creating it", "name", config.Name)
 
 	cloudInitConfigPath := filepath.Join(d.dataDir, config.Name+".iso")
+
+	cic := createCloudInitConfig(config)
+	d.logger.Debug("creating ci configuration: ", fmt.Sprintf("%+v", cic))
+
+	if err := d.ci.Apply(cic, cloudInitConfigPath); err != nil {
+		return fmt.Errorf("libvirt: unable to create cidata %s: %w", config.Name, err)
+	}
+
 	if config.RemoveConfigFiles {
 		defer func() {
 			err := os.Remove(cloudInitConfigPath)
 			if err != nil {
-				d.logger.Warn("unable to remove cloudinit configFile", "error", err)
+				d.logger.Warn("libvirt: unable to remove cloudinit configFile", "error", err)
 			}
 
 		}()
 	}
 
-	cic := createCloudInitConfig(config)
-	d.logger.Debug("creating ci configuration: ", fmt.Sprintf("%+v", cic))
-
-	err = d.ci.Apply(cic, cloudInitConfigPath)
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to create cidata %s: %w", config.Name, err)
-	}
-
-	err = d.sp.Refresh(0)
-	if err != nil {
+	if err := d.sp.Refresh(0); err != nil {
 		return fmt.Errorf("libvirt: unable to refresh storage pool %s: %w", config.Name, err)
 	}
 
@@ -469,8 +468,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 		return fmt.Errorf("libvirt: unable to define domain %s: %w", config.Name, err)
 	}
 
-	err = dom.Create()
-	if err != nil {
+	if err := dom.Create(); err != nil {
 		return fmt.Errorf("libvirt: unable to create domain %s: %w", config.Name, err)
 	}
 

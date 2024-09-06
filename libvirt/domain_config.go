@@ -96,6 +96,10 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 	}
 
 	domcfg := &libvirtxml.Domain{
+		VCPU: &libvirtxml.DomainVCPU{
+			Placement: "static",
+			Value:     config.CPUs,
+		},
 		MemoryTune: &libvirtxml.DomainMemoryTune{
 			HardLimit: &libvirtxml.DomainMemoryTuneLimit{
 				Value: uint64(config.Memory),
@@ -214,10 +218,6 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 		Memory: &libvirtxml.DomainMemory{
 			Value: config.Memory,
 			Unit:  "M",
-		},
-		VCPU: &libvirtxml.DomainVCPU{
-			Placement: "static",
-			Value:     uint(config.CPUs),
 		},
 		Resource: &libvirtxml.DomainResource{
 			Partition: "/machine",

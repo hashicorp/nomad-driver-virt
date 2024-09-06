@@ -47,7 +47,7 @@ func TestConfig_Task(t *testing.T) {
 	parser.ParseHCL(t, validHCL, &tc)
 	must.SliceContainsAll(t, expectedCmds, tc.CMDs)
 	must.StrContains(t, expectedImg, tc.ImagePath)
-	must.True(t, expectedUseThinCopy)
+	must.Eq(t, expectedUseThinCopy, tc.UseThinCopy)
 	must.StrContains(t, expectedDefaultUserSSHKey, tc.DefaultUserSSHKey)
 	must.StrContains(t, expectedDefaultUserPassword, tc.DefaultUserPassword)
 	must.StrContains(t, expectedHostname, tc.Hostname)
