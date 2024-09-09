@@ -18,7 +18,6 @@ func TestConfig_Task(t *testing.T) {
 
 	expectedHostname := "test-hostname"
 	expectedImg := "/path/to/image/here"
-	//expectedOS := ""
 	expectedUserData := "/path/to/user/data"
 	expectedCmds := []string{"redis"}
 	expectedDefaultUserSSHKey := "ssh-ed25519 testtesttest..."
@@ -30,6 +29,7 @@ func TestConfig_Task(t *testing.T) {
 	validHCL := `
   config {
 	image = "/path/to/image/here"
+	primary_disk_size = 26000
 	cmds = ["redis"]
 	hostname = "test-hostname"
 	user_data = "/path/to/user/data"
@@ -54,6 +54,7 @@ func TestConfig_Task(t *testing.T) {
 	must.StrContains(t, expectedUserData, tc.UserData)
 	must.StrContains(t, expectedARCH, tc.OS.Arch)
 	must.StrContains(t, expectedMachine, tc.OS.Machine)
+	must.Eq(t, 26000, tc.PrimaryDiskSize)
 }
 
 func TestConfig_Plugin(t *testing.T) {
@@ -100,6 +101,7 @@ func Test_taskConfigSpec(t *testing.T) {
 			inputConfig: `
 config {
   image = "/path/to/image/here"
+  primary_disk_size = 26000
   os {
     arch    = "x86_64"
     machine = "pc-i440fx-jammy"
@@ -113,7 +115,8 @@ config {
 }
 `,
 			expectedOutput: TaskConfig{
-				ImagePath: "/path/to/image/here",
+				ImagePath:       "/path/to/image/here",
+				PrimaryDiskSize: 26000,
 				OS: &OS{
 					Arch:    "x86_64",
 					Machine: "pc-i440fx-jammy",

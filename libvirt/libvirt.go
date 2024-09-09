@@ -186,8 +186,6 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 
 	go d.monitorCtx(ctx)
 
-	d.logger.Info("setting up data directory", "path", d.dataDir)
-
 	found, err := d.lookForExistingStoragePool(storagePoolName)
 	if err != nil {
 		return nil, fmt.Errorf("libvirt: unable to list existing storage pools: %w", err)

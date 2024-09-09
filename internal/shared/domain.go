@@ -16,8 +16,8 @@ import (
 
 const (
 	minDiskMB     = 25600 // Minimum recommended for running linux distributions.
-	minMemoryMB   = 500   // Minimum recommended for running linux distributions.
-	maxNameLength = 63    // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
+	minMemoryMB   = 500
+	maxNameLength = 63 // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 )
 
 var (
@@ -61,13 +61,12 @@ type Config struct {
 	XMLConfig         string
 	Name              string
 	Memory            uint
-	Cores             uint
+	CPUset            string
 	CPUs              uint
-	Disk              int64
 	OsVariant         *OSVariant
 	BaseImage         string
 	DiskFmt           string
-	DiskSize          uint64
+	PrimaryDiskSize   uint64
 	NetworkInterfaces []string
 	HostName          string
 	Timezone          *time.Location
@@ -83,23 +82,23 @@ type Config struct {
 func (dc *Config) Validate(allowedPaths []string) error {
 	var mErr *multierror.Error
 	if dc.Name == "" {
-		_ = multierror.Append(mErr, ErrEmptyName)
+		mErr = multierror.Append(mErr, ErrEmptyName)
 	}
 
 	if dc.BaseImage == "" {
-		_ = multierror.Append(mErr, ErrMissingImage)
+		mErr = multierror.Append(mErr, ErrMissingImage)
 	} else {
 		if !isAllowedImagePath(allowedPaths, dc.BaseImage) {
-			_ = multierror.Append(mErr, ErrPathNotAllowed)
+			mErr = multierror.Append(mErr, ErrPathNotAllowed)
 		}
 	}
 
-	if dc.Disk < minDiskMB {
-		_ = multierror.Append(mErr, ErrNotEnoughDisk)
+	if dc.PrimaryDiskSize < minDiskMB {
+		mErr = multierror.Append(mErr, ErrNotEnoughDisk)
 	}
 
 	if dc.Memory < minMemoryMB {
-		_ = multierror.Append(mErr, ErrNotEnoughMemory)
+		mErr = multierror.Append(mErr, ErrNotEnoughMemory)
 	}
 
 	if dc.OsVariant != nil {
