@@ -9,6 +9,8 @@ GO111MODULE := on
 # Attempt to use gotestsum for running tests, otherwise fallback to go test.
 GO_TEST_CMD := $(if $(shell command -v gotestsum 2>/dev/null),gotestsum --,go test)
 
+GOLANG_VERSION?=$(shell head -n 1 .go-version)
+
 DOCKER_BUILD_GO_VERSION := 1.23.0
 
 default: check-go-mod lint test build
@@ -28,7 +30,7 @@ build: ## Compile the current driver codebase
 .PHONY: -docker-prep-linux
 -docker-prep-linux:
 	docker buildx build \
-		--build-arg GO_VERSION=$(DOCKER_BUILD_GO_VERSION) \
+		--build-arg GO_VERSION=$(GOLANG_VERSION) \
 		--build-arg USER_ID=$(shell id -u) \
 		--build-arg GROUP_ID=$(shell id -g) \
 		-f Dockerfile-build \
