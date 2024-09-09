@@ -26,7 +26,7 @@ func TestNetworkInterfaces_Validate(t *testing.T) {
 		{
 			name:                   "empty list",
 			inputNetworkInterfaces: &NetworkInterfacesConfig{},
-			expectedOutput:         nil,
+			expectedOutput:         errors.New("only one network interface can be configured"),
 		},
 		{
 			name: "one interface",
@@ -104,6 +104,30 @@ func Test_InterfaceHCLSpecification(t *testing.T) {
 		inputConfig    string
 		expectedOutput TaskConfig
 	}{
+		{
+			name: "full bridge with mac",
+			inputConfig: `
+config {
+  network_interface {
+    bridge {
+      name  = "virbr0"
+      mac   = "12:7c:5b:ce:49:54"
+      ports = ["ssh"]
+    }
+  }
+}
+`,
+			expectedOutput: TaskConfig{
+				NetworkInterfacesConfig: []*NetworkInterfaceConfig{
+					{
+						Bridge: &NetworkInterfaceBridgeConfig{
+							Name:  "virbr0",
+							MAC:   "12:7c:5b:ce:49:54",
+							Ports: []string{"ssh"},
+						},
+					},
+				}},
+		},
 		{
 			name: "full bridge",
 			inputConfig: `

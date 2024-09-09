@@ -37,9 +37,11 @@ var (
 	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 		"network_interface":               net.NetworkInterfaceHCLSpec(),
 		"use_thin_copy":                   hclspec.NewAttr("use_thin_copy", "bool", false),
+		"default_volume_size":             hclspec.NewAttr("default_volume_size", "number", false),
 		"image":                           hclspec.NewAttr("image", "string", true),
 		"hostname":                        hclspec.NewAttr("hostname", "string", false),
 		"user_data":                       hclspec.NewAttr("user_data", "string", false),
+		"user_data_path":                  hclspec.NewAttr("user_data_path", "string", false),
 		"default_user_authorized_ssh_key": hclspec.NewAttr("default_user_authorized_ssh_key", "string", false),
 		"default_user_password":           hclspec.NewAttr("default_user_password", "string", false),
 		"cmds":                            hclspec.NewAttr("cmds", "list(string)", false),
@@ -86,11 +88,13 @@ type TaskConfig struct {
 	Hostname            string         `codec:"hostname"`
 	OS                  *OS            `codec:"os"`
 	UserData            string         `codec:"user_data"`
+	UserDataPath        string         `codec:"user_data_path"`
 	TimeZone            *time.Location `codec:"timezone"`
 	CMDs                []string       `codec:"cmds"`
 	DefaultUserSSHKey   string         `codec:"default_user_authorized_ssh_key"`
 	DefaultUserPassword string         `codec:"default_user_password"`
 	UseThinCopy         bool           `codec:"use_thin_copy"`
+	DefaultVolumeSize   int64          `codec:"default_volume_size"`
 	// The list of network interfaces that should be added to the VM.
 	net.NetworkInterfacesConfig `codec:"network_interface"`
 }

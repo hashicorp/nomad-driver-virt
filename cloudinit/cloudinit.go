@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"strings"
 	"text/template"
 
 	"github.com/hashicorp/go-hclog"
@@ -30,6 +31,7 @@ var (
 type Config struct {
 	VendorData   VendorData
 	MetaData     MetaData
+	UserData     string
 	UserDataPath string
 }
 
@@ -102,28 +104,32 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 
 	c.logger.Debug("vendor-data", vdb.String())
 
-	var udb io.ReadWriter
-	if ci.UserDataPath != "" {
-		udf, err := os.Open(ci.UserDataPath)
-		if err != nil {
-			return fmt.Errorf("cloudinit: unable to open user data file %s: %w",
-				ci.MetaData.InstanceID, err)
+	var userDataString string
+	{
+		switch {
+		case ci.UserData != "":
+			userDataString = ci.UserData
+		case ci.UserDataPath != "":
+			b, err := os.ReadFile(ci.UserDataPath)
+			if err != nil {
+				return fmt.Errorf("cloudinit: unable to open user data file %s: %w",
+					ci.MetaData.InstanceID, err)
+			}
+			userDataString = string(b)
+		default:
+			var buf bytes.Buffer
+			if err := executeTemplate(ci, userDataTemplate, &buf); err != nil {
+				return fmt.Errorf("cloudinit: unable to execute user data template %s: %w",
+					ci.MetaData.InstanceID, err)
+			}
+			userDataString = buf.String()
 		}
-		defer udf.Close()
-		// TODO: Verify the provided user data is valid, otherwise cloudinit will
-		// fail to pick up the vendor data as well, since they are merged into
-		// one big file inside the VM.
-		udb = udf
-
-	} else {
-		udb = &bytes.Buffer{}
-		err = executeTemplate(ci, userDataTemplate, udb)
-		if err != nil {
-			return fmt.Errorf("cloudinit: unable to execute user data template %s: %w",
-				ci.MetaData.InstanceID, err)
-		}
-
 	}
+
+	// TODO: Verify the provided user data is valid, otherwise cloudinit will
+	// fail to pick up the vendor data as well, since they are merged into
+	// one big file inside the VM.
+	var udb io.Reader = strings.NewReader(userDataString)
 
 	l := []Entry{
 		{
@@ -140,8 +146,7 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 		},
 	}
 
-	err = Write(ciPath, "cidata", l)
-	if err != nil {
+	if err := Write(ciPath, "cidata", l); err != nil {
 		return fmt.Errorf("cloudinit: unable to write configuration to file %s: %w",
 			ci.MetaData.InstanceID, err)
 	}
