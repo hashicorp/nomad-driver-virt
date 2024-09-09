@@ -25,8 +25,8 @@ build: ## Compile the current driver codebase
 	@go build -race -trimpath -o ${PLUGIN_BINARY} .
 	@echo "==> Done"
 
-.PHONY: docker-prep-linux
-docker-prep-linux:
+.PHONY: -docker-prep-linux
+-docker-prep-linux:
 	docker buildx build \
 		--build-arg GO_VERSION=$(DOCKER_BUILD_GO_VERSION) \
 		--build-arg USER_ID=$(shell id -u) \
@@ -34,9 +34,8 @@ docker-prep-linux:
 		-f Dockerfile-build \
 		-t nomad-driver-virt-build .
 
-## Compile the current driver codebase in a container.
 .PHONY: docker-build-linux
-docker-build-linux: docker-prep-linux
+docker-build-linux: -docker-prep-linux ## Compile the current driver codebase in a container.
 	docker run --rm -it \
 		-v "$(shell go env GOMODCACHE):/home/build/go/pkg/mod" \
 		-v "$$(pwd):/data" \
@@ -45,7 +44,7 @@ docker-build-linux: docker-prep-linux
 
 
 .PHONY: docker-test-linux
-docker-test-linux: docker-prep-linux
+docker-test-linux: -docker-prep-linux ## Test the current driver codebase in a container.
 	docker run --rm -it \
 		-v "$(shell go env GOMODCACHE):/home/build/go/pkg/mod" \
 		-v "$$(pwd):/data" \
