@@ -95,7 +95,14 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 		interfaces = append(interfaces, i)
 	}
 
+	vcpus := &libvirtxml.DomainVCPU{
+		Placement: "static",
+		Value:     config.CPUs,
+		CPUSet:    config.CPUset,
+	}
+
 	domcfg := &libvirtxml.Domain{
+		VCPU: vcpus,
 		MemoryTune: &libvirtxml.DomainMemoryTune{
 			HardLimit: &libvirtxml.DomainMemoryTuneLimit{
 				Value: uint64(config.Memory),
@@ -153,7 +160,7 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 					Type:  "virtio-serial",
 					Index: &zero,
 				},
-				// Used for the cloud init iso (CDROOM) disk
+				// Used for the cloud init iso (CDROM) disk
 				{
 					Type:  "sata",
 					Index: &zero,
@@ -214,10 +221,6 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 		Memory: &libvirtxml.DomainMemory{
 			Value: config.Memory,
 			Unit:  "M",
-		},
-		VCPU: &libvirtxml.DomainVCPU{
-			Placement: "static",
-			Value:     uint(config.CPUs),
 		},
 		Resource: &libvirtxml.DomainResource{
 			Partition: "/machine",

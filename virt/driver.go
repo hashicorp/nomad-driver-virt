@@ -445,7 +445,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	}
 
 	d.logger.Debug("starting task", "driver_cfg", hclog.Fmt("%+v", driverConfig))
-
 	handle := drivers.NewTaskHandle(taskHandleVersion)
 	handle.Config = cfg
 
@@ -517,22 +516,19 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		RemoveConfigFiles: true,
 		Name:              taskName,
 		Memory:            uint(cfg.Resources.NomadResources.Memory.MemoryMB),
-		//Cores:             int(cfg.Resources.NomadResources.Cpu.ReservedCores[]),
-		CPUs:      int(cfg.Resources.NomadResources.Cpu.CpuShares),
-		Cores:     2,
-		OsVariant: osVariant,
-		BaseImage: diskImagePath,
-		DiskFmt:   diskFormat,
-		//DiskSize:          1,
-		NetworkInterfaces: []string{"virbr0"},
+		CPUs:              uint(cfg.Resources.NomadResources.Cpu.CpuShares),
+		CPUset:            cfg.Resources.LinuxResources.CpusetCpus,
+		OsVariant:         osVariant,
+		BaseImage:         diskImagePath,
+		DiskFmt:           diskFormat,
+		PrimaryDiskSize:   driverConfig.PrimaryDiskSize,
 		HostName:          hostname,
 		Mounts:            allocFSMounts,
 		CMDs:              driverConfig.CMDs,
 		CIUserData:        driverConfig.UserData,
 		Password:          driverConfig.DefaultUserPassword,
 		SSHKey:            driverConfig.DefaultUserSSHKey,
-		//Env:               cfg.Env,
-		Files: []domain.File{createEnvsFile(cfg.Env)},
+		Files:             []domain.File{createEnvsFile(cfg.Env)},
 	}
 
 	if err := dc.Validate(allowedPaths); err != nil {
@@ -546,7 +542,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	d.logger.Info("task started successfully", "taskName", taskName)
 
 	if err := handle.SetDriverState(&driverState); err != nil {
-		return nil, nil, fmt.Errorf("failed to set driver state: %v", err)
+		return nil, nil, fmt.Errorf("virt: failed to set driver state for %s: %v", cfg.AllocID, err)
 	}
 
 	d.tasks.Set(cfg.ID, h)
@@ -621,7 +617,7 @@ func (d *VirtDriverPlugin) getImageFormat(basePath string) (string, error) {
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("qemu-img info --output=json %s", basePath))
+	cmd := exec.Command("qemu-img", "info", "--output=json", basePath)
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 
@@ -653,8 +649,13 @@ func (d *VirtDriverPlugin) createThinCopy(basePath string, destination string, s
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("qemu-img create -b %s -f qcow2 -F qcow2 %s %dM",
-		basePath, destination, sizeM))
+	if sizeM <= 0{
+		return fmt.Errorf("qemu-img: %w", domain.ErrNotEnoughMemory)
+	}
+
+	cmd := exec.Command("qemu-img", "create", "-b", basePath, "-f", "qcow2", "-F", "qcow2",
+		destination, fmt.Sprintf("%dM", sizeM),
+	)
 	cmd.Stdout = &stdoutBuf
 	cmd.Stderr = &stderrBuf
 

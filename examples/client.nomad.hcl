@@ -8,5 +8,6 @@ plugin "nomad-driver-virt" {
   image_paths = ["/var/local/statics/images/"]
 }
 
+plugin_dir = "/opt/nomad/plugins"
 data_dir  = "/opt/ubuntu/nomad_tmp"
 log_level = "INFO"

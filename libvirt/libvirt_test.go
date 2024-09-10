@@ -215,7 +215,6 @@ func TestStartDomain(t *testing.T) {
 				RemoveConfigFiles: tt.removeConfigFiles,
 				Name:              tt.domainName,
 				Memory:            66600,
-				Cores:             2,
 				CPUs:              2,
 				BaseImage:         "/path/to/test/image",
 				HostName:          "test-hostname",
