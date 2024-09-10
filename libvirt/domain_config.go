@@ -98,10 +98,7 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 	vcpus := &libvirtxml.DomainVCPU{
 		Placement: "static",
 		Value:     config.CPUs,
-	}
-
-	if config.CPUset != "" {
-		vcpus.CPUSet = config.CPUset
+		CPUSet:    config.CPUset,
 	}
 
 	domcfg := &libvirtxml.Domain{

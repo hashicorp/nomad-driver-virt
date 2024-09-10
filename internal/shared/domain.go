@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	minDiskMB     = 25600 // Minimum recommended for running linux distributions.
+	minDiskMB     = 8000
 	minMemoryMB   = 500
 	maxNameLength = 63 // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 )

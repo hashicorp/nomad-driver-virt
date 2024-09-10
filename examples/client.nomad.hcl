@@ -8,6 +8,6 @@ plugin "nomad-driver-virt" {
   image_paths = ["/var/local/statics/images/"]
 }
 
-plugin_dir = "/home/ubuntu/go/src/github.com/hashicorp/nomad-driver-virt"
+plugin_dir = "/opt/nomad/plugins"
 data_dir  = "/opt/ubuntu/nomad_tmp"
 log_level = "INFO"

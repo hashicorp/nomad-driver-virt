@@ -22,7 +22,7 @@ const (
 	defaultURI               = "qemu:///system"
 	defaultVirtualizatioType = "hvm"
 	defaultAccelerator       = "kvm"
-	defaultSecurityMode      = "mapped" // "passthrough"
+	defaultSecurityMode      = "mapped"
 	defaultInterfaceModel    = "virtio"
 	libvirtVirtioChannel     = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
 
@@ -429,7 +429,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	cloudInitConfigPath := filepath.Join(d.dataDir, config.Name+".iso")
 
 	cic := createCloudInitConfig(config)
-	d.logger.Debug("creating ci configuration: ", fmt.Sprintf("%+v", cic))
+	d.logger.Debug("creating cloud init configuration: ", fmt.Sprintf("%+v", cic))
 
 	if err := d.ci.Apply(cic, cloudInitConfigPath); err != nil {
 		return fmt.Errorf("libvirt: unable to create cidata %s: %w", config.Name, err)

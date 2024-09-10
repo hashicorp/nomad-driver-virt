@@ -445,7 +445,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	}
 
 	d.logger.Debug("starting task", "driver_cfg", hclog.Fmt("%+v", driverConfig))
-	d.logger.Error(" errorr          ", fmt.Sprintf("%+v", cfg.Resources.LinuxResources))
 	handle := drivers.NewTaskHandle(taskHandleVersion)
 	handle.Config = cfg
 
@@ -649,6 +648,10 @@ func (d *VirtDriverPlugin) createThinCopy(basePath string, destination string, s
 	d.logger.Debug("creating thin copy", "base", basePath, "dest", destination)
 
 	var stdoutBuf, stderrBuf bytes.Buffer
+
+	if sizeM <= 0{
+		return fmt.Errorf("qemu-img: %w", domain.ErrNotEnoughMemory)
+	}
 
 	cmd := exec.Command("qemu-img", "create", "-b", basePath, "-f", "qcow2", "-F", "qcow2",
 		destination, fmt.Sprintf("%dM", sizeM),
