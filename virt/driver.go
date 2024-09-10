@@ -368,10 +368,14 @@ func (d *VirtDriverPlugin) ExecTask(taskID string, cmd []string, timeout time.Du
 	return nil, errors.New("This driver does not support exec")
 }
 
-// domainNameFromTaskID creates a name to be used for the vms, using the
-// last 8 chars of the taskName which should be unique per task.
+// domainNameFromTaskConfig creates a name to be used for the vms, using the
+// last 8 chars of the taskName which should be unique per task and the task name
+// to help the operator identify the vms.
+//
+// The struct of the task ID is "allocID/taskName/UniqueID".
 func domainNameFromTaskID(taskID string) string {
-	return taskID[len(taskID)-8:]
+	ids := strings.Split(taskID, "/")
+	return strings.Join(ids[1:], "-")
 }
 
 func createDataDirectory(path string) error {
@@ -649,7 +653,7 @@ func (d *VirtDriverPlugin) createThinCopy(basePath string, destination string, s
 
 	var stdoutBuf, stderrBuf bytes.Buffer
 
-	if sizeM <= 0{
+	if sizeM <= 0 {
 		return fmt.Errorf("qemu-img: %w", domain.ErrNotEnoughMemory)
 	}
 
