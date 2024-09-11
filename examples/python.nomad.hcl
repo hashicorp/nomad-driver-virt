@@ -1,5 +1,4 @@
 job "python-server" {
-  datacenters = ["dc1"]
 
   group "virt-group" {
     count = 1
