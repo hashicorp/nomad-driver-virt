@@ -1,4 +1,4 @@
-Nomad virt Driver
+Nomad Virt Driver
 ==================
 
 ## Features
@@ -73,7 +73,7 @@ sudo apt install libvirt-dev
 
 This project has a `go.mod` definition. So you can clone it to whatever directory you want.
 It is not necessary to setup a go path at all.
-Ensure that you use go 1.17 or newer.
+Ensure that you use go 1.22 or newer.
 
 ```shell-session
 git clone git@github.com:hashicorp/nomad-driver-virt
@@ -85,7 +85,7 @@ The compiled binary will be located at `./build/nomad-driver-virt`.
 
 ## Runtime dependencies
 
-* [Nomad](https://www.nomadproject.io/downloads.html) 0.12.9+
+* [Nomad](https://www.nomadproject.io/downloads.html) 1.9.0+
 * [libvirt-daemon-system](https://pkgs.org/download/libvirt-daemon-system)
 * [qemu-utils](https://pkgs.org/download/qemu-utils)
 
@@ -94,8 +94,14 @@ Make sure the node where the client will run supports virtualization.
 `Nomad` runs as root, add the [user](https://github.com/virtualopensystems/libvirt/blob/4fbfac851e05670cb7cb378ef1c3560b82a05473/src/qemu/qemu.conf#L214) `root` and the 
 [group](https://github.com/virtualopensystems/libvirt/blob/4fbfac851e05670cb7cb378ef1c3560b82a05473/src/qemu/qemu.conf#L231) `root` to the QEMU configuration
 to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restarted after adding the qemu user/group configuration: 
+
+```
 systemctl start libvirtd
+```
+or
+```
 systemctl restart libvirtd
+```
 
 Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject.io/docs/configuration/index.html#plugin_dir)
 

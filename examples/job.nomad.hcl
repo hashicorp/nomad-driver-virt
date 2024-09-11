@@ -1,5 +1,7 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 job "virt-example" {
-  datacenters = ["dc1"]
 
   group "virt-group" {
     count = 1
@@ -32,7 +34,7 @@ job "virt-example" {
         use_thin_copy                   = true
         default_user_password           = "password"
         cmds                            = ["touch /home/ubuntu/file.txt"]
-        default_user_authorized_ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1/cUhjyA8aznoy9FlwU4d6p/zfxP5RqRxhCWzGK juanita.delacuestamorales@hashicorp.com"
+        default_user_authorized_ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI..."
       }
 
       resources {

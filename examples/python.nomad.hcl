@@ -1,13 +1,15 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
 job "python-server" {
 
   group "virt-group" {
     count = 1
 
     task "virt-task" {
-
       driver = "nomad-driver-virt"
 
-    artifact {
+      artifact {
         source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
         destination = "focal-server-cloudimg-amd64.img"
         mode        = "file"

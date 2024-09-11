@@ -1,8 +1,4 @@
 PLUGIN_BINARY=nomad-driver-virt
-SHELL = bash
-PROJECT_ROOT := $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
-THIS_OS := $(shell uname | cut -d- -f1)
-THIS_ARCH := $(shell uname -m)
 
 # CGO is required due to libvirt.
 CGO_ENABLED = 1
