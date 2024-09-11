@@ -115,7 +115,7 @@ Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject
   * **uri** - Since libvirt supports many different kinds of virtualization (often referred to as "drivers" or "hypervisors"), it is necessary to use a `uri` to specify which one
   to use. It defaults to `"qemu:///system"`
   * **user** - User for the [connection authentication](https://libvirt.org/auth.html).
-  * **password** - Password for [connection authentication](https://libvirt.org/auth.html).
+  * **password** - Password for the [connection authentication](https://libvirt.org/auth.html).
 
 * **data_dir** - The plugin will create VM configuration files and intermediate files in 
   this directory. If not defined it will default to `/var/lib/virt`.
