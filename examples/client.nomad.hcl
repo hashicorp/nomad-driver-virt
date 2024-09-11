@@ -13,7 +13,7 @@ plugin "nomad-driver-virt" {
 log_level = "INFO"
 
 # Setup data dir
-data_dir  = "/opt/ubuntu/nomad_tmp"
+data_dir  = "/opt/nomad/client"
 
 # Set up the plugin dir
 plugin_dir = "/opt/nomad/plugins"
