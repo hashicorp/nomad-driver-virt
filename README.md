@@ -3,7 +3,7 @@ Nomad virt Driver
 
 ## Features
 
-* Use the jobs driver config to define the cloud image for your virtual machine
+* Use the job's `task.config` to define the cloud image for your virtual machine
 * Start/stop virtual machines
 * [Nomad runtime environment](https://www.nomadproject.io/docs/runtime/environment.html) is populated
 * Use Nomad alloc data in the virtual machine.
