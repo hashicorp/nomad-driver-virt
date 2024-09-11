@@ -95,4 +95,4 @@ build: ## Compile the current driver codebase
 	@echo "==> Done"
 
 .PHONY: dev
-dev: clean build ## Build the nomad-driver-podman plugin
+dev: clean build ## Build the nomad-driver-virt plugin
