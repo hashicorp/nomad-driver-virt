@@ -101,7 +101,7 @@ Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject
 
 ## Driver Configuration
 
-* **emulator stanza**
+* **emulator block**
   * **uri** - Since libvirt supports many different kinds of virtualization (often referred to as "drivers" or "hypervisors"), it is necessary to use a `uri` to specify which one
   to use. It defaults to `"qemu:///system"`
   * **user** - User for OpenAuth
