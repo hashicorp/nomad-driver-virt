@@ -13,7 +13,7 @@ plugin "nomad-driver-virt" {
 }
 
 # Increase log verbosity
-log_level = "INFO"
+log_level = "DEBUG"
 
 # Setup data dir
 data_dir  = "/opt/nomad/client"

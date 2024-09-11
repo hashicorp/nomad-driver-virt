@@ -18,7 +18,6 @@ Here is a simple python server on ubuntu Example:
 
 ```hcl
 job "python-server" {
-  datacenters = ["dc1"]
 
   group "virt-group" {
     count = 1
@@ -71,10 +70,6 @@ use any of the package managers to get it:
 sudo apt install libvirt-dev 
 ```
 
-This project has a `go.mod` definition. So you can clone it to whatever directory you want.
-It is not necessary to setup a go path at all.
-Ensure that you use go 1.22 or newer.
-
 ```shell-session
 git clone git@github.com:hashicorp/nomad-driver-virt
 cd nomad-driver-virt
@@ -89,11 +84,20 @@ The compiled binary will be located at `./build/nomad-driver-virt`.
 * [libvirt-daemon-system](https://pkgs.org/download/libvirt-daemon-system)
 * [qemu-utils](https://pkgs.org/download/qemu-utils)
 
-Make sure the node where the client will run supports virtualization.
+Make sure the node where the client will run supports virtualization, in Linux you can do it in a couple of ways:
+1. Reading the CPU flags:
+```sh
+egrep -o '(vmx|svm)' /proc/cpuinfo
+```
 
-`Nomad` runs as root, add the [user](https://github.com/virtualopensystems/libvirt/blob/4fbfac851e05670cb7cb378ef1c3560b82a05473/src/qemu/qemu.conf#L214) `root` and the 
-[group](https://github.com/virtualopensystems/libvirt/blob/4fbfac851e05670cb7cb378ef1c3560b82a05473/src/qemu/qemu.conf#L231) `root` to the QEMU configuration
-to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restarted after adding the qemu user/group configuration: 
+2. Reading the kernel modules and looking for the virtualization ones:
+```sh
+lsmod | grep -E '(kvm_intel|kvm_amd)'
+```
+
+If the result is empty for either call, the machine does not support virtualization and the nomad client wont be able to run any virtualization workload.
+
+`Nomad` runs as root, add the user `root` and the group `root` to the [QEMU configuration](https://libvirt.org/drvqemu.html#posix-users-groups) to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restarted after adding the qemu user/group configuration: 
 
 ```
 systemctl start libvirtd
@@ -110,8 +114,8 @@ Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject
 * **emulator block**
   * **uri** - Since libvirt supports many different kinds of virtualization (often referred to as "drivers" or "hypervisors"), it is necessary to use a `uri` to specify which one
   to use. It defaults to `"qemu:///system"`
-  * **user** - User for OpenAuth
-  * **password** - Password for OpenAuth
+  * **user** - User for the [connection authentication](https://libvirt.org/auth.html).
+  * **password** - Password for [connection authentication](https://libvirt.org/auth.html).
 
 * **data_dir** - The plugin will create VM configuration files and intermediate files in 
   this directory. If not defined it will default to `/var/lib/virt`.
@@ -128,13 +132,13 @@ plugin "nomad-driver-virt" {
 ```
 
 ## Task Configuration
-* **image** - Path to .img cloud image to base the VM disk on, it should be located in an allowed path.
+* **image** - Path to .img cloud image to base the VM disk on, it should be located in an allowed path. It is very important that the cloud image includes cloud init, otherwise most features will not be available for teh task.
 * **use_thin_copy** - Make a thin copy of the image using qemu, and use it as the backing cloud image for the VM. 
 * **hostname** - The hostname to assign which defaults to a short uuid that will be unique to every VM, to avoid clashes when there are multiple instances of the same task running. Since it's used as a network host name, it must be a valid DNS label according to RFC 1123.
 * **os** - Guest configuration for a specific machine and architecture to emulate if they are to be different from the host. Both the architecture and machine have to be available for KVM. If not defined, libvirt will use the same ones as the host machine.
 * **command** - List of commands to execute on the VM once it is running. They can provide the operator with a quick and easy way to start a process on the newly created VM, used in conjunction with the template, it can be a simple yet powerful start up tool.
 * **default_user_password** - Initial password to be configured for the default user on the newly created VM, it will have to be updated on first connect.
-* **default_user_authorized_ssh_key** - SSH public key that will be added to the ssh configuration for the default user of the cloud image distribution.
+* **default_user_authorized_ssh_key** - SSH public key that will be added to the SSH configuration for the default user of the cloud image distribution.
 * **user_data** - Path to a cloud-init compliant user data file to be used as the user-data for the cloud-init configuration.
 * **primary_disk_size** - Disk space to assign to the VM, bear in mind it will fit the
 VM's OS.
