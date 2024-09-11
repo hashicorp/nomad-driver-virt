@@ -124,7 +124,7 @@ plugin "nomad-driver-virt" {
 ## Task Configuration
 * **image** - Path to .img cloud image to base the VM disk on, it should be located in an allowed path.
 * **use_thin_copy** - Make a thin copy of the image using qemu, and use it as the backing cloud image for the VM. 
-* **hostname** - The hostname to assign which defaults to an short uuid that will be unique to every VM, to avoid clashes when there are multiple instances of the same task running. As it will be used as a network host name, it must be a valid DNS label according to RFC 1123.
+* **hostname** - The hostname to assign which defaults to a short uuid that will be unique to every VM, to avoid clashes when there are multiple instances of the same task running. Since it's used as a network host name, it must be a valid DNS label according to RFC 1123.
 * **os** - Guest configuration for a specific machine and architecture to emulate if they are to be different from the host. Both the architecture and machine have to be available for KVM. If not defined, libvirt will use the same ones as the host machine.
 * **command** - List of commands to execute on the VM once it is running. They can provide the operator with a quick and easy way to start a process on the newly created VM, used in conjunction with the template, it can be a simple yet powerful start up tool.
 * **default_user_password** - Initial password to be configured for the default user on the newly created VM, it will have to be updated on first connect.
