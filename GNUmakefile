@@ -17,12 +17,6 @@ clean: ## Remove build artifacts
 	@rm -rf ${PLUGIN_BINARY}
 	@echo "==> Done"
 
-.PHONY: build
-build: ## Compile the current driver codebase
-	@echo "==> Compiling binary..."
-	@go build -race -trimpath -o ${PLUGIN_BINARY} .
-	@echo "==> Done"
-
 .PHONY: copywrite-headers
 copywrite-headers: ## Ensure files have the copywrite header
 	@echo "==> Checking copywrite headers..."
@@ -78,3 +72,23 @@ help: ## Display this usage information
 		awk 'BEGIN {FS = ":.*?## "}; \
 			{printf $(HELP_FORMAT), $$1, $$2}'
 	@echo ""
+
+.PHONY: clean
+clean: ## Cleanup previous build
+	@echo "==> Cleanup previous build"
+	rm -f ./build/nomad-driver-virt
+
+.PHONY: deps
+deps: ## Install build dependencies
+	@echo "==> Installing build dependencies ..."
+	go install gotest.tools/gotestsum@v1.10.0
+	go install github.com/hashicorp/hcl/v2/cmd/hclfmt@d0c4fa8b0bbc2e4eeccd1ed2a32c2089ed8c5cf1
+
+.PHONY: build
+build: ## Compile the current driver codebase
+	@echo "==> Compiling binary..."
+	@go build -race -trimpath -o build/${PLUGIN_BINARY} .
+	@echo "==> Done"
+
+.PHONY: dev
+dev: clean build ## Build the nomad-driver-virt plugin
