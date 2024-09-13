@@ -107,19 +107,15 @@ type VirtDriverPlugin struct {
 	signalShutdown context.CancelFunc
 	logger         hclog.Logger
 	dataDir        string
-<<<<<<< HEAD
-
 	// networkController is the backend controller interface for the network
 	// subsystem.
 	networkController net.Net
-
 	// networkInit indicates whether the network subsystem has had its init
 	// function called. While the function should be idempotent, this helps
 	// avoid unnecessary calls and work.
 	networkInit atomic.Bool
-=======
 	imageHandler   ImageHandler
->>>>>>> 36f383e (func: move the creation of the mount cmds to the virt and ot libvirt)
+
 }
 
 // NewPlugin returns a new driver plugin
@@ -510,6 +506,21 @@ func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
 	return cmds
 }
 
+func setUpTaskState(vmState string) drivers.TaskState {
+	switch vmState {
+	case libvirt.DomainRunning:
+		return drivers.TaskStateRunning
+	case libvirt.DomainShutdown, libvirt.DomainShutOff, libvirt.DomainCrashed:
+		return drivers.TaskStateExited
+	default:
+		return drivers.TaskStateUnknown
+	}
+}
+
+func buildHostname(taskName string) string {
+	return fmt.Sprintf("nomad-%s", taskName)
+}
+
 // StartTask returns a task handle and a driver network if necessary.
 func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drivers.DriverNetwork, error) {
 	if _, ok := d.tasks.Get(cfg.ID); ok {
@@ -564,6 +575,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	allowedPaths := append(d.config.ImagePaths, d.dataDir, cfg.AllocDir)
 
 	diskImagePath := driverConfig.ImagePath
+
 	if !fileExists(diskImagePath) {
 
 		// Assuming the image was downloaded using artifacts and will be placed
@@ -665,8 +677,12 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	handle := drivers.NewTaskHandle(taskHandleVersion)
 	handle.Config = cfg
+<<<<<<< HEAD
 	fmt.Printf("%+v\n", driverState)
 >>>>>>> 36f383e (func: move the creation of the mount cmds to the virt and ot libvirt)
+=======
+
+>>>>>>> 67ac7ab (test: add test for crashing task)
 	if err := handle.SetDriverState(&driverState); err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to set driver state for %s: %v",
 			cfg.AllocID, err)
@@ -722,19 +738,4 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 	d.tasks.Set(handle.Config.ID, h)
 
 	return nil
-}
-
-func setUpTaskState(vmState string) drivers.TaskState {
-	switch vmState {
-	case libvirt.DomainRunning:
-		return drivers.TaskStateRunning
-	case libvirt.DomainShutdown, libvirt.DomainShutOff, libvirt.DomainCrashed:
-		return drivers.TaskStateExited
-	default:
-		return drivers.TaskStateUnknown
-	}
-}
-
-func buildHostname(taskName string) string {
-	return fmt.Sprintf("nomad-%s", taskName)
 }

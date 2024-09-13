@@ -5,7 +5,6 @@ package virt
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -100,8 +99,8 @@ func createBasicResources() *drivers.Resources {
 
 // virtDriverHarness wires up everything needed to launch a task with a virt driver.
 // A driver plugin interface and cleanup function is returned
-func virtDriverHarness(t *testing.T, v Virtualizer, cfg map[string]interface{},
-	dg DomainGetter, ih ImageHandler, dataDir string) *dtestutil.DriverHarness {
+func virtDriverHarness(t *testing.T, v Virtualizer, dg DomainGetter, ih ImageHandler,
+	dataDir string) *dtestutil.DriverHarness {
 	logger := testlog.HCLogger(t)
 	if testing.Verbose() {
 		logger.SetLevel(hclog.Trace)
@@ -147,7 +146,7 @@ func newTaskConfig(image string) TaskConfig {
 	}
 }
 
-func TestVirtDriver_StartTask_Wait_Destroy(t *testing.T) {
+func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	ci.Parallel(t)
 
 	tempDir, err := os.MkdirTemp("", "exampledir-*")
@@ -185,7 +184,7 @@ func TestVirtDriver_StartTask_Wait_Destroy(t *testing.T) {
 		imageFormat: "tif",
 	}
 
-	d := virtDriverHarness(t, mockVirtualizer, nil, mockTaskGetter, mockImageHandler, tempDir)
+	d := virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
 	cleanup := d.MkAllocDir(task, true)
 	defer cleanup()
 
@@ -199,7 +198,6 @@ func TestVirtDriver_StartTask_Wait_Destroy(t *testing.T) {
 	must.Eq(t, "task-name-0000000", mockVirtualizer.config.Name)
 	must.Eq(t, 6000, mockVirtualizer.config.Memory)
 	must.Eq(t, 250, mockVirtualizer.config.CPUs)
-	must.Eq(t, []string{"cmd arg arg", "cmd arg arg"}, mockVirtualizer.config.CMDs)
 	must.StrContains(t, "arch", mockVirtualizer.config.OsVariant.Arch)
 	must.StrContains(t, "machine", mockVirtualizer.config.OsVariant.Machine)
 	must.StrContains(t, mockImage.Name(), mockVirtualizer.config.BaseImage)
@@ -253,7 +251,7 @@ func TestVirtDriver_StartTask_Wait_Destroy(t *testing.T) {
 				return
 			case <-statsChan:
 			case <-time.After(2 * time.Second):
-				t.Error("no stats comming from task")
+				t.Error("no stats comming from task channel")
 			}
 		}
 	}(t)
@@ -266,10 +264,10 @@ func TestVirtDriver_StartTask_Wait_Destroy(t *testing.T) {
 
 	ts, err := d.InspectTask(task.ID)
 	must.NoError(t, err)
-
+	// TODO: Assert task status
 	must.StrContains(t, task.ID, ts.ID)
 	// Assert the correct monitoring
-	must.NonZero(t, mockTaskGetter.count)
+	must.Greater(t, 10, mockTaskGetter.count)
 
 	cancel()
 	err = d.DestroyTask(task.ID, true)
@@ -277,8 +275,7 @@ func TestVirtDriver_StartTask_Wait_Destroy(t *testing.T) {
 	must.Zero(t, mockVirtualizer.count)
 }
 
-func TestVirtDriver_StartTask(t *testing.T) {
-	ci.Parallel(t)
+func TestVirtDriver_Start_Wait_Crash(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "exampledir-*")
 	must.NoError(t, err)
@@ -288,51 +285,57 @@ func TestVirtDriver_StartTask(t *testing.T) {
 	must.NoError(t, err)
 	defer os.Remove(mockImage.Name())
 
-	testsCases := []struct {
-		name    string
-		expErr  error
-		virtErr error
-	}{
-		{},
+	allocID := uuid.Generate()
+	taskCfg := newTaskConfig(mockImage.Name())
+
+	taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
+	task := &drivers.TaskConfig{
+		ID:        taskID,
+		AllocID:   allocID,
+		Resources: createBasicResources(),
 	}
 
-	for _, tt := range testsCases {
-		t.Run(tt.name, func(t *testing.T) {
-			allocID := uuid.Generate()
-			taskCfg := newTaskConfig(mockImage.Name())
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-			taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
-			task := &drivers.TaskConfig{
-				ID:        taskID,
-				AllocID:   allocID,
-				Resources: createBasicResources(),
-			}
-
-			must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
-
-			mv := &mockVirtualizar{
-				count: 0,
-				err:   tt.virtErr,
-			}
-
-			mockTaskGetter := &mockTaskGetter{
-
-				info: &domain.Info{
-					State: libvirt.DomainRunning,
-				},
-			}
-
-			mockImageHandler := &mockImageHandler{
-				imageFormat: "tif",
-			}
-
-			d := virtDriverHarness(t, mv, nil, mockTaskGetter, mockImageHandler, tempDir)
-			cleanup := d.MkAllocDir(task, true)
-			defer cleanup()
-
-			_, _, err := d.StartTask(task)
-			must.Eq(t, nil, errors.Unwrap(err))
-
-		})
+	mockVirtualizer := &mockVirtualizar{
+		count: 0,
 	}
+
+	mockTaskGetter := &mockTaskGetter{
+		count: 0,
+		info: &domain.Info{
+			State: libvirt.DomainCrashed,
+		},
+	}
+
+	mockImageHandler := &mockImageHandler{
+		imageFormat: "tif",
+	}
+
+	d := virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
+	cleanup := d.MkAllocDir(task, true)
+	defer cleanup()
+
+	dth, _, err := d.StartTask(task)
+	must.NoError(t, err)
+
+	must.One(t, dth.Version)
+	must.One(t, mockVirtualizer.count)
+
+	// Attempt to wait
+	waitCh, err := d.WaitTask(context.Background(), task.ID)
+	must.NoError(t, err)
+
+	select {
+	case exitResult := <-waitCh:
+		must.One(t, exitResult.ExitCode)
+		fmt.Printf("\n %+T \n %+T\n", ErrTaskCrashed, exitResult.Err)
+		must.ErrorIs(t, ErrTaskCrashed, exitResult.Err)
+
+	case <-time.After(10 * time.Second):
+		t.Fatalf("wait channel should have received an exit result")
+	}
+
+	_, err = d.InspectTask(task.ID)
+	must.Error(t, err)
 }

@@ -91,7 +91,6 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 			domain, err := h.taskGetter.GetDomain(h.name)
 			if err != nil {
 				h.logger.Error("virt: unable to get task's %s state: %w", h.name, err)
-				fmt.Printf(" eto esta llegando por aca??? nooooo")
 				h.stateLock.Lock()
 				h.procState = drivers.TaskStateUnknown
 				h.stateLock.Unlock()
