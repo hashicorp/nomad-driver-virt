@@ -91,14 +91,7 @@ func TestStartDomain(t *testing.T) {
 					Password: "test-password",
 					SSHKey:   "sshkey lkbfubwfu...",
 					RunCMD:   []string{"cmd arg arg", "cmd arg arg"},
-					BootCMD: []string{
-						"cmd arg arg",
-						"cmd arg arg",
-						"mkdir -p /path/to/file/one",
-						"mountpoint -q /path/to/file/one || mount -t 9p -o trans=virtio tagOne /path/to/file/one",
-						"mkdir -p /path/to/file/two",
-						"mountpoint -q /path/to/file/two || mount -t 9p -o trans=virtio tagTwo /path/to/file/two",
-					},
+					BootCMD:  []string{"cmd arg arg", "cmd arg arg"},
 					Mounts: []cloudinit.MountFileConfig{
 						{
 							Destination: "/path/to/file/one",
@@ -137,14 +130,7 @@ func TestStartDomain(t *testing.T) {
 					Password: "test-password",
 					SSHKey:   "sshkey lkbfubwfu...",
 					RunCMD:   []string{"cmd arg arg", "cmd arg arg"},
-					BootCMD: []string{
-						"cmd arg arg",
-						"cmd arg arg",
-						"mkdir -p /path/to/file/one",
-						"mountpoint -q /path/to/file/one || mount -t 9p -o trans=virtio tagOne /path/to/file/one",
-						"mkdir -p /path/to/file/two",
-						"mountpoint -q /path/to/file/two || mount -t 9p -o trans=virtio tagTwo /path/to/file/two",
-					},
+					BootCMD:  []string{"cmd arg arg", "cmd arg arg"},
 					Mounts: []cloudinit.MountFileConfig{
 						{
 							Destination: "/path/to/file/one",

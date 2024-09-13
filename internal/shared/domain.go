@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	minDiskMB     = 8000
+	minDiskMB     = 2000
 	minMemoryMB   = 500
 	maxNameLength = 63 // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 )

@@ -4,14 +4,11 @@
 package virt
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -21,6 +18,7 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
 	virtnet "github.com/hashicorp/nomad-driver-virt/libvirt/net"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/hashicorp/nomad-driver-virt/virt/image_tools"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client/taskenv"
@@ -94,6 +92,11 @@ type DomainGetter interface {
 	GetDomain(name string) (*domain.Info, error)
 }
 
+type ImageHandler interface {
+	GetImageFormat(basePath string) (string, error)
+	CreateThinCopy(basePath string, destination string, sizeM int64) error
+}
+
 type VirtDriverPlugin struct {
 	eventer        *eventer.Eventer
 	virtualizer    Virtualizer
@@ -104,6 +107,7 @@ type VirtDriverPlugin struct {
 	signalShutdown context.CancelFunc
 	logger         hclog.Logger
 	dataDir        string
+<<<<<<< HEAD
 
 	// networkController is the backend controller interface for the network
 	// subsystem.
@@ -113,6 +117,9 @@ type VirtDriverPlugin struct {
 	// function called. While the function should be idempotent, this helps
 	// avoid unnecessary calls and work.
 	networkInit atomic.Bool
+=======
+	imageHandler   ImageHandler
+>>>>>>> 36f383e (func: move the creation of the mount cmds to the virt and ot libvirt)
 }
 
 // NewPlugin returns a new driver plugin
@@ -129,7 +136,11 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 		tasks:          newTaskStore(),
 		signalShutdown: cancel,
 		logger:         logger,
+<<<<<<< HEAD
 		networkInit:    atomic.Bool{},
+=======
+		imageHandler:   image_tools.NewHandler(logger),
+>>>>>>> 36f383e (func: move the creation of the mount cmds to the virt and ot libvirt)
 	}
 }
 
@@ -485,6 +496,20 @@ func fileExists(path string) bool {
 	return !info.IsDir()
 }
 
+func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
+	cmds := []string{}
+	for _, m := range mounts {
+		c := []string{
+			fmt.Sprintf("mkdir -p %s", m.Destination),
+			fmt.Sprintf("mountpoint -q %s || mount -t 9p -o trans=virtio %s %s", m.Destination, m.Tag, m.Destination),
+		}
+
+		cmds = append(cmds, c...)
+	}
+
+	return cmds
+}
+
 // StartTask returns a task handle and a driver network if necessary.
 func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drivers.DriverNetwork, error) {
 	if _, ok := d.tasks.Get(cfg.ID); ok {
@@ -493,17 +518,16 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	var driverConfig TaskConfig
 	if err := cfg.DecodeDriverConfig(&driverConfig); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode driver config: %v", err)
+		return nil, nil, fmt.Errorf("virt: failed to decode driver config: %v", err)
 	}
 
 	d.logger.Debug("starting task", "driver_cfg", hclog.Fmt("%+v", driverConfig))
-	handle := drivers.NewTaskHandle(taskHandleVersion)
-	handle.Config = cfg
 
 	taskName := domainNameFromTaskID(cfg.ID)
 
 	d.logger.Info("starting task", "name", taskName)
 
+<<<<<<< HEAD
 	h := &taskHandle{
 		taskConfig: cfg,
 		procState:  drivers.TaskStateRunning,
@@ -513,7 +537,14 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		name:       taskName,
 	}
 
+=======
+	// The process to have directories mounted on the VM consists on two steps,
+	// one is declaring them as backing storage in the VM and the second is to
+	// create the directory inside the VM and executing the mount using 9P.
+	// These commands are added here to execute at bootime.
+>>>>>>> 36f383e (func: move the creation of the mount cmds to the virt and ot libvirt)
 	allocFSMounts := createAllocFileMounts(cfg)
+	bootCMDs := addCMDsForMounts(allocFSMounts)
 
 	var osVariant *domain.OSVariant
 	if driverConfig.OS != nil {
@@ -528,21 +559,22 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		hostname = driverConfig.Hostname
 	}
 
-	// The alloc directory and plugin data directory are always an allowed path to load images from.
+	// The alloc directory and plugin data directory are assumed to be allowed
+	// paths to load images from.
 	allowedPaths := append(d.config.ImagePaths, d.dataDir, cfg.AllocDir)
 
 	diskImagePath := driverConfig.ImagePath
 	if !fileExists(diskImagePath) {
 
-		// Assume the image was downloaded using artifacts and will be placed
+		// Assuming the image was downloaded using artifacts and will be placed
 		// somewhere in the alloc's filesystem.
 		diskImagePath = filepath.Join(cfg.TaskDir().Dir, diskImagePath)
 		if !fileExists(diskImagePath) {
-			return nil, nil, ErrImageNotFound
+			return nil, nil, fmt.Errorf("virt: %s, %w", cfg.AllocID, ErrImageNotFound)
 		}
 	}
 
-	diskFormat, err := d.getImageFormat(diskImagePath)
+	diskFormat, err := d.imageHandler.GetImageFormat(diskImagePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("virt: unable to get disk format %s: %w", cfg.AllocID, err)
 	}
@@ -551,8 +583,10 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		copyPath := filepath.Join(d.dataDir, taskName+".img")
 
 		d.logger.Info("creating thin copy at", "path", copyPath)
-		if err := d.createThinCopy(diskImagePath, copyPath, cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
-			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w", taskName, err)
+		if err := d.imageHandler.CreateThinCopy(diskImagePath, copyPath,
+			cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
+			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w",
+				taskName, err)
 		}
 
 		diskImagePath = copyPath
@@ -572,6 +606,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		HostName:          hostname,
 		Mounts:            allocFSMounts,
 		CMDs:              driverConfig.CMDs,
+		BOOTCMDs:          bootCMDs,
 		CIUserData:        driverConfig.UserData,
 		Password:          driverConfig.DefaultUserPassword,
 		SSHKey:            driverConfig.DefaultUserSSHKey,
@@ -604,6 +639,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	d.logger.Info("task started successfully", "taskName", taskName)
 
+<<<<<<< HEAD
 	// Generate our driver state and send this to Nomad. It stores critical
 	// information the driver will need to recover from failure and reattach
 	// to running VMs.
@@ -612,8 +648,28 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		StartedAt:   h.startedAt,
 		TaskConfig:  cfg,
 	}
+=======
+	h := &taskHandle{
+		taskConfig: cfg,
+		procState:  drivers.TaskStateRunning,
+		startedAt:  time.Now().Round(time.Millisecond),
+		logger:     d.logger.Named("handle").With(cfg.AllocID),
+		taskGetter: d.taskGetter,
+		name:       taskName,
+	}
+
+	driverState := TaskState{
+		TaskConfig: cfg,
+		StartedAt:  h.startedAt,
+	}
+
+	handle := drivers.NewTaskHandle(taskHandleVersion)
+	handle.Config = cfg
+	fmt.Printf("%+v\n", driverState)
+>>>>>>> 36f383e (func: move the creation of the mount cmds to the virt and ot libvirt)
 	if err := handle.SetDriverState(&driverState); err != nil {
-		return nil, nil, fmt.Errorf("virt: failed to set driver state for %s: %v", cfg.AllocID, err)
+		return nil, nil, fmt.Errorf("virt: failed to set driver state for %s: %v",
+			cfg.AllocID, err)
 	}
 
 	d.tasks.Set(cfg.ID, h)
@@ -681,63 +737,4 @@ func setUpTaskState(vmState string) drivers.TaskState {
 
 func buildHostname(taskName string) string {
 	return fmt.Sprintf("nomad-%s", taskName)
-}
-
-// GetImageFormat runs `qemu-img info` to get the format of a disk image.
-func (d *VirtDriverPlugin) getImageFormat(basePath string) (string, error) {
-	d.logger.Debug("reading the disk format", "base", basePath)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-
-	cmd := exec.Command("qemu-img", "info", "--output=json", basePath)
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
-
-	err := cmd.Run()
-	if err != nil {
-		d.logger.Error("qemu-img read image", "stderr", stderrBuf.String())
-		d.logger.Debug("qemu-img read image", "stdout", stdoutBuf.String())
-		return "", err
-	}
-
-	d.logger.Debug("qemu-img read image", "stdout", stdoutBuf.String())
-
-	// The qemu command returns more information, but for now, only the format
-	// is necessary.
-	var output = struct {
-		Format string `json:"format"`
-	}{}
-
-	err = json.Unmarshal(stdoutBuf.Bytes(), &output)
-	if err != nil {
-		return "", fmt.Errorf("qemu-img: unable read info response %s: %w", basePath, err)
-	}
-
-	return output.Format, nil
-}
-
-func (d *VirtDriverPlugin) createThinCopy(basePath string, destination string, sizeM int64) error {
-	d.logger.Debug("creating thin copy", "base", basePath, "dest", destination)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-
-	if sizeM <= 0 {
-		return fmt.Errorf("qemu-img: %w", domain.ErrNotEnoughMemory)
-	}
-
-	cmd := exec.Command("qemu-img", "create", "-b", basePath, "-f", "qcow2", "-F", "qcow2",
-		destination, fmt.Sprintf("%dM", sizeM),
-	)
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
-
-	err := cmd.Run()
-	if err != nil {
-		d.logger.Error("qemu-img create output", "stderr", stderrBuf.String())
-		d.logger.Debug("qemu-img create output", "stdout", stdoutBuf.String())
-		return err
-	}
-
-	d.logger.Debug("qemu-img create output", "stdout", stdoutBuf.String())
-	return nil
 }

@@ -186,6 +186,8 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 
 	go d.monitorCtx(ctx)
 
+	// In order to make host files visible to the virtual machines, they need to be
+	// placed inside a defined storage pool.
 	found, err := d.lookForExistingStoragePool(storagePoolName)
 	if err != nil {
 		return nil, fmt.Errorf("libvirt: unable to list existing storage pools: %w", err)
@@ -288,12 +290,6 @@ func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 		ms = append(ms, mount)
 	}
 
-	// The process to have directories mounted on the VM consists on two steps,
-	// one is declaring them as backing storage in the VM and the second is to
-	// create the directory inside the VM and executing the mount. These commands
-	// are added here for cloud init to execute on boot.
-	mountCMDs := addCMDsForMounts(ms)
-
 	fs := []cloudinit.File{}
 	for _, f := range config.Files {
 		file := cloudinit.File{
@@ -314,7 +310,7 @@ func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 			LocalHostname: config.HostName,
 		},
 		VendorData: cloudinit.VendorData{
-			BootCMD:  append(config.BOOTCMDs, mountCMDs...),
+			BootCMD:  config.BOOTCMDs,
 			RunCMD:   config.CMDs,
 			Mounts:   ms,
 			Files:    fs,
@@ -323,20 +319,6 @@ func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 		},
 		UserDataPath: config.CIUserData,
 	}
-}
-
-func addCMDsForMounts(mounts []cloudinit.MountFileConfig) []string {
-	cmds := []string{}
-	for _, m := range mounts {
-		c := []string{
-			fmt.Sprintf("mkdir -p %s", m.Destination),
-			fmt.Sprintf("mountpoint -q %s || mount -t 9p -o trans=virtio %s %s", m.Destination, m.Tag, m.Destination),
-		}
-
-		cmds = append(cmds, c...)
-	}
-
-	return cmds
 }
 
 // getDomain looks up a domain by name, if an error ocurred, it will be returned.
