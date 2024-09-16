@@ -51,11 +51,17 @@ type mockTaskGetter struct {
 }
 
 func (mtg *mockTaskGetter) GetDomain(name string) (*domain.Info, error) {
+	mtg.lock.Lock()
+	defer mtg.lock.Unlock()
+
 	mtg.count += 1
 	return mtg.info, mtg.err
 }
 
 func (mtg *mockTaskGetter) getNumberOfCalls() int {
+	mtg.lock.Lock()
+	defer mtg.lock.Unlock()
+
 	return mtg.count
 }
 
