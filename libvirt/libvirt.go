@@ -168,7 +168,7 @@ func New(ctx context.Context, logger hclog.Logger, opt ...Option) *driver {
 // Start executes all the options passed at creation and initializes all
 // the dependencies, they are not initialized at creation because the NewPlugin
 // function does not return errors. It also starts or reataches a storage pool
-// to place the disks for teh virtual machines.
+// to place the disks for the virtual machines.
 func (d *driver) Start(dataDir string) error {
 	for _, opt := range d.opts {
 		opt(d)
