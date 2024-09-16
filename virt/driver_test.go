@@ -56,6 +56,10 @@ type mockVirtualizar struct {
 	err    error
 }
 
+func (mv *mockVirtualizar) Start(dataDir string) error {
+	return nil
+}
+
 func (mv *mockVirtualizar) CreateDomain(config *domain.Config) error {
 	mv.count += 1
 	mv.config = config
@@ -118,8 +122,9 @@ func virtDriverHarness(t *testing.T, v Virtualizer, dg DomainGetter, ih ImageHan
 	}
 
 	d := NewPlugin(logger).(*VirtDriverPlugin)
-	must.NoError(t, d.SetConfig(baseConfig))
 	d.virtualizer = v
+
+	must.NoError(t, d.SetConfig(baseConfig))
 	d.imageHandler = ih
 	d.taskGetter = dg
 
@@ -130,15 +135,15 @@ func virtDriverHarness(t *testing.T, v Virtualizer, dg DomainGetter, ih ImageHan
 	return harness
 }
 
-func newTaskConfig(image string) TaskConfig {
+func newTaskConfig(image string, useThinCopy bool) TaskConfig {
 	return TaskConfig{
 		ImagePath:           image,
 		UserData:            "/user/data/path",
 		CMDs:                []string{"cmd arg arg", "cmd arg arg"},
 		DefaultUserSSHKey:   "ssh-ed666 randomkey",
 		DefaultUserPassword: "password",
-		//UseThinCopy:         true,
-		PrimaryDiskSize: 2666,
+		UseThinCopy:         useThinCopy,
+		PrimaryDiskSize:     2666,
 		OS: &OS{
 			Arch:    "arch",
 			Machine: "machine",
@@ -158,7 +163,7 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	defer os.Remove(mockImage.Name())
 
 	allocID := uuid.Generate()
-	taskCfg := newTaskConfig(mockImage.Name())
+	taskCfg := newTaskConfig(mockImage.Name(), false)
 
 	taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
 	task := &drivers.TaskConfig{
@@ -264,8 +269,9 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 
 	ts, err := d.InspectTask(task.ID)
 	must.NoError(t, err)
-	// TODO: Assert task status
+	must.Eq(t, drivers.TaskStateRunning, ts.State)
 	must.StrContains(t, task.ID, ts.ID)
+
 	// Assert the correct monitoring
 	must.Greater(t, 10, mockTaskGetter.count)
 
@@ -275,7 +281,7 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	must.Zero(t, mockVirtualizer.count)
 }
 
-func TestVirtDriver_Start_Wait_Crash(t *testing.T) {
+func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "exampledir-*")
 	must.NoError(t, err)
@@ -286,7 +292,7 @@ func TestVirtDriver_Start_Wait_Crash(t *testing.T) {
 	defer os.Remove(mockImage.Name())
 
 	allocID := uuid.Generate()
-	taskCfg := newTaskConfig(mockImage.Name())
+	taskCfg := newTaskConfig(mockImage.Name(), false)
 
 	taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
 	task := &drivers.TaskConfig{
@@ -322,7 +328,6 @@ func TestVirtDriver_Start_Wait_Crash(t *testing.T) {
 	must.One(t, dth.Version)
 	must.One(t, mockVirtualizer.count)
 
-	// Attempt to wait
 	waitCh, err := d.WaitTask(context.Background(), task.ID)
 	must.NoError(t, err)
 
@@ -338,5 +343,53 @@ func TestVirtDriver_Start_Wait_Crash(t *testing.T) {
 	dts, err := d.InspectTask(task.ID)
 	must.NoError(t, err)
 
-	fmt.Println(dts)
+	must.One(t, dts.ExitResult.ExitCode)
+	must.Eq(t, "exited", dts.State)
+}
+
+func TestVirtDriver_ImageOptions(t *testing.T) {
+	ci.Parallel(t)
+
+	tempDir, err := os.MkdirTemp("", "exampledir-*")
+	must.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	mockImage, err := os.CreateTemp(tempDir, "test-*.img")
+	must.NoError(t, err)
+	defer os.Remove(mockImage.Name())
+
+	allocID := uuid.Generate()
+	taskCfg := newTaskConfig(mockImage.Name(), false)
+
+	taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
+	task := &drivers.TaskConfig{
+		ID:        taskID,
+		AllocID:   allocID,
+		Resources: createBasicResources(),
+	}
+
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
+
+	mockVirtualizer := &mockVirtualizar{
+		count: 0,
+	}
+
+	mockTaskGetter := &mockTaskGetter{
+		count: 0,
+		info: &domain.Info{
+			State: libvirt.DomainRunning,
+		},
+	}
+
+	mockImageHandler := &mockImageHandler{
+		imageFormat: "tif",
+	}
+
+	d := virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
+	cleanup := d.MkAllocDir(task, true)
+	defer cleanup()
+
+	_, _, err = d.StartTask(task)
+	must.NoError(t, err)
+
 }

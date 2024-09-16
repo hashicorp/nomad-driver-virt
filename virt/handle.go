@@ -56,6 +56,7 @@ func (h *taskHandle) TaskStatus() *drivers.TaskStatus {
 		StartedAt:        h.startedAt,
 		CompletedAt:      h.completedAt,
 		DriverAttributes: map[string]string{},
+		ExitResult:       h.exitResult.Copy(),
 	}
 }
 

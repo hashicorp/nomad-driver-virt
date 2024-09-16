@@ -82,7 +82,7 @@ type TaskState struct {
 }
 
 type Virtualizer interface {
-	Start() error
+	Start(string) error
 	CreateDomain(config *domain.Config) error
 	StopDomain(name string) error
 	DestroyDomain(name string) error
@@ -179,7 +179,7 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 		return fmt.Errorf("virt: unable to create data dir: %w", err)
 	}
 
-	err = d.virtualizer.Start()
+	err = d.virtualizer.Start(d.dataDir)
 	if err != nil {
 		return err
 	}
@@ -579,8 +579,8 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	if driverConfig.UseThinCopy {
 		copyPath := filepath.Join(d.dataDir, taskName+".img")
+		d.logger.Info("creating thin copy at", "path", copyPath) // TODO: Put back at info
 
-		d.logger.Info("creating thin copy at", "path", copyPath)
 		if err := d.imageHandler.CreateThinCopy(diskImagePath, copyPath,
 			cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
 			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w",
