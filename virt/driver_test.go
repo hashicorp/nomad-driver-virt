@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,8 @@ import (
 )
 
 type mockImageHandler struct {
+	lock sync.RWMutex
+
 	basePath    string
 	imageFormat string
 	err         error
@@ -40,6 +43,8 @@ func (mh *mockImageHandler) CreateThinCopy(basePath string, destination string, 
 }
 
 type mockTaskGetter struct {
+	lock sync.RWMutex
+
 	count int
 	info  *domain.Info
 	err   error
@@ -50,7 +55,13 @@ func (mtg *mockTaskGetter) GetDomain(name string) (*domain.Info, error) {
 	return mtg.info, mtg.err
 }
 
+func (mtg *mockTaskGetter) getNumberOfCalls() int {
+	return mtg.count
+}
+
 type mockVirtualizar struct {
+	lock sync.RWMutex
+
 	config *domain.Config
 	count  int
 	err    error
@@ -61,10 +72,27 @@ func (mv *mockVirtualizar) Start(dataDir string) error {
 }
 
 func (mv *mockVirtualizar) CreateDomain(config *domain.Config) error {
+	mv.lock.Lock()
+	defer mv.lock.Unlock()
+
 	mv.count += 1
 	mv.config = config
 
 	return mv.err
+}
+
+func (mv *mockVirtualizar) getPassedConfig() *domain.Config {
+	mv.lock.Lock()
+	defer mv.lock.Unlock()
+
+	return mv.config.Copy()
+}
+
+func (mv *mockVirtualizar) getNumberOfVMs() int {
+	mv.lock.Lock()
+	defer mv.lock.Unlock()
+
+	return mv.count
 }
 
 func (mv *mockVirtualizar) StopDomain(name string) error {
@@ -72,6 +100,9 @@ func (mv *mockVirtualizar) StopDomain(name string) error {
 }
 
 func (mv *mockVirtualizar) DestroyDomain(name string) error {
+	mv.lock.Lock()
+	defer mv.lock.Unlock()
+
 	mv.count -= 1
 	return nil
 }
@@ -174,12 +205,9 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 
 	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-	mockVirtualizer := &mockVirtualizar{
-		count: 0,
-	}
+	mockVirtualizer := &mockVirtualizar{}
 
 	mockTaskGetter := &mockTaskGetter{
-		count: 0,
 		info: &domain.Info{
 			State: libvirt.DomainRunning,
 		},
@@ -197,40 +225,41 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	must.NoError(t, err)
 
 	must.One(t, dth.Version)
-	must.One(t, mockVirtualizer.count)
+	must.One(t, mockVirtualizer.getNumberOfVMs())
 
+	callConfig := mockVirtualizer.getPassedConfig()
 	// Assert the correct configuration was passed on to the virtualizer.
-	must.Eq(t, "task-name-0000000", mockVirtualizer.config.Name)
-	must.Eq(t, 6000, mockVirtualizer.config.Memory)
-	must.Eq(t, 250, mockVirtualizer.config.CPUs)
-	must.StrContains(t, "arch", mockVirtualizer.config.OsVariant.Arch)
-	must.StrContains(t, "machine", mockVirtualizer.config.OsVariant.Machine)
-	must.StrContains(t, mockImage.Name(), mockVirtualizer.config.BaseImage)
-	must.StrContains(t, "tif", mockVirtualizer.config.DiskFmt)
-	must.Eq(t, 2666, mockVirtualizer.config.PrimaryDiskSize)
-	must.StrContains(t, "nomad-task-name-0000000", mockVirtualizer.config.HostName)
-	must.Eq(t, 3, len(mockVirtualizer.config.Mounts))
+	must.Eq(t, "task-name-0000000", callConfig.Name)
+	must.Eq(t, 6000, callConfig.Memory)
+	must.Eq(t, 250, callConfig.CPUs)
+	must.StrContains(t, "arch", callConfig.OsVariant.Arch)
+	must.StrContains(t, "machine", callConfig.OsVariant.Machine)
+	must.StrContains(t, mockImage.Name(), callConfig.BaseImage)
+	must.StrContains(t, "tif", callConfig.DiskFmt)
+	must.Eq(t, 2666, callConfig.PrimaryDiskSize)
+	must.StrContains(t, "nomad-task-name-0000000", callConfig.HostName)
+	must.Eq(t, 3, len(callConfig.Mounts))
 	must.Eq(t, domain.MountFileConfig{
 		Source:      task.AllocDir + "/alloc",
 		Destination: "/alloc",
 		ReadOnly:    true,
 		Tag:         "allocDir",
-	}, mockVirtualizer.config.Mounts[0])
+	}, callConfig.Mounts[0])
 	must.Eq(t, domain.MountFileConfig{
 		Source:      task.AllocDir + "/local",
 		Destination: "/local",
 		ReadOnly:    true,
 		Tag:         "localDir",
-	}, mockVirtualizer.config.Mounts[1])
+	}, callConfig.Mounts[1])
 	must.Eq(t, domain.MountFileConfig{
 		Source:      task.AllocDir + "/secrets",
 		Destination: "/secrets",
 		ReadOnly:    true,
 		Tag:         "secretsDir",
-	}, mockVirtualizer.config.Mounts[2])
-	must.StrContains(t, "ssh-ed666 randomkey", mockVirtualizer.config.SSHKey)
-	must.StrContains(t, "password", mockVirtualizer.config.Password)
-	must.Eq(t, []string{"cmd arg arg", "cmd arg arg"}, mockVirtualizer.config.CMDs)
+	}, callConfig.Mounts[2])
+	must.StrContains(t, "ssh-ed666 randomkey", callConfig.SSHKey)
+	must.StrContains(t, "password", callConfig.Password)
+	must.Eq(t, []string{"cmd arg arg", "cmd arg arg"}, callConfig.CMDs)
 	must.Eq(t, []string{
 		"mkdir -p /alloc",
 		"mountpoint -q /alloc || mount -t 9p -o trans=virtio allocDir /alloc",
@@ -238,7 +267,7 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 		"mountpoint -q /local || mount -t 9p -o trans=virtio localDir /local",
 		"mkdir -p /secrets",
 		"mountpoint -q /secrets || mount -t 9p -o trans=virtio secretsDir /secrets",
-	}, mockVirtualizer.config.BOOTCMDs)
+	}, callConfig.BOOTCMDs)
 
 	// Attempt to wait
 	waitCh, err := d.WaitTask(context.Background(), task.ID)
@@ -273,12 +302,12 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	must.StrContains(t, task.ID, ts.ID)
 
 	// Assert the correct monitoring
-	must.Greater(t, 10, mockTaskGetter.count)
+	must.Greater(t, 10, mockTaskGetter.getNumberOfCalls())
 
 	cancel()
 	err = d.DestroyTask(task.ID, true)
 	must.NoError(t, err)
-	must.Zero(t, mockVirtualizer.count)
+	must.Zero(t, mockVirtualizer.getNumberOfVMs())
 }
 
 func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
@@ -303,12 +332,9 @@ func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
 
 	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-	mockVirtualizer := &mockVirtualizar{
-		count: 0,
-	}
+	mockVirtualizer := &mockVirtualizar{}
 
 	mockTaskGetter := &mockTaskGetter{
-		count: 0,
 		info: &domain.Info{
 			State: libvirt.DomainCrashed,
 		},
@@ -326,7 +352,7 @@ func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
 	must.NoError(t, err)
 
 	must.One(t, dth.Version)
-	must.One(t, mockVirtualizer.count)
+	must.One(t, mockVirtualizer.getNumberOfVMs())
 
 	waitCh, err := d.WaitTask(context.Background(), task.ID)
 	must.NoError(t, err)
@@ -359,23 +385,10 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 	defer os.Remove(mockImage.Name())
 
 	allocID := uuid.Generate()
-	taskCfg := newTaskConfig(mockImage.Name(), false)
 
-	taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
-	task := &drivers.TaskConfig{
-		ID:        taskID,
-		AllocID:   allocID,
-		Resources: createBasicResources(),
-	}
-
-	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
-
-	mockVirtualizer := &mockVirtualizar{
-		count: 0,
-	}
+	mockVirtualizer := &mockVirtualizar{}
 
 	mockTaskGetter := &mockTaskGetter{
-		count: 0,
 		info: &domain.Info{
 			State: libvirt.DomainRunning,
 		},
@@ -385,11 +398,48 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 		imageFormat: "tif",
 	}
 
-	d := virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
-	cleanup := d.MkAllocDir(task, true)
-	defer cleanup()
+	tests := []struct {
+		name           string
+		enableThinCopy bool
+		expectedPath   string
+		expectedFormat string
+	}{
+		{
+			name:           "no_copy_requested",
+			enableThinCopy: false,
+			expectedPath:   fmt.Sprintf("%s/%s.img", tempDir, mockImage.Name()),
+			expectedFormat: "tif",
+		},
+		{
+			name:           "copy_requested",
+			enableThinCopy: true,
+			expectedPath:   fmt.Sprintf("%s/%s.img", tempDir, "task-name-0000000"),
+			expectedFormat: "qcow2",
+		},
+	}
 
-	_, _, err = d.StartTask(task)
-	must.NoError(t, err)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			taskCfg := newTaskConfig(mockImage.Name(), tt.enableThinCopy)
 
+			taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
+			task := &drivers.TaskConfig{
+				ID:        taskID,
+				AllocID:   allocID,
+				Resources: createBasicResources(),
+			}
+			must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
+
+			d := virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
+			cleanup := d.MkAllocDir(task, true)
+			defer cleanup()
+
+			_, _, err = d.StartTask(task)
+			must.NoError(t, err)
+
+			calledConfig := mockVirtualizer.getPassedConfig()
+			must.StrContains(t, tt.expectedPath, calledConfig.BaseImage)
+			must.StrContains(t, tt.expectedFormat, calledConfig.DiskFmt)
+		})
+	}
 }

@@ -125,6 +125,42 @@ func (dc *Config) Validate(allowedPaths []string) error {
 	return mErr.ErrorOrNil()
 }
 
+func (dc *Config) Copy() *Config {
+	copy := &Config{
+		RemoveConfigFiles: dc.RemoveConfigFiles,
+		XMLConfig:         dc.XMLConfig,
+		Name:              dc.Name,
+		Memory:            dc.Memory,
+		CPUset:            dc.CPUset,
+		CPUs:              dc.CPUs,
+		BaseImage:         dc.BaseImage,
+		DiskFmt:           dc.DiskFmt,
+		PrimaryDiskSize:   dc.PrimaryDiskSize,
+		NetworkInterfaces: dc.NetworkInterfaces,
+		HostName:          dc.HostName,
+		Mounts:            dc.Mounts,
+		Files:             dc.Files,
+		SSHKey:            dc.SSHKey,
+		Password:          dc.Password,
+		CMDs:              dc.CMDs,
+		BOOTCMDs:          dc.BOOTCMDs,
+		CIUserData:        dc.CIUserData,
+	}
+
+	if dc.OsVariant != nil {
+		copy.OsVariant = &OSVariant{
+			Arch:    dc.OsVariant.Arch,
+			Machine: dc.OsVariant.Machine,
+		}
+	}
+
+	if dc.Timezone != nil {
+		*copy.Timezone = *dc.Timezone
+	}
+
+	return copy
+}
+
 type NetworkInterface struct {
 	NetworkName string
 	Address     string
