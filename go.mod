@@ -7,7 +7,7 @@ go 1.22
 replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.3
 
 require (
-	github.com/coreos/go-iptables v0.6.0
+	github.com/coreos/go-iptables v0.8.0
 	github.com/diskfs/go-diskfs v1.4.1
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/hashicorp/go-hclog v1.6.3
