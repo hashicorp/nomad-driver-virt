@@ -56,7 +56,8 @@ var (
 	}
 )
 
-// TODO: Add function to test for userdata syntax, and dont use it if it fails.
+// TODO: Add function to test for correct cloudinit userdata syntax, and dont
+// use it if it fails, throw a warning!
 type CloudInit interface {
 	Apply(ci *cloudinit.Config, path string) error
 }
@@ -70,15 +71,10 @@ type driver struct {
 	ci       CloudInit
 	dataDir  string
 	sp       *libvirt.StoragePool
+	opts     []Option
 }
 
 type Option func(*driver)
-
-func WithDataDirectory(path string) Option {
-	return func(d *driver) {
-		d.dataDir = path
-	}
-}
 
 func WithConnectionURI(URI string) Option {
 	return func(d *driver) {
@@ -130,7 +126,9 @@ func NewConnection(uri string, user string, pass string) (*libvirt.Connect, erro
 func (d *driver) monitorCtx(ctx context.Context) {
 	select {
 	case <-ctx.Done():
-		d.conn.Close()
+		if d.conn != nil {
+			d.conn.Close()
+		}
 		return
 	}
 }
@@ -155,71 +153,87 @@ func (d *driver) lookForExistingStoragePool(name string) (*libvirt.StoragePool, 
 	return nil, nil
 }
 
-func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, error) {
-	ci, err := cloudinit.NewController(logger)
-	if err != nil {
-		return nil, err
-	}
-
+func New(ctx context.Context, logger hclog.Logger, opt ...Option) *driver {
 	d := &driver{
-		logger:  logger.Named("nomad-virt-plugin"),
-		uri:     defaultURI,
-		ci:      ci,
-		dataDir: defaultDataDir,
+		logger: logger.Named("nomad-virt-plugin"),
+		uri:    defaultURI,
+		opts:   opt,
 	}
-
-	for _, opt := range options {
-		opt(d)
-	}
-
-	err = createDataDirectory(d.dataDir)
-	if err != nil {
-		return nil, fmt.Errorf("libvirt: unable to create data dir: %w", err)
-	}
-
-	conn, err := NewConnection(d.uri, d.user, d.password)
-	if err != nil {
-		return nil, err
-	}
-
-	d.conn = conn
 
 	go d.monitorCtx(ctx)
 
-	// In order to make host files visible to the virtual machines, they need to be
-	// placed inside a defined storage pool.
-	found, err := d.lookForExistingStoragePool(storagePoolName)
-	if err != nil {
-		return nil, fmt.Errorf("libvirt: unable to list existing storage pools: %w", err)
+	return d
+}
 
+// Start executes all the options passed at creation and initializes all
+// the dependencies, they are not initialized at creation because the NewPlugin
+// function does not return errors. It also starts or reataches a storage pool
+// to place the disks for teh virtual machines.
+func (d *driver) Start(dataDir string) error {
+	for _, opt := range d.opts {
+		opt(d)
 	}
 
-	if found == nil {
-		sp := libvirtxml.StoragePool{
-			Name: storagePoolName,
-			Target: &libvirtxml.StoragePoolTarget{
-				Path: d.dataDir,
-			},
-			Type: "dir",
-		}
-
-		spXML, err := sp.Marshal()
+	if d.ci == nil {
+		ci, err := cloudinit.NewController(d.logger.Named("cloud-init"))
 		if err != nil {
-			return nil, err
+			return err
 		}
-
-		d.logger.Info("creating storage pool")
-		found, err = d.conn.StoragePoolCreateXML(spXML, 0)
-		if err != nil {
-			return nil, fmt.Errorf("libvirt: unable to create storage pool: %w", err)
-
-		}
+		d.ci = ci
 	}
 
-	d.logger.Info("assigning storage pool")
-	d.sp = found
+	if dataDir != "" {
+		d.dataDir = dataDir
+	} else {
+		d.dataDir = defaultDataDir
+	}
 
-	return d, nil
+	if err := createDataDirectory(d.dataDir); err != nil {
+		return fmt.Errorf("libvirt: unable to create data dir: %w", err)
+	}
+
+	if d.conn == nil {
+		conn, err := newConnection(d.uri, d.user, d.password)
+		if err != nil {
+			return err
+		}
+		d.conn = conn
+
+		// In order to make host files visible to the virtual machines, they need to be
+		// placed inside a defined storage pool.
+		found, err := d.lookForExistingStoragePool(storagePoolName)
+		if err != nil {
+			return fmt.Errorf("libvirt: unable to list existing storage pools: %w", err)
+
+		}
+
+		if found == nil {
+			sp := libvirtxml.StoragePool{
+				Name: storagePoolName,
+				Target: &libvirtxml.StoragePoolTarget{
+					Path: d.dataDir,
+				},
+				Type: "dir",
+			}
+
+			spXML, err := sp.Marshal()
+			if err != nil {
+				return err
+			}
+
+			d.logger.Info("creating storage pool")
+			found, err = d.conn.StoragePoolCreateXML(spXML, 0)
+			if err != nil {
+				return fmt.Errorf("libvirt: unable to create storage pool: %w", err)
+
+			}
+
+			d.logger.Info("assigning storage pool")
+		}
+		d.sp = found
+	}
+
+	return nil
 }
 
 func (d *driver) GetInfo() (domain.VirtualizerInfo, error) {
@@ -503,7 +517,19 @@ func (d *driver) GetAllDomains() ([]string, error) {
 	return dns, nil
 }
 
+func folderExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return info.IsDir()
+}
+
 func createDataDirectory(path string) error {
+	if folderExists(path) {
+		return nil
+	}
+
 	err := os.MkdirAll(path, dataDirPermissions)
 	if err != nil {
 		return err

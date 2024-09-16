@@ -17,8 +17,8 @@ import (
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
 	virtnet "github.com/hashicorp/nomad-driver-virt/libvirt/net"
-	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad-driver-virt/virt/image_tools"
+	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client/taskenv"
@@ -82,6 +82,7 @@ type TaskState struct {
 }
 
 type Virtualizer interface {
+	Start() error
 	CreateDomain(config *domain.Config) error
 	StopDomain(name string) error
 	DestroyDomain(name string) error
@@ -113,15 +114,16 @@ type VirtDriverPlugin struct {
 	// networkInit indicates whether the network subsystem has had its init
 	// function called. While the function should be idempotent, this helps
 	// avoid unnecessary calls and work.
-	networkInit atomic.Bool
-	imageHandler   ImageHandler
-
+	networkInit  atomic.Bool
+	imageHandler ImageHandler
 }
 
 // NewPlugin returns a new driver plugin
 func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 	ctx, cancel := context.WithCancel(context.Background())
 	logger = logger.Named(pluginName)
+
+	v := libvirt.New(ctx, logger)
 
 	// Should we check if extentions and kernel modules are there?
 	// grep -E 'svm|vmx' /proc/cpuinfo
@@ -132,11 +134,10 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 		tasks:          newTaskStore(),
 		signalShutdown: cancel,
 		logger:         logger,
-<<<<<<< HEAD
 		networkInit:    atomic.Bool{},
-=======
 		imageHandler:   image_tools.NewHandler(logger),
->>>>>>> 36f383e (func: move the creation of the mount cmds to the virt and ot libvirt)
+		virtualizer:    v,
+		taskGetter:     v,
 	}
 }
 
@@ -178,13 +179,10 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 		return fmt.Errorf("virt: unable to create data dir: %w", err)
 	}
 
-	v, err := libvirt.New(context.TODO(), d.logger, libvirt.WithDataDirectory(d.dataDir))
+	err = d.virtualizer.Start()
 	if err != nil {
 		return err
 	}
-
-	d.virtualizer = v
-	d.taskGetter = v
 
 	// Generate a new libvirt connection for the network controller.
 	//
@@ -538,22 +536,10 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	d.logger.Info("starting task", "name", taskName)
 
-<<<<<<< HEAD
-	h := &taskHandle{
-		taskConfig: cfg,
-		procState:  drivers.TaskStateRunning,
-		startedAt:  time.Now().Round(time.Millisecond),
-		logger:     d.logger.Named("handle").With(cfg.AllocID),
-		taskGetter: d.taskGetter,
-		name:       taskName,
-	}
-
-=======
 	// The process to have directories mounted on the VM consists on two steps,
 	// one is declaring them as backing storage in the VM and the second is to
 	// create the directory inside the VM and executing the mount using 9P.
 	// These commands are added here to execute at bootime.
->>>>>>> 36f383e (func: move the creation of the mount cmds to the virt and ot libvirt)
 	allocFSMounts := createAllocFileMounts(cfg)
 	bootCMDs := addCMDsForMounts(allocFSMounts)
 
@@ -647,20 +633,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	if err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to build task network: %w", err)
 	}
-	h.netTeardown = netBuildResp.TeardownSpec
 
-	d.logger.Info("task started successfully", "taskName", taskName)
-
-<<<<<<< HEAD
-	// Generate our driver state and send this to Nomad. It stores critical
-	// information the driver will need to recover from failure and reattach
-	// to running VMs.
-	driverState := TaskState{
-		NetTeardown: netBuildResp.TeardownSpec,
-		StartedAt:   h.startedAt,
-		TaskConfig:  cfg,
-	}
-=======
 	h := &taskHandle{
 		taskConfig: cfg,
 		procState:  drivers.TaskStateRunning,
@@ -670,19 +643,22 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		name:       taskName,
 	}
 
+	h.netTeardown = netBuildResp.TeardownSpec
+
+	d.logger.Info("task started successfully", "taskName", taskName)
+
+	// Generate our driver state and send this to Nomad. It stores critical
+	// information the driver will need to recover from failure and reattach
+	// to running VMs.
 	driverState := TaskState{
-		TaskConfig: cfg,
-		StartedAt:  h.startedAt,
+		NetTeardown: netBuildResp.TeardownSpec,
+		StartedAt:   h.startedAt,
+		TaskConfig:  cfg,
 	}
 
 	handle := drivers.NewTaskHandle(taskHandleVersion)
 	handle.Config = cfg
-<<<<<<< HEAD
-	fmt.Printf("%+v\n", driverState)
->>>>>>> 36f383e (func: move the creation of the mount cmds to the virt and ot libvirt)
-=======
 
->>>>>>> 67ac7ab (test: add test for crashing task)
 	if err := handle.SetDriverState(&driverState); err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to set driver state for %s: %v",
 			cfg.AllocID, err)

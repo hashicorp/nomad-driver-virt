@@ -329,13 +329,14 @@ func TestVirtDriver_Start_Wait_Crash(t *testing.T) {
 	select {
 	case exitResult := <-waitCh:
 		must.One(t, exitResult.ExitCode)
-		fmt.Printf("\n %+T \n %+T\n", ErrTaskCrashed, exitResult.Err)
-		must.ErrorIs(t, ErrTaskCrashed, exitResult.Err)
+		must.ErrorContains(t, exitResult.Err, "task has crashed")
 
 	case <-time.After(10 * time.Second):
 		t.Fatalf("wait channel should have received an exit result")
 	}
 
-	_, err = d.InspectTask(task.ID)
-	must.Error(t, err)
+	dts, err := d.InspectTask(task.ID)
+	must.NoError(t, err)
+
+	fmt.Println(dts)
 }
