@@ -69,7 +69,7 @@ func fileExists(t *testing.T, filePath string) bool {
 func TestStartDomain(t *testing.T) {
 	t.Parallel()
 
-	//	testError := errors.New("oh no! there is an error")
+	testError := errors.New("oh no! there is an error")
 
 	tests := []struct {
 		name              string
@@ -120,7 +120,7 @@ func TestStartDomain(t *testing.T) {
 				UserDataPath: "/path/to/user/data",
 			},
 		},
-		/* 	{
+		{
 			name:              "domain_created_successfully_remove_files_with_userdata",
 			domainName:        "domain-2",
 			removeConfigFiles: true,
@@ -171,7 +171,7 @@ func TestStartDomain(t *testing.T) {
 			domainName:  "domain-3",
 			expectError: testError,
 			ciError:     testError,
-		}, */
+		},
 	}
 
 	for _, tt := range tests {
