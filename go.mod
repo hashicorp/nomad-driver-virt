@@ -15,7 +15,7 @@ require (
 	github.com/hashicorp/nomad v1.8.1
 	github.com/shoenig/test v1.11.0
 	libvirt.org/go/libvirt v1.10006.0
-	libvirt.org/go/libvirtxml v1.10006.0
+	libvirt.org/go/libvirtxml v1.10007.0
 )
 
 require (
