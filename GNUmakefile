@@ -11,12 +11,6 @@ GO_TEST_CMD = $(if $(shell command -v gotestsum 2>/dev/null),gotestsum --,go tes
 
 default: check-go-mod lint test build
 
-.PHONY: clean
-clean: ## Remove build artifacts
-	@echo "==> Removing build artifact..."
-	@rm -rf ${PLUGIN_BINARY}
-	@echo "==> Done"
-
 .PHONY: copywrite-headers
 copywrite-headers: ## Ensure files have the copywrite header
 	@echo "==> Checking copywrite headers..."
@@ -92,3 +86,21 @@ build: ## Compile the current driver codebase
 
 .PHONY: dev
 dev: clean build ## Build the nomad-driver-virt plugin
+
+# CRT version generation
+.PHONY: version
+version:
+	@$(CURDIR)/version/generate.sh version/version.go version/version.go
+
+# CRT release compilation
+dist/%/nomad-driver-exec2: GO_OUT ?= $@
+dist/%/nomad-driver-exec2:
+	@echo "==> RELEASE BUILD of $@ ..."
+	GOOS=linux GOARCH=$(lastword $(subst _, ,$*)) \
+	go build -trimpath -o $(GO_OUT)
+
+# CRT release packaging (zip only)
+.PRECIOUS: dist/%/nomad-driver-exec2
+dist/%.zip: dist/%/nomad-driver-exec2
+	@echo "==> RELEASE PACKAGING of $@ ..."
+	zip -j $@ $(dir $<)*
