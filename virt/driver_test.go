@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
 
@@ -159,7 +160,9 @@ func virtDriverHarness(t *testing.T, v Virtualizer, dg DomainGetter, ih ImageHan
 	}
 
 	d := NewPlugin(logger).(*VirtDriverPlugin)
-	d.virtualizer = v
+	if v != nil {
+		d.virtualizer = v
+	}
 
 	must.NoError(t, d.SetConfig(baseConfig))
 	d.imageHandler = ih
@@ -172,14 +175,14 @@ func virtDriverHarness(t *testing.T, v Virtualizer, dg DomainGetter, ih ImageHan
 	return harness
 }
 
-func newTaskConfig(image string, useThinCopy bool) TaskConfig {
+func newTaskConfig(image string) TaskConfig {
 	return TaskConfig{
 		ImagePath:           image,
-		UserData:            "/user/data/path",
+		UserData:            "/path/to/user/data",
 		CMDs:                []string{"cmd arg arg", "cmd arg arg"},
 		DefaultUserSSHKey:   "ssh-ed666 randomkey",
 		DefaultUserPassword: "password",
-		UseThinCopy:         useThinCopy,
+		UseThinCopy:         false,
 		PrimaryDiskSize:     2666,
 		OS: &OS{
 			Arch:    "arch",
@@ -200,7 +203,7 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	defer os.Remove(mockImage.Name())
 
 	allocID := uuid.Generate()
-	taskCfg := newTaskConfig(mockImage.Name(), false)
+	taskCfg := newTaskConfig(mockImage.Name())
 
 	taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
 	task := &drivers.TaskConfig{
@@ -327,7 +330,7 @@ func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
 	defer os.Remove(mockImage.Name())
 
 	allocID := uuid.Generate()
-	taskCfg := newTaskConfig(mockImage.Name(), false)
+	taskCfg := newTaskConfig(mockImage.Name())
 
 	taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
 	task := &drivers.TaskConfig{
@@ -426,7 +429,8 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			taskCfg := newTaskConfig(mockImage.Name(), tt.enableThinCopy)
+			taskCfg := newTaskConfig(mockImage.Name())
+			taskCfg.UseThinCopy = tt.enableThinCopy
 
 			taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
 			task := &drivers.TaskConfig{
@@ -448,4 +452,115 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 			must.StrContains(t, tt.expectedFormat, calledConfig.DiskFmt)
 		})
 	}
+}
+
+type cloudInitMock struct {
+	passedConfig *cloudinit.Config
+	err          error
+}
+
+func (cim *cloudInitMock) Apply(ci *cloudinit.Config, path string) error {
+	if err := os.WriteFile(path, []byte("Hello, World!"), 0644); err != nil {
+		return err
+	}
+
+	cim.passedConfig = ci
+
+	return cim.err
+}
+
+func TestVirtDriver_Start_Wait_Destroy_LibvirtIntegration(t *testing.T) {
+	ci.Parallel(t)
+
+	tempDir, err := os.MkdirTemp("", "exampledir-*")
+	must.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	mockImage, err := os.CreateTemp(tempDir, "test-*.img")
+	must.NoError(t, err)
+	defer os.Remove(mockImage.Name())
+
+	allocID := uuid.Generate()
+	taskCfg := newTaskConfig(mockImage.Name())
+	taskCfg.UserData = ""
+	taskCfg.OS = &OS{
+		Arch:    "x86_64",
+		Machine: "pc-i440fx-jammy",
+	}
+
+	taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
+	task := &drivers.TaskConfig{
+		ID:        taskID,
+		AllocID:   allocID,
+		Resources: createBasicResources(),
+	}
+
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
+
+	mockImageHandler := &mockImageHandler{
+		imageFormat: "qcow2",
+	}
+
+	cloudInitMock := cloudInitMock{}
+
+	v := libvirt.New(context.Background(), hclog.NewNullLogger(),
+		libvirt.WithConnectionURI("test:///default"),
+		libvirt.WithCIController(&cloudInitMock))
+
+	d := virtDriverHarness(t, v, v, mockImageHandler, tempDir)
+	cleanup := d.MkAllocDir(task, true)
+	defer cleanup()
+
+	dth, _, err := d.StartTask(task)
+	must.NoError(t, err)
+
+	must.One(t, dth.Version)
+
+	doms, err := v.GetAllDomains()
+	must.NoError(t, err)
+
+	// The initial test hypervisor has one plus the one that was just started.
+	must.Len(t, 2, doms)
+
+	// Attempt to wait
+	waitCh, err := d.WaitTask(context.Background(), task.ID)
+	must.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+
+	statsChan, err := d.TaskStats(ctx, task.ID, time.Second)
+	must.NoError(t, err)
+
+	go func(t *testing.T) {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-statsChan:
+			case <-time.After(2 * time.Second):
+				t.Error("no stats comming from task channel")
+			}
+		}
+	}(t)
+
+	select {
+	case <-waitCh:
+		t.Fatalf("wait channel should not have received an exit result")
+	case <-time.After(10 * time.Second):
+	}
+
+	ts, err := d.InspectTask(task.ID)
+	must.NoError(t, err)
+	must.Eq(t, drivers.TaskStateRunning, ts.State)
+	must.StrContains(t, task.ID, ts.ID)
+
+	cancel()
+	err = d.DestroyTask(task.ID, true)
+	must.NoError(t, err)
+
+	doms, err = v.GetAllDomains()
+	must.NoError(t, err)
+
+	// The initial test hypervisor has one plus the one that was just started.
+	must.Len(t, 1, doms)
 }
