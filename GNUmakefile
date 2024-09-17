@@ -1,5 +1,8 @@
 PLUGIN_BINARY=nomad-driver-virt
 
+
+GO_LDFLAGS = -X $(GIT_COMMIT_FLAG) -X $(BUILD_DATE_FLAG)
+
 # CGO is required due to libvirt.
 CGO_ENABLED = 1
 
@@ -10,6 +13,18 @@ GO111MODULE = on
 GO_TEST_CMD = $(if $(shell command -v gotestsum 2>/dev/null),gotestsum --,go test)
 
 default: check-go-mod lint test build
+
+ifeq (Linux,$(THIS_OS))
+ALL_TARGETS = linux_amd64 \
+	linux_arm64 
+endif
+
+# Allow overriding ALL_TARGETS via $TARGETS
+ifdef TARGETS
+ALL_TARGETS = $(TARGETS)
+endif
+
+SUPPORTED_OSES = Linux
 
 .PHONY: copywrite-headers
 copywrite-headers: ## Ensure files have the copywrite header
@@ -94,10 +109,21 @@ version:
 
 # CRT release compilation
 dist/%/nomad-driver-virt: GO_OUT ?= $@
-dist/%/nomad-driver-virt:
-	@echo "==> RELEASE BUILD of $@ ..."
-	GOOS=linux GOARCH=$(lastword $(subst _, ,$*)) \
-	go build -trimpath -o $(GO_OUT)
+dist/%/nomad-driver-virt: CC ?= $(shell go env CC)
+dist/%/nomad-driver-virt: ## Build Nomad for GOOS_GOARCH, e.g. pkg/linux_amd64/nomad
+ifeq (,$(findstring $(THIS_OS),$(SUPPORTED_OSES)))
+	$(warning WARNING: Building Nomad Driver Virt is only supported on $(SUPPORTED_OSES); not $(THIS_OS))
+endif
+	@echo "==> Building $@ with tags $(GO_TAGS)..."
+	@CGO_ENABLED=$(CGO_ENABLED) \
+		GOOS=$(firstword $(subst _, ,$*)) \
+		GOARCH=$(lastword $(subst _, ,$*)) \
+		CC=$(CC) \
+		go build -trimpath -ldflags "$(GO_LDFLAGS)" -tags "$(GO_TAGS)" -o $(GO_OUT)
+
+ifneq (aarch64,$(THIS_ARCH))
+dist/linux_arm64/nomad-driver-virt: CC = aarch64-linux-gnu-gcc
+endif
 
 # CRT release packaging (zip only)
 .PRECIOUS: dist/%/nomad-driver-virt
