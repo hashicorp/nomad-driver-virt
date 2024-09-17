@@ -69,9 +69,11 @@ jobs:
       - name: Install Linux build utilties
         run: |
           sudo apt-get update
+          sudo apt-get install -y software-properties-common
+          sudo apt-get update
           sudo apt-get install -y \
-            binutils-aarch64-linux-gnu \
-            gcc-aarch64-linux-gnu
+          binutils-aarch64-linux-gnu \
+          gcc-aarch64-linux-gnu
       - name: Set gcc
         run: |
           if [ "${{ matrix.goarch }}" == "arm64" ]; then

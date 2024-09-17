@@ -1,7 +1,14 @@
 PLUGIN_BINARY=nomad-driver-virt
+SHELL = bash
 
+THIS_OS := $(shell uname | cut -d- -f1)
+THIS_ARCH := $(shell uname -m)
+GO_MODULE = github.com/hashicorp/nomad-driver-virt
 
-GO_LDFLAGS = -X $(GIT_COMMIT_FLAG) -X $(BUILD_DATE_FLAG)
+# build date is based on most recent commit, in RFC3339 format
+#BUILD_DATE ?= $(shell TZ=UTC0 git show -s --format=%cd --date=format-local:'%Y-%m-%dT%H:%M:%SZ' HEAD)
+#BUILD_DATE_FLAG = $(GO_MODULE)/version.BuildDate=$(BUILD_DATE)
+#GO_LDFLAGS = -X $(GIT_COMMIT_FLAG) -X $(BUILD_DATE_FLAG)
 
 # CGO is required due to libvirt.
 CGO_ENABLED = 1
