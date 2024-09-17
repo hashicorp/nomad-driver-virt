@@ -93,14 +93,14 @@ version:
 	@$(CURDIR)/version/generate.sh version/version.go version/version.go
 
 # CRT release compilation
-dist/%/nomad-driver-exec2: GO_OUT ?= $@
-dist/%/nomad-driver-exec2:
+dist/%/nomad-driver-virt: GO_OUT ?= $@
+dist/%/nomad-driver-virt:
 	@echo "==> RELEASE BUILD of $@ ..."
 	GOOS=linux GOARCH=$(lastword $(subst _, ,$*)) \
 	go build -trimpath -o $(GO_OUT)
 
 # CRT release packaging (zip only)
-.PRECIOUS: dist/%/nomad-driver-exec2
-dist/%.zip: dist/%/nomad-driver-exec2
+.PRECIOUS: dist/%/nomad-driver-virt
+dist/%.zip: dist/%/nomad-driver-virt
 	@echo "==> RELEASE PACKAGING of $@ ..."
 	zip -j $@ $(dir $<)*
