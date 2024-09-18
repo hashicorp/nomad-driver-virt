@@ -69,13 +69,14 @@ jobs:
       - name: Install Linux build utilties
         run: |
           if [ "${{ matrix.goarch }}" == "arm64" ]; then
+            ls /etc/apt/sources.list.d/
             sudo dpkg --add-architecture arm64
             sudo apt-get update
             sudo apt-get install -y \
             binutils-aarch64-linux-gnu \
             libc6-dev-arm64-cross \
-            gcc-aarch64-linux-gnu \
-            sudo apt-get install libvirt-dev:arm64
+            gcc-aarch64-linux-gnu
+
           fi
       - name: Set gcc
         run: |
