@@ -69,19 +69,24 @@ jobs:
       - name: Install Linux build utilties
         run: |
           if [ "${{ matrix.goarch }}" == "arm64" ]; then
-            ls /etc/apt/sources.list.d/
             sudo dpkg --add-architecture arm64
+            echo "http://ports.ubuntu.com/ubuntu-ports	priority:4" | sudo tee -a /etc/apt/apt-mirrors.txt
             sudo apt-get update
-            sudo apt-get install -y \
-            binutils-aarch64-linux-gnu \
-            libc6-dev-arm64-cross \
-            gcc-aarch64-linux-gnu
-
+            sudo apt-get install -y gcc-aarch64-linux-gnu pkg-config libvirt-dev:arm64
           fi
       - name: Set gcc
         run: |
           if [ "${{ matrix.goarch }}" == "arm64" ]; then
             echo "CC=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+            ls /usr/lib/aarch64-linux-gnu/pkgconfig
+            export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
+            echo $PKG_CONFIG_PATH
+            echo "  pkg-config --debug --libvirt"
+            pkg-config --libs --debug libvirt
+            echo "pkg-config --cflags  -- libvirt "
+            pkg-config --cflags  -- libvirt 
+            echo "making room"
+            cat /usr/lib/aarch64-linux-gnu/pkgconfig/libvirt.pc
           fi
       - name: Build
         env:
