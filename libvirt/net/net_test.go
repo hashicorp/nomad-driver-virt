@@ -1,0 +1,18 @@
+// Copyright (c) HashiCorp, Inc.
+// SPDX-License-Identifier: MPL-2.0
+
+package net
+
+import (
+	"testing"
+
+	"github.com/hashicorp/go-hclog"
+	"github.com/shoenig/test/must"
+)
+
+func Test_NewController(t *testing.T) {
+	c := NewController(hclog.NewNullLogger(), nil).(*Controller)
+	must.Eq(t, c.dhcpLeaseDiscoveryInterval, defaultDHCPLeaseDiscoveryInterval)
+	must.Eq(t, c.dhcpLeaseDiscoveryTimeout, defaultDHCPLeaseDiscoveryTimeout)
+	must.NotNil(t, c.interfaceByIPGetter)
+}
