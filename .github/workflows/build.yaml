@@ -66,7 +66,11 @@ jobs:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: hashicorp/setup-golang@v3
       - uses: ./.github/actions/install-libvirt-dev
+      - env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
       - name: Install Linux build utilties
+        if: ${{ matrix.goos }}  == "arm64"
         run: |
           sudo dpkg --add-architecture arm64
           sudo apt-get update
@@ -74,16 +78,9 @@ jobs:
           binutils-aarch64-linux-gnu \
           libc6-dev-arm64-cross \
           gcc-aarch64-linux-gnu \
-          sudo apt-get install libvirt-dev:arm64
-      - name: Set gcc
-        run: |
-          if [ "${{ matrix.goarch }}" == "arm64" ]; then
-            echo "CC=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
-          fi
+          libvirt-dev:arm64
+          echo "CC=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
       - name: Build
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
         run: |
           make dist/${{ matrix.goos }}_${{ matrix.goarch }}.zip
           mv \
