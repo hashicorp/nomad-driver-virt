@@ -3,7 +3,7 @@ Nomad Virt Driver
 The virt driver task plugin expands the types of workloads Nomad can run to add virtual machines.
 Leveraging on the power of Libvirt, the Virt driver allows the user to define vitual tasks using the Nomad job spec.
 
-> **_IMPORTANT:_** This plugin is in tech preview, still under active development, there might be breacking changes in future releases
+> **_IMPORTANT:_** This plugin is in tech preview, still under active development, there might be breaking changes in future releases
 
 **: This is an Aplha version still under development**
 
