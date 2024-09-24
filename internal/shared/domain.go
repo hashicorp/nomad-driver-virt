@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/nomad-driver-virt/virt/net"
 )
 
 const (
@@ -67,7 +68,6 @@ type Config struct {
 	BaseImage         string
 	DiskFmt           string
 	PrimaryDiskSize   uint64
-	NetworkInterfaces []string
 	HostName          string
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
@@ -77,6 +77,8 @@ type Config struct {
 	CMDs              []string
 	BOOTCMDs          []string
 	CIUserData        string
+
+	NetworkInterfaces net.NetworkInterfacesConfig
 }
 
 func (dc *Config) Validate(allowedPaths []string) error {
@@ -114,6 +116,10 @@ func (dc *Config) Validate(allowedPaths []string) error {
 
 	if dc.HostName != "" && !IsValidLabel(dc.HostName) {
 		mErr = multierror.Append(mErr, ErrInvalidHostName)
+	}
+
+	if err := dc.NetworkInterfaces.Validate(); err != nil {
+		mErr = multierror.Append(mErr, err)
 	}
 
 	return mErr.ErrorOrNil()

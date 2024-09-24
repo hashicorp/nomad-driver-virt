@@ -14,10 +14,13 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
+	virtnet "github.com/hashicorp/nomad-driver-virt/libvirt/net"
+	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client/taskenv"
@@ -97,6 +100,15 @@ type VirtDriverPlugin struct {
 	signalShutdown context.CancelFunc
 	logger         hclog.Logger
 	dataDir        string
+
+	// networkController is the backend controller interface for the network
+	// subsystem.
+	networkController net.Net
+
+	// networkInit indicates whether the network subsystem has had its init
+	// function called. While the function should be idempotent, this helps
+	// avoid unnecessary calls and work.
+	networkInit atomic.Bool
 }
 
 // NewPlugin returns a new driver plugin
@@ -113,6 +125,7 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 		tasks:          newTaskStore(),
 		signalShutdown: cancel,
 		logger:         logger,
+		networkInit:    atomic.Bool{},
 	}
 }
 
@@ -161,6 +174,27 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 
 	d.virtualizer = v
 	d.taskGetter = v
+
+	// Generate a new libvirt connection for the network controller.
+	//
+	// TODO(jrasell): the compute and network should use the same connection,
+	// so we should refactor the connection setup in a future change.
+	libvirtConnection, err := libvirt.NewConnection(config.Emulator.URI, config.Emulator.User, config.Emulator.Password)
+	if err != nil {
+		return fmt.Errorf("virt: failed to create network libvirt connection: %w", err)
+	}
+
+	// Generate the new network controller and perform the initialization if
+	// this is required.
+	d.networkController = virtnet.NewController(d.logger, libvirt.NewConnect(libvirtConnection))
+
+	if !d.networkInit.Load() {
+		if err := d.networkController.Init(); err != nil {
+			return fmt.Errorf("virt: failed to init network controller: %w", err)
+		} else {
+			d.networkInit.Store(true)
+		}
+	}
 
 	return nil
 }
@@ -222,6 +256,8 @@ func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 	attrs["driver.virt.emulator.version"] = structs.NewIntAttribute(int64(virtInfo.EmulatorVersion), "")
 	attrs["driver.virt.active"] = structs.NewIntAttribute(int64(virtInfo.RunningDomains), "")
 	attrs["driver.virt.inactive"] = structs.NewIntAttribute(int64(virtInfo.InactiveDomains), "bytes")
+
+	d.networkController.Fingerprint(attrs)
 
 	fp := &drivers.Fingerprint{
 		Attributes:        attrs,
@@ -296,6 +332,14 @@ func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
 	err := d.virtualizer.DestroyDomain(taskName)
 	if err != nil {
 		return fmt.Errorf("virt: unable to destroy task %s: %w", taskID, err)
+	}
+
+	// Build our network request to send now that the VM has been destroyed.
+	netTeardownReq := net.VMTerminatedTeardownRequest{
+		TeardownSpec: handle.netTeardown,
+	}
+	if _, err := d.networkController.VMTerminatedTeardown(&netTeardownReq); err != nil {
+		return fmt.Errorf("virt: failed to destroy task network: %w", err)
 	}
 
 	d.tasks.Delete(taskName)
@@ -533,6 +577,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		Password:          driverConfig.DefaultUserPassword,
 		SSHKey:            driverConfig.DefaultUserSSHKey,
 		Files:             []domain.File{createEnvsFile(cfg.Env)},
+		NetworkInterfaces: driverConfig.NetworkInterfacesConfig,
 	}
 
 	if err := dc.Validate(allowedPaths); err != nil {
@@ -542,6 +587,21 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	if err := d.virtualizer.CreateDomain(dc); err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
+
+	// Build our network request to send now that the VM has been started. The
+	// response will contain our teardown spec, which gets stored in the task
+	// handle, so we can easily perform deletions.
+	netBuildReq := net.VMStartedBuildRequest{
+		DomainName: hostname,
+		NetConfig:  &driverConfig.NetworkInterfacesConfig,
+		Resources:  cfg.Resources,
+	}
+
+	netBuildResp, err := d.networkController.VMStartedBuild(&netBuildReq)
+	if err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to build task network: %w", err)
+	}
+	h.netTeardown = netBuildResp.TeardownSpec
 
 	d.logger.Info("task started successfully", "taskName", taskName)
 
