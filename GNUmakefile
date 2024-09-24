@@ -14,7 +14,7 @@ default: check-go-mod lint test build
 .PHONY: clean
 clean: ## Remove build artifacts
 	@echo "==> Removing build artifact..."
-	@rm -rf ${PLUGIN_BINARY}
+	@rm -rf build/${PLUGIN_BINARY}
 	@echo "==> Done"
 
 .PHONY: copywrite-headers
@@ -72,11 +72,6 @@ help: ## Display this usage information
 		awk 'BEGIN {FS = ":.*?## "}; \
 			{printf $(HELP_FORMAT), $$1, $$2}'
 	@echo ""
-
-.PHONY: clean
-clean: ## Cleanup previous build
-	@echo "==> Cleanup previous build"
-	rm -f ./build/nomad-driver-virt
 
 .PHONY: deps
 deps: ## Install build dependencies
