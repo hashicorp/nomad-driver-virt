@@ -19,12 +19,12 @@ job "python-server" {
 
       artifact {
         source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
-        destination = "focal-server-cloudimg-amd64.img"
+        destination = "local/focal-server-cloudimg-amd64.img"
         mode        = "file"
       } 
 
       config {
-        image                 = "focal-server-cloudimg-amd64.img"
+        image                 = "local/focal-server-cloudimg-amd64.img"
         primary_disk_size     = 10000
         use_thin_copy         = true
         default_user_password = "password"
