@@ -11,6 +11,7 @@ import (
 
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client/structs"
@@ -38,6 +39,10 @@ type taskHandle struct {
 	exitResult  *drivers.ExitResult
 
 	taskGetter DomainGetter
+
+	// netTeardown is the specification used to delete all the network
+	// configuration associated to a VM.
+	netTeardown *net.TeardownSpec
 }
 
 func (h *taskHandle) TaskStatus() *drivers.TaskStatus {
@@ -151,5 +156,4 @@ func fillStats(info *domain.Info) *structs.TaskResourceUsage {
 			},
 		},
 	}
-
 }
