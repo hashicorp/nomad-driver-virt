@@ -77,6 +77,10 @@ var (
 type TaskState struct {
 	TaskConfig *drivers.TaskConfig
 	StartedAt  time.Time
+
+	// NetTeardown is the specification used to delete all the network
+	// configuration associated to a VM.
+	NetTeardown *net.TeardownSpec
 }
 
 type Virtualizer interface {
@@ -509,11 +513,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		name:       taskName,
 	}
 
-	driverState := TaskState{
-		TaskConfig: cfg,
-		StartedAt:  h.startedAt,
-	}
-
 	allocFSMounts := createAllocFileMounts(cfg)
 
 	var osVariant *domain.OSVariant
@@ -605,6 +604,14 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	d.logger.Info("task started successfully", "taskName", taskName)
 
+	// Generate our driver state and send this to Nomad. It stores critical
+	// information the driver will need to recover from failure and reattach
+	// to running VMs.
+	driverState := TaskState{
+		NetTeardown: netBuildResp.TeardownSpec,
+		StartedAt:   h.startedAt,
+		TaskConfig:  cfg,
+	}
 	if err := handle.SetDriverState(&driverState); err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to set driver state for %s: %v", cfg.AllocID, err)
 	}
@@ -636,11 +643,12 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 	}
 
 	h := &taskHandle{
-		name:       domainNameFromTaskID(handle.Config.ID),
-		logger:     d.logger.Named("handle").With(handle.Config.AllocID),
-		taskConfig: taskState.TaskConfig,
-		startedAt:  taskState.StartedAt,
-		taskGetter: d.taskGetter,
+		name:        domainNameFromTaskID(handle.Config.ID),
+		logger:      d.logger.Named("handle").With(handle.Config.AllocID),
+		taskConfig:  taskState.TaskConfig,
+		startedAt:   taskState.StartedAt,
+		taskGetter:  d.taskGetter,
+		netTeardown: taskState.NetTeardown,
 	}
 
 	vm, err := h.taskGetter.GetDomain(h.name)
