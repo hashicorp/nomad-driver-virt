@@ -7,7 +7,7 @@ env:
 
 jobs:
   get-go-version:
-    name: "Determine Go toolchain version"
+    name: "get Go toolchain version"
     runs-on: ubuntu-22.04
     outputs:
       go-version: ${{ steps.get-go-version.outputs.go-version }}
@@ -20,6 +20,7 @@ jobs:
           echo "go-version=$(cat .go-version)" >> "$GITHUB_OUTPUT"
 
   get-product-version:
+    name: "get product version"
     runs-on: ubuntu-22.04
     outputs:
       product-version: ${{ steps.get-product-version.outputs.product-version }}
@@ -32,6 +33,7 @@ jobs:
           echo "product-version=$(make version)" >> "$GITHUB_OUTPUT"
 
   generate-metadata-file:
+    name: "generate metadata file"
     needs: get-product-version
     runs-on: ubuntu-22.04
     outputs:
@@ -55,34 +57,28 @@ jobs:
     needs:
       - get-go-version
       - get-product-version
-    runs-on: ubuntu-22.04
+    runs-on:
+      - ${{ matrix.runner_label }}
     strategy:
       matrix:
         goos: [linux]
-        goarch: ["arm64", "amd64"]
+        goarch: ["amd64", "arm64"]
+        include:
+          - goarch: "amd64"
+            goos: linux
+            runner_label: "ubuntu-22.04-x64"
+          - goarch: "arm64"
+            goos: linux
+            runner_label: "ubuntu-22.04-arm"
       fail-fast: false
-    name: Go ${{ needs.get-go-version.outputs.go-version }} ${{ matrix.goos }} ${{ matrix.goarch }} build
+
+    name: "build Go ${{ needs.get-go-version.outputs.go-version }} ${{ matrix.goos }} ${{ matrix.goarch }}"
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: hashicorp/setup-golang@v3
-     # - uses: ./.github/actions/install-libvirt-dev
-      - name: Install Linux build utilties
-        run: |
-          if [ "${{ matrix.goarch }}" == "arm64" ]; then
-            sudo apt-get install -y gcc-aarch64-linux-gnu
-            sudo dpkg --add-architecture arm64
-            echo "http://ports.ubuntu.com/ubuntu-ports	priority:4" | sudo tee -a /etc/apt/apt-mirrors.txt
-            sudo apt-get update
-            sudo apt-get install -y libvirt-dev:arm64
-          fi
-      - name: Set gcc
-        run: |
-          if [ "${{ matrix.goarch }}" == "arm64" ]; then
-            echo "CC=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
-            ls /usr/lib/aarch64-linux-gnu/pkgconfig
-            export PKG_CONFIG_PATH=/usr/lib/aarch64-linux-gnu/pkgconfig
-          fi
-      - name: Build
+      - uses: ./.github/actions/install-libvirt-dev
+
+      - name: "Compile binary"
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
@@ -96,12 +92,13 @@ jobs:
         with:
           name: ${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_${{ matrix.goos }}_${{ matrix.goarch }}.zip
           path: ${{ env.PKG_NAME }}_${{ needs.get-product-version.outputs.product-version }}_${{ matrix.goos }}_${{ matrix.goarch }}.zip
-      - name: Package
+
+      - name: "Create Linux packages"
         if: ${{ matrix.goos == 'linux' }}
         uses: hashicorp/actions-packaging-linux@v1
         with:
           name: ${{ github.event.repository.name }}
-          description: "nomad-driver-virt is a HashiCorp Nomad task driver for virtualization in Linux."
+          description: "nomad-driver-virt is a HashiCorp Nomad task driver for Linux."
           arch: ${{ matrix.goarch }}
           version: ${{ needs.get-product-version.outputs.product-version }}
           maintainer: "HashiCorp"
@@ -110,7 +107,8 @@ jobs:
           binary: "dist/${{ matrix.goos }}_${{ matrix.goarch }}/${{ env.PKG_NAME }}"
           postinstall: ".release/linux/postinst"
           postremove: ".release/linux/postrm"
-      - name: Set Package Names
+
+      - name: "Set Linux package names"
         if: ${{ matrix.goos == 'linux' }}
         run: |
           echo "RPM_PACKAGE=$(basename out/*.rpm)" >> "$GITHUB_ENV"
