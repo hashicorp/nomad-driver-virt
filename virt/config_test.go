@@ -8,8 +8,25 @@ import (
 
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
+	"github.com/hashicorp/nomad/plugins/drivers"
+	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	"github.com/shoenig/test/must"
 )
+
+func Test_capabilities(t *testing.T) {
+	t.Parallel()
+
+	expectedCapabilities := drivers.Capabilities{
+		SendSignals:          false,
+		Exec:                 false,
+		DisableLogCollection: true,
+		FSIsolation:          fsisolation.Image,
+		NetIsolationModes:    []drivers.NetIsolationMode{drivers.NetIsolationModeHost},
+		MustInitiateNetwork:  false,
+		MountConfigs:         drivers.MountConfigSupportNone,
+	}
+	must.Eq(t, &expectedCapabilities, capabilities)
+}
 
 func TestConfig_Task(t *testing.T) {
 	t.Parallel()
