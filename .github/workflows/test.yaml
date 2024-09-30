@@ -1,4 +1,4 @@
-name: ci
+name: test
 
 on:
   push:
@@ -15,7 +15,7 @@ jobs:
         run: |
           make check-go-mod
   lint:
-    name: "run lint"
+    name: "run Go lint"
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -26,7 +26,7 @@ jobs:
           make lint-tools
           make lint
   test:
-    name: "run tests"
+    name: "run Go tests"
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
@@ -37,13 +37,3 @@ jobs:
           make test-tools
           sudo sed -i 's!Defaults!#Defaults!g' /etc/sudoers
           sudo -E env "PATH=$PATH" make test
-  build:
-    name: "run build"
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332 # v4.1.7
-      - uses: hashicorp/setup-golang@36878950ae8f21c1bc25accaf67a4df88c29b01d # v3.0.0
-      - uses: ./.github/actions/install-libvirt-dev
-      - name: "run build"
-        run: |
-          make build
