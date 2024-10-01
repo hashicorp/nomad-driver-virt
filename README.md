@@ -1,7 +1,11 @@
 Nomad Virt Driver
 ==================
 The virt driver task plugin expands the types of workloads Nomad can run to add virtual machines.
-Leveraging on the power of Libvirt, the Virt driver allows the user to define vitual tasks using the Nomad job spec.
+Leveraging on the power of Libvirt, the Virt driver allows the user to define virtual machine tasks using the Nomad job spec.
+
+> **_IMPORTANT:_** This plugin is in tech preview, still under active development, there might be breaking changes in future releases
+
+**: This is an Alpha version still under development**
 
 ## Features
 
@@ -16,7 +20,7 @@ Leveraging on the power of Libvirt, the Virt driver allows the user to define vi
 
 ## Ubuntu Example job
 
-Here is a simple python server on ubuntu Example:
+Here is a simple Python server on Ubuntu example:
 
 ```hcl
 job "python-server" {
@@ -24,16 +28,36 @@ job "python-server" {
   group "virt-group" {
     count = 1
 
+    network {
+      mode = "host"
+      port "http" {
+        to = 8000
+      }
+    }
+
     task "virt-task" {
 
       driver = "nomad-driver-virt"
 
+      artifact {
+        source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+        destination = "local/focal-server-cloudimg-amd64.img"
+        mode        = "file"
+      }
+
       config {
-        image                           = "/var/local/statics/images/focal-server-cloudimg-amd64.img"
-        primary_disk_size               = 10000
-        use_thin_copy                   = true
-        default_user_password           = "password"
-        cmds                            = ["python -m http.server 8000"]
+        image                 = "local/focal-server-cloudimg-amd64.img"
+        primary_disk_size     = 10000
+        use_thin_copy         = true
+        default_user_password = "password"
+        cmds                  = ["python -m http.server 8000"]
+
+        network_interface {
+          bridge {
+            name  = "virbr0"
+            ports = ["http"]
+          }
+        }
       }
 
       resources {
@@ -149,12 +173,12 @@ VM's OS.
   driver = "nomad-driver-virt"
       artifact {
         source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
-        destination = "focal-server-cloudimg-amd64.img"
+        destination = "local/focal-server-cloudimg-amd64.img"
         mode        = "file"
       } 
 
       config {
-        image                           = "focal-server-cloudimg-amd64.img"
+        image                           = "local/focal-server-cloudimg-amd64.img"
         primary_disk_size               = 9000
         use_thin_copy                   = true
         default_user_password           = "password"
@@ -164,11 +188,54 @@ VM's OS.
 
 ```
 
-## Network Configuration
+### Network Configuration
+The following configuration options are available within the task's driver configuration block:
+* **network_interface** - A list of network interfaces that should be attached to the VM. This
+  currently only supports a single entry.
+  * **bridge** - Attach the VM to a network of bridged type. `virbr0`, the default libvirt network
+  is a bridged network.
+    * **name** - The name of the bridge interface to use. This relates to the output seen from
+    commands such as `virsh net-info`.
+    * **ports** - A list of port labels which will be exposed on the host via mapping to the
+    network interface. These labels must exist within the job specification
+    [network block](https://developer.hashicorp.com/nomad/docs/job-specification/network).
+
+The example below shows the network configuration and task configuration required to expose and map
+ports `22` and `80`:
+```hcl
+group "virt-group" {
+
+  network {
+    mode = "host"
+    port "ssh" {
+      to = 22
+    }
+    port "http" {
+      to = 80
+    }
+  }
+
+  task "virt-task" {
+    driver = "nomad-driver-virt"
+    config {
+      network_interface {
+        bridge {
+          name  = "virbr0"
+          ports = ["ssh", "http"]
+        }
+      }
+    }
+  }
+}
+```
+
+Exposed ports and services can make use of the existing
+[service block](https://developer.hashicorp.com/nomad/docs/job-specification/service),
+so that registrations can be performed using the specified backend provider.
 
 ## Local Development
 
-Make sure the node suports virtualization.
+Make sure the node supports virtualization.
 
 ```
 # Build the task driver plugin

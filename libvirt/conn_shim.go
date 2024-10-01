@@ -3,6 +3,8 @@
 
 package libvirt
 
+import "libvirt.org/go/libvirt"
+
 // ConnectShim is the shim interface that wraps libvirt connectivity. This
 // allows us to create a mock implementation for testing, as we cannot assume
 // we will always have expensive bare-metal hosts to run CI, especially on a
@@ -48,4 +50,10 @@ type ConnectNetworkShim interface {
 	// Also see:
 	// https://libvirt.org/html/libvirt-libvirt-network.html#virNetworkGetBridgeName
 	GetBridgeName() (string, error)
+
+	// GetDHCPLeases returns an array of DHCP leases for the named network.
+	//
+	// Also see:
+	// https://libvirt.org/html/libvirt-libvirt-network.html#virNetworkGetDHCPLeases
+	GetDHCPLeases() ([]libvirt.NetworkDHCPLease, error)
 }

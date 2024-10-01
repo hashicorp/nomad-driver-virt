@@ -14,7 +14,7 @@ default: check-go-mod lint test build
 .PHONY: clean
 clean: ## Remove build artifacts
 	@echo "==> Removing build artifact..."
-	@rm -rf ${PLUGIN_BINARY}
+	@rm -rf build/${PLUGIN_BINARY}
 	@echo "==> Done"
 
 .PHONY: copywrite-headers
@@ -36,7 +36,7 @@ lint: ## Lint and vet the codebase
 .PHONY: lint-tools
 lint-tools: ## Install the tools used to run lint and vet
 	@echo "==> Installing lint and vet tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.60.1
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
 	go install github.com/hashicorp/go-hclog/hclogvet@v0.2.0
 	@echo "==> Done"
 
@@ -72,11 +72,6 @@ help: ## Display this usage information
 		awk 'BEGIN {FS = ":.*?## "}; \
 			{printf $(HELP_FORMAT), $$1, $$2}'
 	@echo ""
-
-.PHONY: clean
-clean: ## Cleanup previous build
-	@echo "==> Cleanup previous build"
-	rm -f ./build/nomad-driver-virt
 
 .PHONY: deps
 deps: ## Install build dependencies

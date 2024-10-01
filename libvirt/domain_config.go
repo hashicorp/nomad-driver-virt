@@ -80,19 +80,21 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 	}
 
 	interfaces := []libvirtxml.DomainInterface{}
-	for _, ni := range config.NetworkInterfaces {
-		i := libvirtxml.DomainInterface{
-			Source: &libvirtxml.DomainInterfaceSource{
-				Bridge: &libvirtxml.DomainInterfaceSourceBridge{
-					Bridge: ni,
-				},
-			},
-			Model: &libvirtxml.DomainInterfaceModel{
-				Type: defaultInterfaceModel,
-			},
+	if config.NetworkInterfaces != nil {
+		for _, networkInterface := range config.NetworkInterfaces {
+			if networkInterface.Bridge != nil {
+				interfaces = append(interfaces, libvirtxml.DomainInterface{
+					Source: &libvirtxml.DomainInterfaceSource{
+						Bridge: &libvirtxml.DomainInterfaceSourceBridge{
+							Bridge: networkInterface.Bridge.Name,
+						},
+					},
+					Model: &libvirtxml.DomainInterfaceModel{
+						Type: defaultInterfaceModel,
+					},
+				})
+			}
 		}
-
-		interfaces = append(interfaces, i)
 	}
 
 	vcpus := &libvirtxml.DomainVCPU{
