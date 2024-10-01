@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -136,14 +137,14 @@ func (dc *Config) Copy() *Config {
 		BaseImage:         dc.BaseImage,
 		DiskFmt:           dc.DiskFmt,
 		PrimaryDiskSize:   dc.PrimaryDiskSize,
-		NetworkInterfaces: dc.NetworkInterfaces,
+		NetworkInterfaces: slices.Clone(dc.NetworkInterfaces),
 		HostName:          dc.HostName,
-		Mounts:            dc.Mounts,
-		Files:             dc.Files,
+		Mounts:            slices.Clone(dc.Mounts),
+		Files:             slices.Clone(dc.Files),
 		SSHKey:            dc.SSHKey,
 		Password:          dc.Password,
-		CMDs:              dc.CMDs,
-		BOOTCMDs:          dc.BOOTCMDs,
+		CMDs:              slices.Clone(dc.CMDs),
+		BOOTCMDs:          slices.Clone(dc.BOOTCMDs),
 		CIUserData:        dc.CIUserData,
 	}
 
