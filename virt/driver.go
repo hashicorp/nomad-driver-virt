@@ -19,8 +19,8 @@ import (
 
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
-	"github.com/hashicorp/nomad-driver-virt/virt/idset"
 	virtnet "github.com/hashicorp/nomad-driver-virt/libvirt/net"
+	"github.com/hashicorp/nomad-driver-virt/virt/idset"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
@@ -559,6 +559,10 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 		diskImagePath = copyPath
 		diskFormat = "qcow2"
+	}
+
+	if cfg.Resources.NomadResources.Cpu.CpuShares != 0 {
+		return nil, nil, fmt.Errorf("virt: %s: %w", cfg.AllocID, domain.ErrNotSupported)
 	}
 
 	cpuSet := idset.Parse[hw.CoreID](cfg.Resources.LinuxResources.CpusetCpus)
