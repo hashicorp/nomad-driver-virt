@@ -9,7 +9,6 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
-	"github.com/hashicorp/nomad-driver-virt/virt/net"
 )
 
 var (
@@ -41,7 +40,7 @@ type Controller struct {
 // NewController returns a Controller which implements the net.Net interface
 // and has a named logger, to ensure log messages can be easily tied to the
 // network system.
-func NewController(logger hclog.Logger, conn libvirt.ConnectShim) net.Net {
+func NewController(logger hclog.Logger, conn libvirt.ConnectShim) *Controller {
 	return &Controller{
 		dhcpLeaseDiscoveryInterval: defaultDHCPLeaseDiscoveryInterval,
 		dhcpLeaseDiscoveryTimeout:  defaultDHCPLeaseDiscoveryTimeout,

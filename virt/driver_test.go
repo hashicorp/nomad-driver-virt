@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/ci"
@@ -23,8 +24,26 @@ import (
 	"github.com/hashicorp/nomad/plugins/base"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	dtestutil "github.com/hashicorp/nomad/plugins/drivers/testutils"
+	plugins "github.com/hashicorp/nomad/plugins/shared/structs"
 	"github.com/shoenig/test/must"
 )
+
+type mockNet struct{}
+
+func (mn *mockNet) Fingerprint(map[string]*plugins.Attribute) {
+}
+
+func (mn *mockNet) Init() error {
+	return nil
+}
+
+func (mn *mockNet) VMStartedBuild(*net.VMStartedBuildRequest) (*net.VMStartedBuildResponse, error) {
+	return &net.VMStartedBuildResponse{}, nil
+}
+
+func (mn *mockNet) VMTerminatedTeardown(*net.VMTerminatedTeardownRequest) (*net.VMTerminatedTeardownResponse, error) {
+	return &net.VMTerminatedTeardownResponse{}, nil
+}
 
 type mockImageHandler struct {
 	lock sync.RWMutex
@@ -162,13 +181,13 @@ func virtDriverHarness(t *testing.T, v Virtualizer, dg DomainGetter, ih ImageHan
 	d := NewPlugin(logger).(*VirtDriverPlugin)
 	if v != nil {
 		d.virtualizer = v
+		d.networkController = &mockNet{}
+		d.networkInit.Store(true)
 	}
 
 	must.NoError(t, d.SetConfig(baseConfig))
 	d.imageHandler = ih
 	d.taskGetter = dg
-
-	d.buildFingerprint()
 
 	harness := dtestutil.NewDriverHarness(t, d)
 
