@@ -95,7 +95,7 @@ func WithCIController(ci CloudInit) Option {
 	}
 }
 
-func NewConnection(uri string, user string, pass string) (*libvirt.Connect, error) {
+func newConnection(uri string, user string, pass string) (*libvirt.Connect, error) {
 	if user == "" {
 		return libvirt.NewConnect(uri)
 	}
@@ -155,9 +155,10 @@ func (d *driver) lookForExistingStoragePool(name string) (*libvirt.StoragePool, 
 
 func New(ctx context.Context, logger hclog.Logger, opt ...Option) *driver {
 	d := &driver{
-		logger: logger.Named("nomad-virt-plugin"),
-		uri:    defaultURI,
-		opts:   opt,
+		logger:  logger.Named("nomad-virt-plugin"),
+		uri:     defaultURI,
+		opts:    opt,
+		dataDir: defaultDataDir,
 	}
 
 	go d.monitorCtx(ctx)
@@ -184,8 +185,6 @@ func (d *driver) Start(dataDir string) error {
 
 	if dataDir != "" {
 		d.dataDir = dataDir
-	} else {
-		d.dataDir = defaultDataDir
 	}
 
 	if err := createDataDirectory(d.dataDir); err != nil {
@@ -198,40 +197,40 @@ func (d *driver) Start(dataDir string) error {
 			return err
 		}
 		d.conn = conn
-
-		// In order to make host files visible to the virtual machines, they need to be
-		// placed inside a defined storage pool.
-		found, err := d.lookForExistingStoragePool(storagePoolName)
-		if err != nil {
-			return fmt.Errorf("libvirt: unable to list existing storage pools: %w", err)
-
-		}
-
-		if found == nil {
-			sp := libvirtxml.StoragePool{
-				Name: storagePoolName,
-				Target: &libvirtxml.StoragePoolTarget{
-					Path: d.dataDir,
-				},
-				Type: "dir",
-			}
-
-			spXML, err := sp.Marshal()
-			if err != nil {
-				return err
-			}
-
-			d.logger.Info("creating storage pool")
-			found, err = d.conn.StoragePoolCreateXML(spXML, 0)
-			if err != nil {
-				return fmt.Errorf("libvirt: unable to create storage pool: %w", err)
-
-			}
-
-			d.logger.Info("assigning storage pool")
-		}
-		d.sp = found
 	}
+
+	// In order to make host files visible to the virtual machines, they need to be
+	// placed inside a defined storage pool.
+	found, err := d.lookForExistingStoragePool(storagePoolName)
+	if err != nil {
+		return fmt.Errorf("libvirt: unable to list existing storage pools: %w", err)
+
+	}
+
+	if found == nil {
+		sp := libvirtxml.StoragePool{
+			Name: storagePoolName,
+			Target: &libvirtxml.StoragePoolTarget{
+				Path: d.dataDir,
+			},
+			Type: "dir",
+		}
+
+		spXML, err := sp.Marshal()
+		if err != nil {
+			return err
+		}
+
+		d.logger.Info("creating storage pool")
+		found, err = d.conn.StoragePoolCreateXML(spXML, 0)
+		if err != nil {
+			return fmt.Errorf("libvirt: unable to create storage pool: %w", err)
+
+		}
+
+		d.logger.Info("assigning storage pool")
+	}
+	d.sp = found
 
 	return nil
 }
