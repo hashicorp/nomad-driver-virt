@@ -99,7 +99,7 @@ func WithCIController(ci CloudInit) Option {
 	}
 }
 
-func newConnection(uri string, user string, pass string) (*libvirt.Connect, error) {
+func NewConnection(uri string, user string, pass string) (*libvirt.Connect, error) {
 	if user == "" {
 		return libvirt.NewConnect(uri)
 	}
@@ -177,7 +177,7 @@ func New(ctx context.Context, logger hclog.Logger, options ...Option) (*driver, 
 		return nil, fmt.Errorf("libvirt: unable to create data dir: %w", err)
 	}
 
-	conn, err := newConnection(d.uri, d.user, d.password)
+	conn, err := NewConnection(d.uri, d.user, d.password)
 	if err != nil {
 		return nil, err
 	}

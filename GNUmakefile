@@ -5,11 +5,6 @@ THIS_OS := $(shell uname | cut -d- -f1)
 THIS_ARCH := $(shell uname -m)
 GO_MODULE = github.com/hashicorp/nomad-driver-virt
 
-# build date is based on most recent commit, in RFC3339 format
-#BUILD_DATE ?= $(shell TZ=UTC0 git show -s --format=%cd --date=format-local:'%Y-%m-%dT%H:%M:%SZ' HEAD)
-#BUILD_DATE_FLAG = $(GO_MODULE)/version.BuildDate=$(BUILD_DATE)
-#GO_LDFLAGS = -X $(GIT_COMMIT_FLAG) -X $(BUILD_DATE_FLAG)
-
 # CGO is required due to libvirt.
 CGO_ENABLED = 1
 
@@ -33,6 +28,13 @@ endif
 
 SUPPORTED_OSES = Linux
 
+.PHONY: clean
+clean: ## Remove build artifacts
+	@echo "==> Removing build artifact..."
+	@rm -rf build/${PLUGIN_BINARY}
+	@echo "==> Done"
+
+
 .PHONY: copywrite-headers
 copywrite-headers: ## Ensure files have the copywrite header
 	@echo "==> Checking copywrite headers..."
@@ -52,7 +54,7 @@ lint: ## Lint and vet the codebase
 .PHONY: lint-tools
 lint-tools: ## Install the tools used to run lint and vet
 	@echo "==> Installing lint and vet tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.60.1
+	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.61.0
 	go install github.com/hashicorp/go-hclog/hclogvet@v0.2.0
 	@echo "==> Done"
 
@@ -88,11 +90,6 @@ help: ## Display this usage information
 		awk 'BEGIN {FS = ":.*?## "}; \
 			{printf $(HELP_FORMAT), $$1, $$2}'
 	@echo ""
-
-.PHONY: clean
-clean: ## Cleanup previous build
-	@echo "==> Cleanup previous build"
-	rm -f ./build/nomad-driver-virt
 
 .PHONY: deps
 deps: ## Install build dependencies
