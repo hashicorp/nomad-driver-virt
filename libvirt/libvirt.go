@@ -235,6 +235,14 @@ func (d *driver) Start(dataDir string) error {
 	return nil
 }
 
+func (d *driver) ListNetworks() ([]string, error) {
+	return d.conn.ListNetworks()
+}
+
+func (d *driver) LookupNetworkByName(name string) (ConnectNetworkShim, error) {
+	return d.conn.LookupNetworkByName(name)
+}
+
 func (d *driver) GetInfo() (domain.VirtualizerInfo, error) {
 	li := domain.VirtualizerInfo{}
 

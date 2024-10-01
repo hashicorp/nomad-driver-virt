@@ -13,6 +13,12 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/shoenig/test/must"
+	"libvirt.org/go/libvirt"
+)
+
+var (
+	_ ConnectShim        = &driver{}
+	_ ConnectNetworkShim = &libvirt.Network{}
 )
 
 type cloudInitMock struct {

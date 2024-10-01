@@ -129,15 +129,16 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 	// grep -E 'svm|vmx' /proc/cpuinfo
 	// lsmod | grep kvm -> kvm_intel, kvm_amd, nvme-tcp
 	return &VirtDriverPlugin{
-		eventer:        eventer.NewEventer(ctx, logger),
-		config:         &Config{},
-		tasks:          newTaskStore(),
-		signalShutdown: cancel,
-		logger:         logger,
-		networkInit:    atomic.Bool{},
-		imageHandler:   image_tools.NewHandler(logger),
-		virtualizer:    v,
-		taskGetter:     v,
+		eventer:           eventer.NewEventer(ctx, logger),
+		config:            &Config{},
+		tasks:             newTaskStore(),
+		signalShutdown:    cancel,
+		logger:            logger,
+		networkInit:       atomic.Bool{},
+		imageHandler:      image_tools.NewHandler(logger),
+		virtualizer:       v,
+		taskGetter:        v,
+		networkController: virtnet.NewController(logger, v),
 	}
 }
 
@@ -183,19 +184,6 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 	if err != nil {
 		return err
 	}
-
-	// Generate a new libvirt connection for the network controller.
-	//
-	// TODO(jrasell): the compute and network should use the same connection,
-	// so we should refactor the connection setup in a future change.
-	libvirtConnection, err := libvirt.NewConnection(config.Emulator.URI, config.Emulator.User, config.Emulator.Password)
-	if err != nil {
-		return fmt.Errorf("virt: failed to create network libvirt connection: %w", err)
-	}
-
-	// Generate the new network controller and perform the initialization if
-	// this is required.
-	d.networkController = virtnet.NewController(d.logger, libvirt.NewConnect(libvirtConnection))
 
 	if !d.networkInit.Load() {
 		if err := d.networkController.Init(); err != nil {
