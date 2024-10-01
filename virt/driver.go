@@ -20,8 +20,8 @@ import (
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
 	virtnet "github.com/hashicorp/nomad-driver-virt/libvirt/net"
-	"github.com/hashicorp/nomad-driver-virt/virt/idset"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/hashicorp/nomad/client/lib/idset"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client/lib/numalib/hw"
