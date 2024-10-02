@@ -616,8 +616,8 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		diskFormat = "qcow2"
 	}
 
-	if cfg.Resources.NomadResources.Cpu.CpuShares != 0 {
-		return nil, nil, fmt.Errorf("virt: %s: %w", cfg.AllocID, domain.ErrNotSupported)
+	if cfg.Resources.LinuxResources.CpusetCpus == "" {
+		return nil, nil, fmt.Errorf("virt: cpuset is empty, %s: %w", cfg.AllocID, domain.ErrNotSupported)
 	}
 
 	cpuSet := idset.Parse[hw.CoreID](cfg.Resources.LinuxResources.CpusetCpus)
