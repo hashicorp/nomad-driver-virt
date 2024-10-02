@@ -125,12 +125,6 @@ func (dc *Config) Validate(allowedPaths []string) error {
 	return mErr.ErrorOrNil()
 }
 
-type NetworkInterface struct {
-	NetworkName string
-	Address     string
-	PortMap     map[string]string
-}
-
 type VirtualizerInfo struct {
 	Model           string
 	Memory          uint64
