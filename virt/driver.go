@@ -555,7 +555,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		return nil, nil, fmt.Errorf("virt: failed to decode driver config: %v", err)
 	}
 
-	d.logger.Debug("starting task", "driver_cfg", hclog.Fmt("%+v", driverConfig))
+	d.logger.Error("starting task", "driver_cfg", hclog.Fmt("%+v\n", cfg.Resources))
+	d.logger.Error("starting task", "driver_cfg", hclog.Fmt("%+v\n", cfg.Resources.LinuxResources))
+	d.logger.Error("starting task", "driver_cfg", hclog.Fmt("%+v\n", cfg.Resources.NomadResources))
 
 	taskName := domainNameFromTaskID(cfg.ID)
 
@@ -614,10 +616,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 		diskImagePath = copyPath
 		diskFormat = "qcow2"
-	}
-
-	if cfg.Resources.NomadResources.Cpu.CpuShares != 0 {
-		return nil, nil, fmt.Errorf("virt: %s: %w", cfg.AllocID, domain.ErrNotSupported)
 	}
 
 	cpuSet := idset.Parse[hw.CoreID](cfg.Resources.LinuxResources.CpusetCpus)
