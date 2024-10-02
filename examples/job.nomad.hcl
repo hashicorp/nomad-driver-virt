@@ -38,7 +38,7 @@ job "virt-example" {
       }
 
       resources {
-        cpu    = 4
+        cores  = 4
         memory = 4000
       }
     }

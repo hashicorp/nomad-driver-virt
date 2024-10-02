@@ -21,8 +21,10 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
 	virtnet "github.com/hashicorp/nomad-driver-virt/libvirt/net"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/hashicorp/nomad/client/lib/idset"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad/client/lib/numalib/hw"
 	"github.com/hashicorp/nomad/client/taskenv"
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
 	"github.com/hashicorp/nomad/plugins/base"
@@ -559,11 +561,17 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		diskFormat = "qcow2"
 	}
 
+	if cfg.Resources.NomadResources.Cpu.CpuShares != 0 {
+		return nil, nil, fmt.Errorf("virt: %s: %w", cfg.AllocID, domain.ErrNotSupported)
+	}
+
+	cpuSet := idset.Parse[hw.CoreID](cfg.Resources.LinuxResources.CpusetCpus)
+
 	dc := &domain.Config{
 		RemoveConfigFiles: true,
 		Name:              taskName,
 		Memory:            uint(cfg.Resources.NomadResources.Memory.MemoryMB),
-		CPUs:              uint(cfg.Resources.NomadResources.Cpu.CpuShares),
+		CPUs:              uint(cpuSet.Size()),
 		CPUset:            cfg.Resources.LinuxResources.CpusetCpus,
 		OsVariant:         osVariant,
 		BaseImage:         diskImagePath,

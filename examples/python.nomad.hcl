@@ -32,7 +32,7 @@ job "python-server" {
       }
 
       resources {
-        cpu    = 40
+        cores  = 2
         memory = 4000
       }
     }

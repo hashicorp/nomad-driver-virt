@@ -61,7 +61,7 @@ job "python-server" {
       }
 
       resources {
-        cpu    = 40
+        cores  = 2
         memory = 4000
       }
     }
@@ -168,6 +168,8 @@ plugin "nomad-driver-virt" {
 * **user_data** - Path to a cloud-init compliant user data file to be used as the user-data for the cloud-init configuration.
 * **primary_disk_size** - Disk space to assign to the VM, bear in mind it will fit the
 VM's OS.
+
+Regarding the resources, currently the driver has support for cores and memory. Every core will be treated as a vcpu.
 
 ```sh
   driver = "nomad-driver-virt"
