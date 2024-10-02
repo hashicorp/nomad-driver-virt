@@ -1,0 +1,4 @@
+#!/bin/sh
+
+# Remove symlink from plugins directory.
+rm /opt/nomad/data/plugins/nomad-driver-virt
