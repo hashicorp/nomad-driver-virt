@@ -53,13 +53,11 @@ var (
 	// capabilities indicates what optional features this driver supports
 	// this should be set according to the target run time.
 	capabilities = &drivers.Capabilities{
-		// TODO: set all the plugin's capabilities
-		//
 		// The plugin's capabilities signal Nomad which extra functionalities
 		// are supported. For a list of available options check the docs page:
 		// https://godoc.org/github.com/hashicorp/nomad/plugins/drivers#Capabilities
-		// SendSignals:          false,
-		Exec:                 true,
+		SendSignals:          false,
+		Exec:                 false,
 		DisableLogCollection: true,
 		FSIsolation:          fsisolation.Image,
 
@@ -74,9 +72,9 @@ var (
 		// interface.
 		MustInitiateNetwork: false,
 
-		//MountConfigs: MountConfigSupport
-		//RemoteTasks: bool
-		//DynamicWorkloadUsers: bool
+		// MountConfigs is currently not supported, although the plumbing is
+		// ready to handle this.
+		MountConfigs: drivers.MountConfigSupportNone,
 	}
 )
 
