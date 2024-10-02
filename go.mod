@@ -3,8 +3,8 @@ module github.com/hashicorp/nomad-driver-virt
 go 1.23
 
 // Fix error tidying due to Nomad downstream dependencies and the recent
-// migration of the metrics library.
-replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.5.3
+// migration of the metrics library and maintain the version required by Nomad.
+replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.0.0-20230509193637-d9ca9af9f1f9
 
 require (
 	github.com/coreos/go-iptables v0.8.0
@@ -12,7 +12,7 @@ require (
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/hashicorp/nomad v1.8.3
+	github.com/hashicorp/nomad v1.8.4
 	github.com/shoenig/test v1.11.0
 	libvirt.org/go/libvirt v1.10006.0
 	libvirt.org/go/libvirtxml v1.10007.0
@@ -123,13 +123,13 @@ require (
 	github.com/vmihailenco/tagparser/v2 v2.0.0 // indirect
 	github.com/yusufpapurcu/wmi v1.2.3 // indirect
 	github.com/zclconf/go-cty v1.13.0 // indirect
-	golang.org/x/crypto v0.24.0 // indirect
+	golang.org/x/crypto v0.27.0 // indirect
 	golang.org/x/exp v0.0.0-20240613232115-7f521ea00fb8 // indirect
 	golang.org/x/mod v0.18.0 // indirect
 	golang.org/x/net v0.26.0 // indirect
-	golang.org/x/sync v0.7.0 // indirect
-	golang.org/x/sys v0.21.0 // indirect
-	golang.org/x/text v0.16.0 // indirect
+	golang.org/x/sync v0.8.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
+	golang.org/x/text v0.18.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
 	golang.org/x/tools v0.22.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20230822172742-b8732ec3820d // indirect
