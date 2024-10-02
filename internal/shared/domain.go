@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -16,7 +17,7 @@ import (
 )
 
 const (
-	minDiskMB     = 8000
+	minDiskMB     = 2000
 	minMemoryMB   = 500
 	maxNameLength = 63 // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 )
@@ -124,6 +125,48 @@ func (dc *Config) Validate(allowedPaths []string) error {
 	}
 
 	return mErr.ErrorOrNil()
+}
+
+func (dc *Config) Copy() *Config {
+	copy := &Config{
+		RemoveConfigFiles: dc.RemoveConfigFiles,
+		XMLConfig:         dc.XMLConfig,
+		Name:              dc.Name,
+		Memory:            dc.Memory,
+		CPUset:            dc.CPUset,
+		CPUs:              dc.CPUs,
+		BaseImage:         dc.BaseImage,
+		DiskFmt:           dc.DiskFmt,
+		PrimaryDiskSize:   dc.PrimaryDiskSize,
+		NetworkInterfaces: slices.Clone(dc.NetworkInterfaces),
+		HostName:          dc.HostName,
+		Mounts:            slices.Clone(dc.Mounts),
+		Files:             slices.Clone(dc.Files),
+		SSHKey:            dc.SSHKey,
+		Password:          dc.Password,
+		CMDs:              slices.Clone(dc.CMDs),
+		BOOTCMDs:          slices.Clone(dc.BOOTCMDs),
+		CIUserData:        dc.CIUserData,
+	}
+
+	if dc.OsVariant != nil {
+		copy.OsVariant = &OSVariant{
+			Arch:    dc.OsVariant.Arch,
+			Machine: dc.OsVariant.Machine,
+		}
+	}
+
+	if dc.Timezone != nil {
+		*copy.Timezone = *dc.Timezone
+	}
+
+	return copy
+}
+
+type NetworkInterface struct {
+	NetworkName string
+	Address     string
+	PortMap     map[string]string
 }
 
 type VirtualizerInfo struct {

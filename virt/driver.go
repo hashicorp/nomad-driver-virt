@@ -4,14 +4,11 @@
 package virt
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -20,6 +17,7 @@ import (
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
 	virtnet "github.com/hashicorp/nomad-driver-virt/libvirt/net"
+	"github.com/hashicorp/nomad-driver-virt/virt/image_tools"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/client/lib/idset"
 
@@ -85,7 +83,43 @@ type TaskState struct {
 	NetTeardown *net.TeardownSpec
 }
 
+// Net is the interface that defines the virtualization network sub-system. It
+// should be the only link from the main driver and compute functionality, into
+// the network. This helps encapsulate the logic making future development
+// easier, even allowing for this code to be moved into its own application if
+// desired.
+type Net interface {
+
+	// Fingerprint interrogates the host system and populates the attribute
+	// mapping with relevant network information. Any errors performing this
+	// should be logged by the implementor, but not considered terminal, which
+	// explains the lack of error response. Each entry should use
+	// FingerprintAttributeKeyPrefix as a base.
+	Fingerprint(map[string]*structs.Attribute)
+
+	// Init performs any initialization work needed by the network sub-system
+	// prior to being used by the driver. This will be called when the plugin
+	// is set up by Nomad and should be expected to run multiple times during
+	// a Nomad client's lifecycle. It should therefore be idempotent. Any error
+	// returned is considered fatal to the plugin.
+	Init() error
+
+	// VMStartedBuild performs any network configuration required once the
+	// driver has successfully started a VM. Any error returned will be
+	// considered terminal to the start of the VM and therefore halt any
+	// further progress and result in the task being restarted.
+	VMStartedBuild(*net.VMStartedBuildRequest) (*net.VMStartedBuildResponse, error)
+
+	// VMTerminatedTeardown performs all the network teardown required to clean
+	// the host and any systems of configuration specific to the task. If an
+	// error is encountered, Nomad will retry the stop/kill process, so all
+	// implementations must be able to support this and not enter death spirals
+	// when an error occurs.
+	VMTerminatedTeardown(*net.VMTerminatedTeardownRequest) (*net.VMTerminatedTeardownResponse, error)
+}
+
 type Virtualizer interface {
+	Start(string) error
 	CreateDomain(config *domain.Config) error
 	StopDomain(name string) error
 	DestroyDomain(name string) error
@@ -94,6 +128,11 @@ type Virtualizer interface {
 
 type DomainGetter interface {
 	GetDomain(name string) (*domain.Info, error)
+}
+
+type ImageHandler interface {
+	GetImageFormat(basePath string) (string, error)
+	CreateThinCopy(basePath string, destination string, sizeM int64) error
 }
 
 type VirtDriverPlugin struct {
@@ -106,15 +145,14 @@ type VirtDriverPlugin struct {
 	signalShutdown context.CancelFunc
 	logger         hclog.Logger
 	dataDir        string
-
 	// networkController is the backend controller interface for the network
 	// subsystem.
-	networkController net.Net
-
+	networkController Net
 	// networkInit indicates whether the network subsystem has had its init
 	// function called. While the function should be idempotent, this helps
 	// avoid unnecessary calls and work.
-	networkInit atomic.Bool
+	networkInit  atomic.Bool
+	imageHandler ImageHandler
 }
 
 // NewPlugin returns a new driver plugin
@@ -122,16 +160,22 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 	ctx, cancel := context.WithCancel(context.Background())
 	logger = logger.Named(pluginName)
 
+	v := libvirt.New(ctx, logger)
+
 	// Should we check if extentions and kernel modules are there?
 	// grep -E 'svm|vmx' /proc/cpuinfo
 	// lsmod | grep kvm -> kvm_intel, kvm_amd, nvme-tcp
 	return &VirtDriverPlugin{
-		eventer:        eventer.NewEventer(ctx, logger),
-		config:         &Config{},
-		tasks:          newTaskStore(),
-		signalShutdown: cancel,
-		logger:         logger,
-		networkInit:    atomic.Bool{},
+		eventer:           eventer.NewEventer(ctx, logger),
+		config:            &Config{},
+		tasks:             newTaskStore(),
+		signalShutdown:    cancel,
+		logger:            logger,
+		networkInit:       atomic.Bool{},
+		imageHandler:      image_tools.NewHandler(logger),
+		virtualizer:       v,
+		taskGetter:        v,
+		networkController: virtnet.NewController(logger, v),
 	}
 }
 
@@ -173,26 +217,10 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 		return fmt.Errorf("virt: unable to create data dir: %w", err)
 	}
 
-	v, err := libvirt.New(context.TODO(), d.logger, libvirt.WithDataDirectory(d.dataDir))
+	err = d.virtualizer.Start(d.dataDir)
 	if err != nil {
 		return err
 	}
-
-	d.virtualizer = v
-	d.taskGetter = v
-
-	// Generate a new libvirt connection for the network controller.
-	//
-	// TODO(jrasell): the compute and network should use the same connection,
-	// so we should refactor the connection setup in a future change.
-	libvirtConnection, err := libvirt.NewConnection(config.Emulator.URI, config.Emulator.User, config.Emulator.Password)
-	if err != nil {
-		return fmt.Errorf("virt: failed to create network libvirt connection: %w", err)
-	}
-
-	// Generate the new network controller and perform the initialization if
-	// this is required.
-	d.networkController = virtnet.NewController(d.logger, libvirt.NewConnect(libvirtConnection))
 
 	if !d.networkInit.Load() {
 		if err := d.networkController.Init(); err != nil {
@@ -487,6 +515,35 @@ func fileExists(path string) bool {
 	return !info.IsDir()
 }
 
+func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
+	cmds := []string{}
+	for _, m := range mounts {
+		c := []string{
+			fmt.Sprintf("mkdir -p %s", m.Destination),
+			fmt.Sprintf("mountpoint -q %s || mount -t 9p -o trans=virtio %s %s", m.Destination, m.Tag, m.Destination),
+		}
+
+		cmds = append(cmds, c...)
+	}
+
+	return cmds
+}
+
+func setUpTaskState(vmState string) drivers.TaskState {
+	switch vmState {
+	case libvirt.DomainRunning:
+		return drivers.TaskStateRunning
+	case libvirt.DomainShutdown, libvirt.DomainShutOff, libvirt.DomainCrashed:
+		return drivers.TaskStateExited
+	default:
+		return drivers.TaskStateUnknown
+	}
+}
+
+func buildHostname(taskName string) string {
+	return fmt.Sprintf("nomad-%s", taskName)
+}
+
 // StartTask returns a task handle and a driver network if necessary.
 func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drivers.DriverNetwork, error) {
 	if _, ok := d.tasks.Get(cfg.ID); ok {
@@ -495,27 +552,21 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	var driverConfig TaskConfig
 	if err := cfg.DecodeDriverConfig(&driverConfig); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode driver config: %v", err)
+		return nil, nil, fmt.Errorf("virt: failed to decode driver config: %v", err)
 	}
 
 	d.logger.Debug("starting task", "driver_cfg", hclog.Fmt("%+v", driverConfig))
-	handle := drivers.NewTaskHandle(taskHandleVersion)
-	handle.Config = cfg
 
 	taskName := domainNameFromTaskID(cfg.ID)
 
 	d.logger.Info("starting task", "name", taskName)
 
-	h := &taskHandle{
-		taskConfig: cfg,
-		procState:  drivers.TaskStateRunning,
-		startedAt:  time.Now().Round(time.Millisecond),
-		logger:     d.logger.Named("handle").With(cfg.AllocID),
-		taskGetter: d.taskGetter,
-		name:       taskName,
-	}
-
+	// The process to have directories mounted on the VM consists on two steps,
+	// one is declaring them as backing storage in the VM and the second is to
+	// create the directory inside the VM and executing the mount using 9P.
+	// These commands are added here to execute at bootime.
 	allocFSMounts := createAllocFileMounts(cfg)
+	bootCMDs := addCMDsForMounts(allocFSMounts)
 
 	var osVariant *domain.OSVariant
 	if driverConfig.OS != nil {
@@ -530,31 +581,35 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		hostname = driverConfig.Hostname
 	}
 
-	// The alloc directory and plugin data directory are always an allowed path to load images from.
+	// The alloc directory and plugin data directory are assumed to be allowed
+	// paths to load images from.
 	allowedPaths := append(d.config.ImagePaths, d.dataDir, cfg.AllocDir)
 
 	diskImagePath := driverConfig.ImagePath
+
 	if !fileExists(diskImagePath) {
 
-		// Assume the image was downloaded using artifacts and will be placed
+		// Assuming the image was downloaded using artifacts and will be placed
 		// somewhere in the alloc's filesystem.
 		diskImagePath = filepath.Join(cfg.TaskDir().Dir, diskImagePath)
 		if !fileExists(diskImagePath) {
-			return nil, nil, ErrImageNotFound
+			return nil, nil, fmt.Errorf("virt: %s, %w", cfg.AllocID, ErrImageNotFound)
 		}
 	}
 
-	diskFormat, err := d.getImageFormat(diskImagePath)
+	diskFormat, err := d.imageHandler.GetImageFormat(diskImagePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("virt: unable to get disk format %s: %w", cfg.AllocID, err)
 	}
 
 	if driverConfig.UseThinCopy {
 		copyPath := filepath.Join(d.dataDir, taskName+".img")
+		d.logger.Info("creating thin copy at", "path", copyPath) // TODO: Put back at info
 
-		d.logger.Info("creating thin copy at", "path", copyPath)
-		if err := d.createThinCopy(diskImagePath, copyPath, cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
-			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w", taskName, err)
+		if err := d.imageHandler.CreateThinCopy(diskImagePath, copyPath,
+			cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
+			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w",
+				taskName, err)
 		}
 
 		diskImagePath = copyPath
@@ -580,6 +635,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		HostName:          hostname,
 		Mounts:            allocFSMounts,
 		CMDs:              driverConfig.CMDs,
+		BOOTCMDs:          bootCMDs,
 		CIUserData:        driverConfig.UserData,
 		Password:          driverConfig.DefaultUserPassword,
 		SSHKey:            driverConfig.DefaultUserSSHKey,
@@ -595,6 +651,15 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
+	h := &taskHandle{
+		taskConfig: cfg,
+		procState:  drivers.TaskStateRunning,
+		startedAt:  time.Now().Round(time.Millisecond),
+		logger:     d.logger.Named("handle").With(cfg.AllocID),
+		taskGetter: d.taskGetter,
+		name:       taskName,
+	}
+
 	// Build our network request to send now that the VM has been started. The
 	// response will contain our teardown spec, which gets stored in the task
 	// handle, so we can easily perform deletions.
@@ -608,6 +673,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	if err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to build task network: %w", err)
 	}
+
 	h.netTeardown = netBuildResp.TeardownSpec
 
 	d.logger.Info("task started successfully", "taskName", taskName)
@@ -620,8 +686,13 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		StartedAt:   h.startedAt,
 		TaskConfig:  cfg,
 	}
+
+	handle := drivers.NewTaskHandle(taskHandleVersion)
+	handle.Config = cfg
+
 	if err := handle.SetDriverState(&driverState); err != nil {
-		return nil, nil, fmt.Errorf("virt: failed to set driver state for %s: %v", cfg.AllocID, err)
+		return nil, nil, fmt.Errorf("virt: failed to set driver state for %s: %v",
+			cfg.AllocID, err)
 	}
 
 	d.tasks.Set(cfg.ID, h)
@@ -673,79 +744,5 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 
 	d.tasks.Set(handle.Config.ID, h)
 
-	return nil
-}
-
-func setUpTaskState(vmState string) drivers.TaskState {
-	switch vmState {
-	case libvirt.DomainRunning:
-		return drivers.TaskStateRunning
-	case libvirt.DomainShutdown, libvirt.DomainShutOff, libvirt.DomainCrashed:
-		return drivers.TaskStateExited
-	default:
-		return drivers.TaskStateUnknown
-	}
-}
-
-func buildHostname(taskName string) string {
-	return fmt.Sprintf("nomad-%s", taskName)
-}
-
-// GetImageFormat runs `qemu-img info` to get the format of a disk image.
-func (d *VirtDriverPlugin) getImageFormat(basePath string) (string, error) {
-	d.logger.Debug("reading the disk format", "base", basePath)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-
-	cmd := exec.Command("qemu-img", "info", "--output=json", basePath)
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
-
-	err := cmd.Run()
-	if err != nil {
-		d.logger.Error("qemu-img read image", "stderr", stderrBuf.String())
-		d.logger.Debug("qemu-img read image", "stdout", stdoutBuf.String())
-		return "", err
-	}
-
-	d.logger.Debug("qemu-img read image", "stdout", stdoutBuf.String())
-
-	// The qemu command returns more information, but for now, only the format
-	// is necessary.
-	var output = struct {
-		Format string `json:"format"`
-	}{}
-
-	err = json.Unmarshal(stdoutBuf.Bytes(), &output)
-	if err != nil {
-		return "", fmt.Errorf("qemu-img: unable read info response %s: %w", basePath, err)
-	}
-
-	return output.Format, nil
-}
-
-func (d *VirtDriverPlugin) createThinCopy(basePath string, destination string, sizeM int64) error {
-	d.logger.Debug("creating thin copy", "base", basePath, "dest", destination)
-
-	var stdoutBuf, stderrBuf bytes.Buffer
-
-	if sizeM <= 0 {
-		return fmt.Errorf("qemu-img: %w", domain.ErrNotEnoughMemory)
-	}
-
-	cmd := exec.Command("qemu-img", "create", "-b", basePath, "-f", "qcow2", "-F", "qcow2",
-		destination, fmt.Sprintf("%dM", sizeM),
-	)
-	cmd.Stdout = &stdoutBuf
-	cmd.Stderr = &stderrBuf
-
-	err := cmd.Run()
-	if err != nil {
-		d.logger.Error("qemu-img create output", "stderr", stderrBuf.String())
-		d.logger.Debug("qemu-img create output", "stdout", stdoutBuf.String())
-		return err
-	}
-
-	d.logger.Debug("qemu-img create output", "stdout", stdoutBuf.String())
 	return nil
 }

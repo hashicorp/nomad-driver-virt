@@ -56,6 +56,7 @@ func (h *taskHandle) TaskStatus() *drivers.TaskStatus {
 		StartedAt:        h.startedAt,
 		CompletedAt:      h.completedAt,
 		DriverAttributes: map[string]string{},
+		ExitResult:       h.exitResult.Copy(),
 	}
 }
 
@@ -91,7 +92,6 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 			domain, err := h.taskGetter.GetDomain(h.name)
 			if err != nil {
 				h.logger.Error("virt: unable to get task's %s state: %w", h.name, err)
-
 				h.stateLock.Lock()
 				h.procState = drivers.TaskStateUnknown
 				h.stateLock.Unlock()
@@ -99,15 +99,7 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 				continue
 			}
 
-			if domain == nil {
-				// What else should we return here? This state should never happen
-				// The vm no longer exists, it might cause the monitor to block
-				// forever.
-				return
-			}
-
-			if domain.State != libvirt.DomainRunning {
-
+			if domain == nil || domain.State != libvirt.DomainRunning {
 				er := fillExitResult(domain)
 
 				h.stateLock.Lock()
@@ -128,6 +120,12 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 
 func fillExitResult(info *domain.Info) *drivers.ExitResult {
 	er := &drivers.ExitResult{}
+
+	if info == nil {
+		er.Err = drivers.ErrTaskNotFound
+		er.ExitCode = 1
+		return er
+	}
 
 	switch info.State {
 	case libvirt.DomainCrashed:

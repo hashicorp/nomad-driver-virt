@@ -13,6 +13,12 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/shoenig/test/must"
+	"libvirt.org/go/libvirt"
+)
+
+var (
+	_ ConnectShim        = &driver{}
+	_ ConnectNetworkShim = &libvirt.Network{}
 )
 
 type cloudInitMock struct {
@@ -38,9 +44,9 @@ func TestGetInfo(t *testing.T) {
 
 	// The "test:///default" uri connects to a mock hypervisor provided by libvirt
 	// to use for testing.
-	ld, err := New(context.Background(), hclog.NewNullLogger(),
-		WithConnectionURI("test:///default"),
-		WithDataDirectory(tempDataDir))
+	ld := New(context.Background(), hclog.NewNullLogger(), WithConnectionURI("test:///default"))
+
+	err = ld.Start(tempDataDir)
 
 	must.NoError(t, err)
 	i, err := ld.GetInfo()
@@ -91,14 +97,7 @@ func TestStartDomain(t *testing.T) {
 					Password: "test-password",
 					SSHKey:   "sshkey lkbfubwfu...",
 					RunCMD:   []string{"cmd arg arg", "cmd arg arg"},
-					BootCMD: []string{
-						"cmd arg arg",
-						"cmd arg arg",
-						"mkdir -p /path/to/file/one",
-						"mountpoint -q /path/to/file/one || mount -t 9p -o trans=virtio tagOne /path/to/file/one",
-						"mkdir -p /path/to/file/two",
-						"mountpoint -q /path/to/file/two || mount -t 9p -o trans=virtio tagTwo /path/to/file/two",
-					},
+					BootCMD:  []string{"cmd arg arg", "cmd arg arg"},
 					Mounts: []cloudinit.MountFileConfig{
 						{
 							Destination: "/path/to/file/one",
@@ -137,14 +136,7 @@ func TestStartDomain(t *testing.T) {
 					Password: "test-password",
 					SSHKey:   "sshkey lkbfubwfu...",
 					RunCMD:   []string{"cmd arg arg", "cmd arg arg"},
-					BootCMD: []string{
-						"cmd arg arg",
-						"cmd arg arg",
-						"mkdir -p /path/to/file/one",
-						"mountpoint -q /path/to/file/one || mount -t 9p -o trans=virtio tagOne /path/to/file/one",
-						"mkdir -p /path/to/file/two",
-						"mountpoint -q /path/to/file/two || mount -t 9p -o trans=virtio tagTwo /path/to/file/two",
-					},
+					BootCMD:  []string{"cmd arg arg", "cmd arg arg"},
 					Mounts: []cloudinit.MountFileConfig{
 						{
 							Destination: "/path/to/file/one",
@@ -201,9 +193,10 @@ func TestStartDomain(t *testing.T) {
 
 			// The "test:///default" uri connects to a mock hypervisor provided by libvirt
 			// to use for testing.
-			ld, err := New(context.Background(), hclog.NewNullLogger(),
-				WithConnectionURI("test:///default"), WithCIController(cim),
-				WithDataDirectory(tempDataDir))
+			ld := New(context.Background(), hclog.NewNullLogger(),
+				WithConnectionURI("test:///default"), WithCIController(cim))
+
+			err = ld.Start(tempDataDir)
 			must.NoError(t, err)
 			defer ld.Close()
 
@@ -275,9 +268,10 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 
 	// The "test:///default" uri connects to a mock hypervisor provided by libvirt
 	// to use for testing.
-	ld, err := New(context.Background(), hclog.NewNullLogger(),
-		WithConnectionURI("test:///default"), WithCIController(cim),
-		WithDataDirectory(tempDataDir))
+	ld := New(context.Background(), hclog.NewNullLogger(),
+		WithConnectionURI("test:///default"), WithCIController(cim))
+
+	err = ld.Start(tempDataDir)
 	must.NoError(t, err)
 	defer ld.Close()
 
