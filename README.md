@@ -169,7 +169,9 @@ plugin "nomad-driver-virt" {
 * **primary_disk_size** - Disk space to assign to the VM, bear in mind it will fit the
 VM's OS.
 
-Regarding the resources, currently the driver has support for cores and memory. Every core will be treated as a vcpu.
+Regarding the resources, currently the driver has support for cpuSets or cores and memory.
+Every core will be treated as a vcpu.
+Do not use `resources.cpus`, they will be ignored.
 
 ```sh
   driver = "nomad-driver-virt"
