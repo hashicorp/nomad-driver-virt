@@ -39,7 +39,6 @@ var (
 		"use_thin_copy":                   hclspec.NewAttr("use_thin_copy", "bool", false),
 		"primary_disk_size":               hclspec.NewAttr("primary_disk_size", "number", true),
 		"image":                           hclspec.NewAttr("image", "string", true),
-		"hostname":                        hclspec.NewAttr("hostname", "string", false),
 		"user_data":                       hclspec.NewAttr("user_data", "string", false),
 		"default_user_authorized_ssh_key": hclspec.NewAttr("default_user_authorized_ssh_key", "string", false),
 		"default_user_password":           hclspec.NewAttr("default_user_password", "string", false),
@@ -82,7 +81,6 @@ var (
 // this plugin.
 type TaskConfig struct {
 	ImagePath           string         `codec:"image"`
-	Hostname            string         `codec:"hostname"`
 	OS                  *OS            `codec:"os"`
 	UserData            string         `codec:"user_data"`
 	TimeZone            *time.Location `codec:"timezone"`
