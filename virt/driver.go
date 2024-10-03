@@ -670,7 +670,11 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		return nil, nil, fmt.Errorf("virt: failed to build task network: %w", err)
 	}
 
-	h.netTeardown = netBuildResp.TeardownSpec
+	// If the VM did not include any network configuration, there will not be a
+	// teardown spec.
+	if netBuildResp.TeardownSpec != nil {
+		h.netTeardown = netBuildResp.TeardownSpec
+	}
 
 	d.logger.Info("task started successfully", "taskName", taskName)
 

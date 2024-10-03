@@ -173,7 +173,7 @@ func (c *Controller) VMStartedBuild(req *net.VMStartedBuildRequest) (*net.VMStar
 		return nil, errors.New("net controller: no request provided")
 	}
 	if req.NetConfig == nil || req.Resources == nil {
-		return nil, nil
+		return &net.VMStartedBuildResponse{}, nil
 	}
 
 	// Dereference the network config and pull out the interface detail. The
@@ -185,7 +185,7 @@ func (c *Controller) VMStartedBuild(req *net.VMStartedBuildRequest) (*net.VMStar
 	// debugging which certainly caught me(jrasell) a few times in development.
 	if len(netConfig) == 0 {
 		c.logger.Debug("no network interface configured", "domain", req.DomainName)
-		return nil, nil
+		return &net.VMStartedBuildResponse{}, nil
 	}
 	netInterface := netConfig[0]
 

@@ -149,7 +149,8 @@ func TestController_VMStartedBuild(t *testing.T) {
 	// panic.
 	nilRequestResp, err = mockController.VMStartedBuild(&net.VMStartedBuildRequest{})
 	must.NoError(t, err)
-	must.Nil(t, nilRequestResp)
+	must.NotNil(t, nilRequestResp)
+	must.Nil(t, nilRequestResp.TeardownSpec)
 
 	// Pass a request that doesn't contain any configured networks to ensure we
 	// correctly handle that.
@@ -158,7 +159,8 @@ func TestController_VMStartedBuild(t *testing.T) {
 		Resources: &drivers.Resources{},
 	})
 	must.NoError(t, err)
-	must.Nil(t, emptyNetworkRequestResp)
+	must.NotNil(t, emptyNetworkRequestResp)
+	must.Nil(t, emptyNetworkRequestResp.TeardownSpec)
 
 	// Test a correct and full request.
 	fullReq := net.VMStartedBuildRequest{
