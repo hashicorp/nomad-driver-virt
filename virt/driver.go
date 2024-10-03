@@ -555,7 +555,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		return nil, nil, fmt.Errorf("virt: failed to decode driver config: %v", err)
 	}
 
-	d.logger.Error("starting task", "driver_cfg", hclog.Fmt("%+v\n", driverConfig))
+	d.logger.Debug("starting task", "driver_cfg", hclog.Fmt("%+v\n", driverConfig))
 
 	taskName := domainNameFromTaskID(cfg.ID)
 
