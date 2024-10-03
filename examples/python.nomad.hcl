@@ -21,7 +21,7 @@ job "python-server" {
         source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
         destination = "local/focal-server-cloudimg-amd64.img"
         mode        = "file"
-      } 
+      }
 
       config {
         image                 = "local/focal-server-cloudimg-amd64.img"
@@ -29,6 +29,13 @@ job "python-server" {
         use_thin_copy         = true
         default_user_password = "password"
         cmds                  = ["python -m http.server 8000"]
+
+        network_interface {
+          bridge {
+            name  = "virbr0"
+            ports = ["http"]
+          }
+        }
       }
 
       resources {
