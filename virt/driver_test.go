@@ -143,14 +143,13 @@ func createBasicResources() *drivers.Resources {
 			Memory: structs.AllocatedMemoryResources{
 				MemoryMB: 6000,
 			},
-			Cpu: structs.AllocatedCpuResources{
-				CpuShares: 250,
-			},
+			Cpu: structs.AllocatedCpuResources{},
 		},
 		LinuxResources: &drivers.LinuxResources{
+			CpusetCpus:       "1,2,3",
 			CPUPeriod:        100000,
 			CPUQuota:         100000,
-			CPUShares:        500,
+			CPUShares:        2000,
 			MemoryLimitBytes: 256 * 1024 * 1024,
 			PercentTicks:     float64(500) / float64(2000),
 		},
@@ -259,7 +258,7 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	// Assert the correct configuration was passed on to the virtualizer.
 	must.Eq(t, "task-name-0000000", callConfig.Name)
 	must.Eq(t, 6000, callConfig.Memory)
-	must.Eq(t, 250, callConfig.CPUs)
+	must.Eq(t, 3, callConfig.CPUs)
 	must.StrContains(t, "arch", callConfig.OsVariant.Arch)
 	must.StrContains(t, "machine", callConfig.OsVariant.Machine)
 	must.StrContains(t, mockImage.Name(), callConfig.BaseImage)
