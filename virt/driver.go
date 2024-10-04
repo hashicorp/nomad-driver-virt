@@ -288,8 +288,8 @@ func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
 	attrs["driver.virt"] = structs.NewBoolAttribute(true)
 	attrs["driver.virt.libvirt.version"] = structs.NewIntAttribute(int64(virtInfo.LibvirtVersion), "")
 	attrs["driver.virt.emulator.version"] = structs.NewIntAttribute(int64(virtInfo.EmulatorVersion), "")
-	attrs["driver.virt.active"] = structs.NewIntAttribute(int64(virtInfo.RunningDomains), "")
-	attrs["driver.virt.inactive"] = structs.NewIntAttribute(int64(virtInfo.InactiveDomains), "bytes")
+	attrs["driver.virt.domains.active"] = structs.NewIntAttribute(int64(virtInfo.RunningDomains), "")
+	attrs["driver.virt.domains.inactive"] = structs.NewIntAttribute(int64(virtInfo.InactiveDomains), "")
 
 	d.networkController.Fingerprint(attrs)
 
