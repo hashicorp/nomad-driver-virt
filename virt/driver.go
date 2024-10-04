@@ -665,14 +665,26 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		Resources:  cfg.Resources,
 	}
 
+	// Build out the network now that the VM has been started.
+	//
+	// In the event of an error, we need to try and destroy the already running
+	// VM. Nomad will not do this, as technically the task has not been started
+	// from its perspective.
+	//
+	// In the future, we may want to add some retry logic when destroying a VM,
+	// however, at least attempting it is a good start.
 	netBuildResp, err := d.networkController.VMStartedBuild(&netBuildReq)
 	if err != nil {
+		if destroyDomainErr := d.virtualizer.DestroyDomain(taskName); destroyDomainErr != nil {
+			d.logger.Error("virt: failed to destroy domain, manual cleanup needed",
+				"task_name", taskName, "error", destroyDomainErr)
+		}
 		return nil, nil, fmt.Errorf("virt: failed to build task network: %w", err)
 	}
 
 	h.netTeardown = netBuildResp.TeardownSpec
 
-	d.logger.Info("task started successfully", "taskName", taskName)
+	d.logger.Info("task started successfully", "task_name", taskName)
 
 	// Generate our driver state and send this to Nomad. It stores critical
 	// information the driver will need to recover from failure and reattach
