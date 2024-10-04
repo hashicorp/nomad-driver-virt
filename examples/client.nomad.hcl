@@ -8,8 +8,10 @@ client {
 }
 
 plugin "nomad-driver-virt" {
-  data_dir    = "/opt/ubuntu/virt_temp"
-  image_paths = ["/var/local/statics/images/"]
+  config {
+    data_dir    = "/opt/ubuntu/virt_temp"
+    image_paths = ["/var/local/statics/images/"]
+  }
 }
 
 # Increase log verbosity
@@ -20,5 +22,3 @@ data_dir  = "/opt/nomad/client"
 
 # Set up the plugin dir
 plugin_dir = "/opt/nomad/plugins"
-
-
