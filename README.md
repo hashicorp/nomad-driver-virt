@@ -29,6 +29,7 @@ job "python-server" {
     count = 1
 
     network {
+      hostname = "hostname"
       mode = "host"
       port "http" {
         to = 8000
@@ -160,7 +161,6 @@ plugin "nomad-driver-virt" {
 ## Task Configuration
 * **image** - Path to .img cloud image to base the VM disk on, it should be located in an allowed path. It is very important that the cloud image includes cloud init, otherwise most features will not be available for teh task.
 * **use_thin_copy** - Make a thin copy of the image using qemu, and use it as the backing cloud image for the VM. 
-* **hostname** - The hostname to assign which defaults to a short uuid that will be unique to every VM, to avoid clashes when there are multiple instances of the same task running. Since it's used as a network host name, it must be a valid DNS label according to RFC 1123.
 * **os** - Guest configuration for a specific machine and architecture to emulate if they are to be different from the host. Both the architecture and machine have to be available for KVM. If not defined, libvirt will use the same ones as the host machine.
 * **command** - List of commands to execute on the VM once it is running. They can provide the operator with a quick and easy way to start a process on the newly created VM, used in conjunction with the template, it can be a simple yet powerful start up tool.
 * **default_user_password** - Initial password to be configured for the default user on the newly created VM, it will have to be updated on first connect.
@@ -172,6 +172,9 @@ VM's OS.
 Regarding the resources, currently the driver has support for cpuSets or cores and memory.
 Every core will be treated as a vcpu.
 Do not use `resources.cpus`, they will be ignored.
+
+The hostname for the virtual machine will be taken from the network configuration,if none is provided it defaults to a short uuid that will be unique to every VM, to avoid clashes when there are multiple instances of the same task running, so leave
+it empty if multiple vms are requiered in the same networ. Since hostname is used as a network host name, it must be a valid DNS label according to RFC 1123.
 
 ```sh
   driver = "nomad-driver-virt"

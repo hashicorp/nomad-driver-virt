@@ -577,8 +577,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	}
 
 	hostname := buildHostname(taskName)
-	if driverConfig.Hostname != "" {
-		hostname = driverConfig.Hostname
+	if cfg.NetworkIsolation != nil && cfg.NetworkIsolation.HostsConfig != nil &&
+		cfg.NetworkIsolation.HostsConfig.Hostname != "" {
+		hostname = cfg.NetworkIsolation.HostsConfig.Hostname
 	}
 
 	// The alloc directory and plugin data directory are assumed to be allowed

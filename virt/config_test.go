@@ -33,7 +33,6 @@ func TestConfig_Task(t *testing.T) {
 
 	parser := hclutils.NewConfigParser(taskConfigSpec)
 
-	expectedHostname := "test-hostname"
 	expectedImg := "/path/to/image/here"
 	expectedUserData := "/path/to/user/data"
 	expectedCmds := []string{"redis"}
@@ -48,7 +47,6 @@ func TestConfig_Task(t *testing.T) {
 	image = "/path/to/image/here"
 	primary_disk_size = 26000
 	cmds = ["redis"]
-	hostname = "test-hostname"
 	user_data = "/path/to/user/data"
 	default_user_authorized_ssh_key =  "ssh-ed25519 testtesttest..."
 	default_user_password = "password"
@@ -67,7 +65,6 @@ func TestConfig_Task(t *testing.T) {
 	must.Eq(t, expectedUseThinCopy, tc.UseThinCopy)
 	must.StrContains(t, expectedDefaultUserSSHKey, tc.DefaultUserSSHKey)
 	must.StrContains(t, expectedDefaultUserPassword, tc.DefaultUserPassword)
-	must.StrContains(t, expectedHostname, tc.Hostname)
 	must.StrContains(t, expectedUserData, tc.UserData)
 	must.StrContains(t, expectedARCH, tc.OS.Arch)
 	must.StrContains(t, expectedMachine, tc.OS.Machine)
