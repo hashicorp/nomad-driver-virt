@@ -70,7 +70,7 @@ job "python-server" {
 ```
 
 ```sh
-$ nomad job run examples/python.nomad.hcl 
+$ nomad job run examples/python.nomad.hcl
 
 ==> 2024-09-10T13:01:22+02:00: Monitoring evaluation "c0424142"
     2024-09-10T13:01:22+02:00: Evaluation triggered by job "python-server"
@@ -89,11 +89,11 @@ $ virsh list
 
 ## Building The Driver from source
 
-In order to be able to build the binary, the `libvirt-dev` module is necessary, 
+In order to be able to build the binary, the `libvirt-dev` module is necessary,
 use any of the package managers to get it:
- 
+
  ```
-sudo apt install libvirt-dev 
+sudo apt install libvirt-dev
 ```
 
 ```shell-session
@@ -123,7 +123,7 @@ lsmod | grep -E '(kvm_intel|kvm_amd)'
 
 If the result is empty for either call, the machine does not support virtualization and the nomad client wont be able to run any virtualization workload.
 
-`Nomad` runs as root, add the user `root` and the group `root` to the [QEMU configuration](https://libvirt.org/drvqemu.html#posix-users-groups) to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restarted after adding the qemu user/group configuration: 
+`Nomad` runs as root, add the user `root` and the group `root` to the [QEMU configuration](https://libvirt.org/drvqemu.html#posix-users-groups) to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restarted after adding the qemu user/group configuration:
 
 ```
 systemctl start libvirtd
@@ -143,23 +143,25 @@ Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject
   * **user** - User for the [connection authentication](https://libvirt.org/auth.html).
   * **password** - Password for the [connection authentication](https://libvirt.org/auth.html).
 
-* **data_dir** - The plugin will create VM configuration files and intermediate files in 
-  this directory. If not defined it will default to `/var/lib/virt`.
+* **data_dir** - The plugin will create VM configuration files and intermediate files in
+  this directory. If not defined it will default to `/opt/virt`.
 * **image_paths** - Specifies the host paths the QEMU driver is allowed to load images from. If not defined, it defaults to the plugin data_dir directory and alloc directory.
 
 ```hcl
 plugin "nomad-driver-virt" {
-  emulator {
-    uri = "qemu:///default"
+  config {
+    emulator {
+      uri = "qemu:///default"
+    }
+    data_dir    = "/opt/ubuntu/virt_temp"
+    image_paths = ["/var/local/statics/images/"]
   }
-  data_dir    = "/opt/ubuntu/virt_temp"
-  image_paths = ["/var/local/statics/images/"]
 }
 ```
 
 ## Task Configuration
 * **image** - Path to .img cloud image to base the VM disk on, it should be located in an allowed path. It is very important that the cloud image includes cloud init, otherwise most features will not be available for teh task.
-* **use_thin_copy** - Make a thin copy of the image using qemu, and use it as the backing cloud image for the VM. 
+* **use_thin_copy** - Make a thin copy of the image using qemu, and use it as the backing cloud image for the VM.
 * **hostname** - The hostname to assign which defaults to a short uuid that will be unique to every VM, to avoid clashes when there are multiple instances of the same task running. Since it's used as a network host name, it must be a valid DNS label according to RFC 1123.
 * **os** - Guest configuration for a specific machine and architecture to emulate if they are to be different from the host. Both the architecture and machine have to be available for KVM. If not defined, libvirt will use the same ones as the host machine.
 * **command** - List of commands to execute on the VM once it is running. They can provide the operator with a quick and easy way to start a process on the newly created VM, used in conjunction with the template, it can be a simple yet powerful start up tool.
@@ -174,22 +176,22 @@ Every core will be treated as a vcpu.
 Do not use `resources.cpus`, they will be ignored.
 
 ```sh
-  driver = "nomad-driver-virt"
-      artifact {
-        source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
-        destination = "local/focal-server-cloudimg-amd64.img"
-        mode        = "file"
-      } 
+driver = "nomad-driver-virt"
 
-      config {
-        image                           = "local/focal-server-cloudimg-amd64.img"
-        primary_disk_size               = 9000
-        use_thin_copy                   = true
-        default_user_password           = "password"
-        cmds                            = ["touch /home/ubuntu/file.txt"]
-        default_user_authorized_ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1...
-      }
+artifact {
+  source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+  destination = "local/focal-server-cloudimg-amd64.img"
+  mode        = "file"
+}
 
+config {
+  image                           = "local/focal-server-cloudimg-amd64.img"
+  primary_disk_size               = 9000
+  use_thin_copy                   = true
+  default_user_password           = "password"
+  cmds                            = ["touch /home/ubuntu/file.txt"]
+  default_user_authorized_ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1..."
+}
 ```
 
 ### Network Configuration
