@@ -1,24 +1,26 @@
-PLUGIN_BINARY=nomad-driver-virt
+PLUGIN_BINARY:=nomad-driver-virt
 SHELL = bash
 
 THIS_OS := $(shell uname | cut -d- -f1)
 THIS_ARCH := $(shell uname -m)
-GO_MODULE = github.com/hashicorp/nomad-driver-virt
+GO_MODULE := github.com/hashicorp/nomad-driver-virt
 
 # CGO is required due to libvirt.
-CGO_ENABLED = 1
+CGO_ENABLED := 1
 
 # Go modules are used to compile the binary.
-GO111MODULE = on
+GO111MODULE := on
 
 # Attempt to use gotestsum for running tests, otherwise fallback to go test.
-GO_TEST_CMD = $(if $(shell command -v gotestsum 2>/dev/null),gotestsum --,go test)
+GO_TEST_CMD := $(if $(shell command -v gotestsum 2>/dev/null),gotestsum --,go test)
+
+GOLANG_VERSION?=$(shell head -n 1 .go-version)
 
 default: check-go-mod lint test build
 
 ifeq (Linux,$(THIS_OS))
 ALL_TARGETS = linux_amd64 \
-	linux_arm64 
+	linux_arm64
 endif
 
 # Allow overriding ALL_TARGETS via $TARGETS
@@ -26,7 +28,7 @@ ifdef TARGETS
 ALL_TARGETS = $(TARGETS)
 endif
 
-SUPPORTED_OSES = Linux
+SUPPORTED_OSES := Linux
 
 .PHONY: clean
 clean: ## Remove build artifacts
@@ -34,6 +36,30 @@ clean: ## Remove build artifacts
 	@rm -rf build/${PLUGIN_BINARY}
 	@echo "==> Done"
 
+.PHONY: -docker-prep-linux
+-docker-prep-linux:
+	docker buildx build \
+		--build-arg GO_VERSION=$(GOLANG_VERSION) \
+		--build-arg USER_ID=$(shell id -u) \
+		--build-arg GROUP_ID=$(shell id -g) \
+		-f Dockerfile-build \
+		-t nomad-driver-virt-build .
+
+.PHONY: docker-build-linux
+docker-build-linux: -docker-prep-linux ## Compile the current driver codebase in a container.
+	docker run --rm -it \
+		-v "$(shell go env GOMODCACHE):/home/build/go/pkg/mod" \
+		-v "$$(pwd):/data" \
+		nomad-driver-virt-build bash \
+		-c 'cd /data && make build'
+
+.PHONY: docker-test-linux
+docker-test-linux: -docker-prep-linux ## Test the current driver codebase in a container.
+	docker run --rm -it \
+		-v "$(shell go env GOMODCACHE):/home/build/go/pkg/mod" \
+		-v "$$(pwd):/data" \
+		nomad-driver-virt-build bash \
+		-c 'cd /data && go test ./...'
 
 .PHONY: copywrite-headers
 copywrite-headers: ## Ensure files have the copywrite header
