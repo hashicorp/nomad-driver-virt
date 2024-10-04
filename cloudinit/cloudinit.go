@@ -91,7 +91,7 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 			ci.MetaData.InstanceID, err)
 	}
 
-	c.logger.Debug("meta-data", mdb.String())
+	c.logger.Debug("meta-data", "contents", mdb.String())
 
 	vdb := &bytes.Buffer{}
 	err = executeTemplate(ci, vendorDataTemplate, vdb)
@@ -100,7 +100,7 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 			ci.MetaData.InstanceID, err)
 	}
 
-	c.logger.Debug("vendor-data", vdb.String())
+	c.logger.Debug("vendor-data", "contents", vdb.String())
 
 	var udb io.ReadWriter
 	if ci.UserDataPath != "" {
