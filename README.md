@@ -264,3 +264,102 @@ nomad job status virt-example
 
 virsh list
 ```
+## Debugging a VM
+
+Sometimes things dont go as plan and extra tools are necessary to find the problem.
+Here are some strategies to debug a failing VM:
+
+### Connecting to a VM
+
+By default, cloud images are password protected, by adding a `default_user_password`
+a new password is assigned to the default user of the used distribution (for example, 
+`ubuntu` for ubuntu `fedora` for fedora, or `root` for alpine)
+By running `virsh console [vm-name]`, a terminal is started inside the VM that will allow an internal inspection of the VM.
+
+```
+$ virsh list
+ Id   Name                 State
+------------------------------------
+ 1    virt-task-8bc0a63f   running
+
+$ virsh console virt-task-8bc0a63f 
+Connected to domain 'virt-task-8bc0a63f'
+Escape character is ^] (Ctrl + ])
+
+nomad-virt-task-8bc0a63f login: ubuntu
+Password:
+```
+
+If no login prompt shows up, it can mean the virtual machine is not booting and 
+adding  some extra  space to the disk may solve the problem. Remember the disk 
+has to fit the root image plus any other process running in the VM.
+
+The virt driver heavily relies on `cloud-init` to execute the virtual machine's 
+configuration. Once you have managed to connect to the terminal, the results of 
+cloud init can be found in two different places:
+  * `/var/log/cloud-init.log`
+  * `/var/log/cloud-init-output.log`
+
+Looking into these files can give a better understanding of any possible execution
+errors.
+
+If connecting to the terminal is not an option, it is possible to stop the job and
+mount the VM's disk to inspect it. If the `use_thin_image` option is used, the driver will create 
+the disk image in the directory `${plugin_config.data_dir}/virt/vm-name.img`:
+
+```
+# Find the virtual machine disk image
+$ ls /var/lib/virt
+virt-task-8bc0a63f.img
+
+# Enable Network Block Devices on the Host
+modprobe nbd max_part=8
+
+# Connect the disk as network block device
+qemu-nbd --connect=/dev/nbd0 '/var/lib/virt/virt-task-dc8187e3.img'
+
+# Find The Virtual Machine Partitions
+fdisk /dev/nbd0 -l
+
+# Mount the partition from the VM
+mount /dev/nbd0p1 /mnt/somepoint/
+```
+
+**Important** Don't forget to unmount the disk after finishing:
+
+```
+umount /mnt/somepoint/
+qemu-nbd --disconnect /dev/nbd0
+rmmod nbd
+```
+
+### Networking
+
+For networking, the plugin leverages on the libvirt default network `default`:
+```
+$ virsh net-list
+ Name      State    Autostart   Persistent
+--------------------------------------------
+ default   active   yes         yes
+ ```
+ 
+Under the hood, libvirt uses [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html) to lease 
+IP addresses to the virtual machines, there are mutiple ways to find the IP assigned 
+to the nomad task.
+Using virsh to find the leased IP:
+
+```
+$ virsh net-dhcp-leases default
+ Expiry Time           MAC address         Protocol   IP address           Hostname                   Client ID or DUID
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+ 2024-10-07 18:48:09   52:54:00:b5:0b:d4   ipv4       192.168.122.211/24   nomad-virt-task-dc8187e3   ff:08:24:45:0e:00:02:00:00:ab:11:63:3c:26:5b:b7:fe:b3:13
+ ```
+ 
+ or using the mac address to find the IP via ARP: 
+
+```
+$ virsh dumpxml virt-task-8473ccfb  | grep "mac address" | awk -F\' '{ print $2}'
+52:54:00:b5:0b:d4
+$ arp -an | grep 52:54:00:b5:0b:d4
+? (192.168.122.211) at 52:54:00:b5:0b:d4 [ether] on virbr0
+```
