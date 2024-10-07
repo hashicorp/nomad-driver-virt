@@ -344,7 +344,7 @@ $ virsh net-list
  default   active   yes         yes
  ```
  
-Under the hood, libvirt uses [dnsmask](https://thekelleys.org.uk/dnsmasq/doc.html) to lease 
+Under the hood, libvirt uses [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html) to lease 
 IP addresses to the virtual machines, there are mutiple ways to find the IP assigned 
 to the nomad task.
 Using virsh to find the lease:
