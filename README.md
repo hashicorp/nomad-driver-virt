@@ -290,9 +290,9 @@ nomad-virt-task-8bc0a63f login: ubuntu
 Password:
 ```
 
-If no login promt shows up, it can mean the virtual machine is not booting, adding some extra 
-space to the disk can solve the problem, remember the disk has to fit the cloud image
-plus any other process running in the vm.
+If no login prompt shows up, it can mean the virtual machine is not booting and 
+adding  some extra  space to the disk may solve the problem. Remember the disk 
+has to fit the root image plus any other process running in the VM.
 
 The virt driver heavily relies on `cloud-init` to execute the virtual machine's 
 configuration. Once you have managed to connect to the terminal, the results of 
