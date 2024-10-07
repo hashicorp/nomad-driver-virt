@@ -25,7 +25,7 @@ var (
 
 		"data_dir": hclspec.NewDefault(
 			hclspec.NewAttr("data_dir", "string", false),
-			hclspec.NewLiteral(`"/opt/virt"`),
+			hclspec.NewLiteral(`"/var/lib/virt"`),
 		),
 		"image_paths": hclspec.NewAttr("image_paths", "list(string)", false),
 	})
