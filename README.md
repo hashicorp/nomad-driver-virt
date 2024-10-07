@@ -50,7 +50,7 @@ job "python-server" {
         primary_disk_size     = 10000
         use_thin_copy         = true
         default_user_password = "password"
-        cmds                  = ["python -m http.server 8000"]
+        cmds                  = ["python3 -m http.server 8000"]
 
         network_interface {
           bridge {
