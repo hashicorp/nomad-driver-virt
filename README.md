@@ -267,7 +267,7 @@ virsh list
 ## Debugging a VM
 
 Sometimes things dont go as plan and extra tools are necessary to find the problem.
-Here are some strategies to debug a failing vm:
+Here are some strategies to debug a failing VM:
 
 ### Connecting to a VM
 
