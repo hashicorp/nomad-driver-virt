@@ -22,11 +22,7 @@ var (
 			"user":     hclspec.NewAttr("user", "string", false),
 			"password": hclspec.NewAttr("password", "string", false),
 		})),
-
-		"data_dir": hclspec.NewDefault(
-			hclspec.NewAttr("data_dir", "string", false),
-			hclspec.NewLiteral(`"/var/lib/virt"`),
-		),
+		"data_dir":     hclspec.NewAttr("data_dir", "string", false),
 		"image_paths": hclspec.NewAttr("image_paths", "list(string)", false),
 	})
 
