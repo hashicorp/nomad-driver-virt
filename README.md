@@ -144,7 +144,7 @@ Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject
   * **password** - Password for the [connection authentication](https://libvirt.org/auth.html).
 
 * **data_dir** - The plugin will create VM configuration files and intermediate files in
-  this directory. If not defined it will default to `/opt/virt`.
+  this directory. If not defined it will default to `/var/lib/virt`.
 * **image_paths** - Specifies the host paths the QEMU driver is allowed to load images from. If not defined, it defaults to the plugin data_dir directory and alloc directory.
 
 ```hcl
