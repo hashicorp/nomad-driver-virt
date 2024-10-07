@@ -274,7 +274,7 @@ Here are some strategies to debug a failing vm:
 By default, cloud images are password protected, by adding a `default_user_password`
 a new password is assigned to the default user of the used distribution: `ubuntu` for ubuntu
 `fedora` for fedora, `root` for alpine... 
-By running `virsh console [vm-name]`, a terminal is started inside the vm that will allow an internal inspection of the vm.
+By running `virsh console [vm-name]`, a terminal is started inside the VM that will allow an internal inspection of the VM.
 
 ```
 $ virsh list
