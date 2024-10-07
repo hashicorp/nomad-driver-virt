@@ -346,7 +346,7 @@ $ virsh net-list
 Under the hood, libvirt uses [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html) to lease 
 IP addresses to the virtual machines, there are mutiple ways to find the IP assigned 
 to the nomad task.
-Using virsh to find the lease:
+Using virsh to find the leased IP:
 
 ```
 $ virsh net-dhcp-leases default
