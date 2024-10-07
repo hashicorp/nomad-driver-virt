@@ -308,11 +308,10 @@ mount the VM's disk to inspect it. If the `use_thin_image` option is used, the d
 the disk image in the directory `${plugin_config.data_dir}/virt/vm-name.img`:
 
 ```
-ubuntu:/var/lib/virt$ ls
+# Find the virtual machine disk image
+$ ls /var/lib/virt
 virt-task-8bc0a63f.img
-```
 
-```
 # Enable Network Block Devices on the Host
 modprobe nbd max_part=8
 
