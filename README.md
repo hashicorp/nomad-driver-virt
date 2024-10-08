@@ -17,6 +17,12 @@ Leveraging on the power of Libvirt, the Virt driver allows the user to define vi
 * Monitor the memory consumption
 * Monitor CPU usage
 * Task config cpu value is used to populate virtual machine CpuShares
+* The tasks `task`, `alloc`, and `secrets` directories are mounted within the VM at the filesystem
+  root. These are currently mounted read-only (RO), so VMs do not write excessive amounts of data
+  which results in the host filesystem filling. Once correct guardrails are in place, this
+  restriction will be lifted. Please see the
+  [filesystem concepts page](https://developer.hashicorp.com/nomad/docs/concepts/filesystem) for
+  more detail about an allocations working directory.
 
 ## Ubuntu Example job
 
