@@ -469,19 +469,19 @@ func createAllocFileMounts(task *drivers.TaskConfig) []domain.MountFileConfig {
 			Source:      task.TaskDir().SharedAllocDir,
 			Tag:         "allocDir",
 			Destination: task.Env[taskenv.AllocDir],
-			ReadOnly:    true,
+			ReadOnly:    false,
 		},
 		{
 			Source:      task.TaskDir().LocalDir,
 			Tag:         "localDir",
 			Destination: task.Env[taskenv.TaskLocalDir],
-			ReadOnly:    true,
+			ReadOnly:    false,
 		},
 		{
 			Source:      task.TaskDir().SecretsDir,
 			Tag:         "secretsDir",
 			Destination: task.Env[taskenv.SecretsDir],
-			ReadOnly:    true,
+			ReadOnly:    false,
 		},
 	}
 

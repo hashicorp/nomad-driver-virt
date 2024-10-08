@@ -269,19 +269,19 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	must.Eq(t, domain.MountFileConfig{
 		Source:      task.AllocDir + "/alloc",
 		Destination: "/alloc",
-		ReadOnly:    true,
+		ReadOnly:    false,
 		Tag:         "allocDir",
 	}, callConfig.Mounts[0])
 	must.Eq(t, domain.MountFileConfig{
 		Source:      task.AllocDir + "/local",
 		Destination: "/local",
-		ReadOnly:    true,
+		ReadOnly:    false,
 		Tag:         "localDir",
 	}, callConfig.Mounts[1])
 	must.Eq(t, domain.MountFileConfig{
 		Source:      task.AllocDir + "/secrets",
 		Destination: "/secrets",
-		ReadOnly:    true,
+		ReadOnly:    false,
 		Tag:         "secretsDir",
 	}, callConfig.Mounts[2])
 	must.StrContains(t, "ssh-ed666 randomkey", callConfig.SSHKey)
@@ -581,4 +581,42 @@ func TestVirtDriver_Start_Wait_Destroy_LibvirtIntegration(t *testing.T) {
 
 	// The initial test hypervisor has one plus the one that was just started.
 	must.Len(t, 1, doms)
+}
+
+func Test_createAllocFileMounts(t *testing.T) {
+	ci.Parallel(t)
+
+	inputTask := drivers.TaskConfig{
+		Name:     "test-task-name",
+		AllocDir: "/foo/bar/baz",
+		Env: map[string]string{
+			"NOMAD_ALLOC_DIR":   "/alloc",
+			"NOMAD_TASK_DIR":    "/local",
+			"NOMAD_SECRETS_DIR": "/secrets",
+		},
+	}
+	expectedOutput := []domain.MountFileConfig{
+		{
+			Source:      "/foo/bar/baz/alloc",
+			Destination: "/alloc",
+			ReadOnly:    false,
+			Tag:         "allocDir",
+		},
+		{
+			Source:      "/foo/bar/baz/test-task-name/local",
+			Destination: "/local",
+			ReadOnly:    false,
+			Tag:         "localDir",
+		},
+		{
+			Source:      "/foo/bar/baz/test-task-name/secrets",
+			Destination: "/secrets",
+			ReadOnly:    false,
+			Tag:         "secretsDir",
+		},
+	}
+
+	actualOutput := createAllocFileMounts(&inputTask)
+	must.Len(t, 3, actualOutput)
+	must.SliceContainsAll(t, actualOutput, expectedOutput)
 }
