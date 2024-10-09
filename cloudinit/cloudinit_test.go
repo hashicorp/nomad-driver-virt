@@ -29,13 +29,13 @@ func TestWriteConfigToISO(t *testing.T) {
 	must.NoError(t, err)
 
 	tests := []struct {
-		name         string
-		cloudInit    *Config
-		userDataPath string
-		expectError  bool
+		name        string
+		cloudInit   *Config
+		UserData    string
+		expectError bool
 	}{
 		{
-			name: "Valid CloudInit without UserDataPath",
+			name: "Valid CloudInit without UserData",
 			cloudInit: &Config{
 				MetaData: MetaData{
 					LocalHostname: "test-localhost",
@@ -43,12 +43,12 @@ func TestWriteConfigToISO(t *testing.T) {
 				VendorData: VendorData{
 					Password: "password",
 				},
-				UserDataPath: "",
+				UserData: "",
 			},
 			expectError: false,
 		},
 		{
-			name: "Valid CloudInit with UserDataPath",
+			name: "Valid CloudInit with UserData",
 			cloudInit: &Config{
 				MetaData: MetaData{
 					LocalHostname: "test-localhost",
@@ -56,7 +56,7 @@ func TestWriteConfigToISO(t *testing.T) {
 				VendorData: VendorData{
 					Password: "password",
 				},
-				UserDataPath: userDataFile,
+				UserData: userDataFile,
 			},
 			expectError: false,
 		},
@@ -69,7 +69,7 @@ func TestWriteConfigToISO(t *testing.T) {
 				VendorData: VendorData{
 					Password: "password",
 				},
-				UserDataPath: "invalid_userdata",
+				UserData: "invalid_userdata",
 			},
 			expectError: true,
 		},
@@ -138,7 +138,7 @@ func TestExecuteTemplate(t *testing.T) {
 					InstanceID:    "test-instanceID",
 					LocalHostname: "test-localhostname",
 				},
-				UserDataPath: "/path/to/some/file",
+				UserData: "/path/to/some/file",
 			},
 			templatePath:    "meta-data.tmpl",
 			expectError:     false,
@@ -161,7 +161,7 @@ func TestExecuteTemplate(t *testing.T) {
 				MetaData: MetaData{
 					LocalHostname: "test-localhostname",
 				},
-				UserDataPath: "some/path/to/file",
+				UserData: "some/path/to/file",
 			},
 			templatePath:    "user-data.tmpl",
 			expectError:     false,
@@ -242,7 +242,7 @@ bootcmd:
 					BootCMD: []string{"bootcmd1 arg arg", "bootcmd2 arg arg"},
 					RunCMD:  []string{"cmd1 arg arg", "cmd2 arg arg"},
 				},
-				UserDataPath: "/some/path/to/file",
+				UserData: "/some/path/to/file",
 			},
 			templatePath: "vendor-data.tmpl",
 			expectError:  false,

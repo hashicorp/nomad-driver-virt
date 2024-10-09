@@ -28,9 +28,9 @@ var (
 )
 
 type Config struct {
-	VendorData   VendorData
-	MetaData     MetaData
-	UserDataPath string
+	VendorData VendorData
+	MetaData   MetaData
+	UserData   string
 }
 
 type MetaData struct {
@@ -77,6 +77,14 @@ func NewController(logger hclog.Logger) (*Controller, error) {
 	return c, nil
 }
 
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return !info.IsDir()
+}
+
 // Apply takes the cloud init configuration and writes it into an iso (ISO-9660) disk.
 // In order for cloud init to pick it up, the meta-data, user-data and vendor-data
 // files need to be in the root of the disk, and it needs to be labeled with
@@ -103,18 +111,23 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 	c.logger.Debug("vendor-data", "contents", vdb.String())
 
 	var udb io.ReadWriter
-	if ci.UserDataPath != "" {
-		udf, err := os.Open(ci.UserDataPath)
-		if err != nil {
-			return fmt.Errorf("cloudinit: unable to open user data file %s: %w",
-				ci.MetaData.InstanceID, err)
-		}
-		defer udf.Close()
+	if ci.UserData != "" {
 		// TODO: Verify the provided user data is valid, otherwise cloudinit will
 		// fail to pick up the vendor data as well, since they are merged into
 		// one big file inside the VM.
-		udb = udf
+		if fileExists(ci.UserData) {
+			udf, err := os.Open(ci.UserData)
+			if err != nil {
+				return fmt.Errorf("cloudinit: unable to open user data file %s: %w",
+					ci.MetaData.InstanceID, err)
+			}
+			defer udf.Close()
 
+			udb = udf
+		} else {
+			// If the provided userdata is not a path, asume it is a string containing the userdata.
+			udb = bytes.NewBufferString(ci.UserData)
+		}
 	} else {
 		udb = &bytes.Buffer{}
 		err = executeTemplate(ci, userDataTemplate, udb)
@@ -122,7 +135,6 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 			return fmt.Errorf("cloudinit: unable to execute user data template %s: %w",
 				ci.MetaData.InstanceID, err)
 		}
-
 	}
 
 	l := []Entry{

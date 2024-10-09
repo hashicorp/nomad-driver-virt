@@ -1,5 +1,5 @@
 #cloud-config
-{{- if .UserDataPath}}
+{{- if .UserData}}
 merge_how:
  - name: list
    settings: [prepend]
