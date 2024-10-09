@@ -120,7 +120,7 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 			},
 		},
 		OnPoweroff: "destroy",
-		OnReboot:   "destroy",
+		OnReboot:   "restart",
 		OnCrash:    "destroy",
 		PM: &libvirtxml.DomainPM{
 			SuspendToMem: &libvirtxml.DomainPMPolicy{
