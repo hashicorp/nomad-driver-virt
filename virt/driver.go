@@ -726,11 +726,6 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 			handle.Config.ID, err)
 	}
 
-	var driverConfig TaskConfig
-	if err := taskState.TaskConfig.DecodeDriverConfig(&driverConfig); err != nil {
-		return fmt.Errorf("virt: failed to decode driver config %s: %v", handle.Config.ID, err)
-	}
-
 	h := &taskHandle{
 		name:        domainNameFromTaskID(handle.Config.ID),
 		logger:      d.logger.Named("handle").With(handle.Config.AllocID),
