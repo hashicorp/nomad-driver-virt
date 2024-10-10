@@ -10,6 +10,8 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
+	"regexp"
 	"text/template"
 
 	"github.com/hashicorp/go-hclog"
@@ -25,6 +27,8 @@ var (
 	vendorDataTemplate = "vendor-data.tmpl"
 	userDataTemplate   = "user-data.tmpl"
 	metaDataTemplate   = "meta-data.tmpl"
+
+	validFilenamePattern = `^[^<>:"/\\|?*\x00-\x1F]+$`
 )
 
 type Config struct {
@@ -66,23 +70,37 @@ type MountFileConfig struct {
 }
 
 type Controller struct {
-	logger hclog.Logger
+	logger          hclog.Logger
+	fileNamePattern *regexp.Regexp
 }
 
 func NewController(logger hclog.Logger) (*Controller, error) {
+	re := regexp.MustCompile(validFilenamePattern)
 	c := &Controller{
-		logger: logger.Named("cloud-init"),
+		logger:          logger.Named("cloud-init"),
+		fileNamePattern: re,
 	}
 
 	return c, nil
 }
 
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
+// isValidFilePathSyntax checks if the string has a valid file path syntax.
+func (c *Controller) isValidFilePathSyntax(filePath string) bool {
+	if !filepath.IsAbs(filePath) && filePath == "" {
 		return false
 	}
-	return !info.IsDir()
+
+	_, fileName := filepath.Split(filePath)
+	if fileName == "" {
+		return false
+	}
+
+	// On Unix-based systems, the only invalid character in a file name is '/'
+	if !c.fileNamePattern.MatchString(fileName) {
+		return false
+	}
+
+	return true
 }
 
 // Apply takes the cloud init configuration and writes it into an iso (ISO-9660) disk.
@@ -111,11 +129,11 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 	c.logger.Debug("vendor-data", "contents", vdb.String())
 
 	var udb io.ReadWriter
+	// TODO: Verify the provided user data is valid, otherwise cloudinit will
+	// fail to pick up the vendor data as well, since they are merged into
+	// one big file inside the VM.
 	if ci.UserData != "" {
-		// TODO: Verify the provided user data is valid, otherwise cloudinit will
-		// fail to pick up the vendor data as well, since they are merged into
-		// one big file inside the VM.
-		if fileExists(ci.UserData) {
+		if c.isValidFilePathSyntax(ci.UserData) {
 			udf, err := os.Open(ci.UserData)
 			if err != nil {
 				return fmt.Errorf("cloudinit: unable to open user data file %s: %w",

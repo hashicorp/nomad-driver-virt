@@ -14,8 +14,23 @@ import (
 	"github.com/shoenig/test/must"
 )
 
-func TestWriteConfigToISO(t *testing.T) {
+const validUserDataString = `
+#cloud-config
 
+ca_certs:
+  remove_defaults: true
+  trusted: 
+  - |
+   -----BEGIN CERTIFICATE-----
+   YOUR-ORGS-TRUSTED-CA-CERT-HERE
+   -----END CERTIFICATE-----
+  - |
+   -----BEGIN CERTIFICATE-----
+   YOUR-ORGS-TRUSTED-CA-CERT-HERE
+   -----END CERTIFICATE-----
+`
+
+func Test_WriteConfigToISO(t *testing.T) {
 	// Create temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "cloudinit_test")
 	must.NoError(t, err)
@@ -73,6 +88,19 @@ func TestWriteConfigToISO(t *testing.T) {
 			},
 			expectError: true,
 		},
+		{
+			name: "User data string",
+			cloudInit: &Config{
+				MetaData: MetaData{
+					LocalHostname: "test-localhost",
+				},
+				VendorData: VendorData{
+					Password: "password",
+				},
+				UserData: validUserDataString,
+			},
+			expectError: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -94,7 +122,6 @@ func TestWriteConfigToISO(t *testing.T) {
 			} else {
 				must.NoError(t, err)
 				must.FileExists(t, isoPath)
-
 			}
 		})
 	}
@@ -293,6 +320,50 @@ bootcmd:
 				must.NoError(t, err)
 				must.StrContains(t, tt.expectedContent, out.String())
 			}
+		})
+	}
+}
+
+func Test_IsValidPathSyntax(t *testing.T) {
+	testCases := []struct {
+		name   string
+		path   string
+		result bool
+	}{
+		{
+			name:   "Unix absolute path",
+			path:   "/valid/path/to/file.txt",
+			result: true,
+		},
+		{
+			name:   "Invalid file name (contains invalid characters)",
+			path:   `//`,
+			result: false,
+		},
+		{
+			name:   "Double slash in path (valid, but not ideal)",
+			path:   "/invalid//path/file",
+			result: true,
+		},
+		{
+			name:   "Empty path", // This wont happen in the code, as this function is only called on non empty strings, but just in case.
+			path:   "",
+			result: false,
+		},
+		{
+			name:   "User data string",
+			path:   validUserDataString,
+			result: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewController(hclog.NewNullLogger())
+			must.NoError(t, err)
+
+			r := c.isValidFilePathSyntax(tc.path)
+			must.True(t, tc.result == r)
 		})
 	}
 }
