@@ -337,6 +337,70 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	must.Zero(t, mockVirtualizer.getNumberOfVMs())
 }
 
+func TestVirtDriver_Start_Recover_Destroy(t *testing.T) {
+	ci.Parallel(t)
+
+	tempDir, err := os.MkdirTemp("", "exampledir-*")
+	must.NoError(t, err)
+	defer os.RemoveAll(tempDir)
+
+	mockImage, err := os.CreateTemp(tempDir, "test-*.img")
+	must.NoError(t, err)
+	defer os.Remove(mockImage.Name())
+
+	allocID := uuid.Generate()
+	taskCfg := newTaskConfig(mockImage.Name())
+
+	taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
+	task := &drivers.TaskConfig{
+		ID:        taskID,
+		AllocID:   allocID,
+		Resources: createBasicResources(),
+	}
+
+	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
+
+	mockVirtualizer := &mockVirtualizar{}
+
+	mockTaskGetter := &mockTaskGetter{
+		info: &domain.Info{
+			State: libvirt.DomainRunning,
+		},
+	}
+
+	mockImageHandler := &mockImageHandler{
+		imageFormat: "tif",
+	}
+
+	d := virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
+	cleanup := d.MkAllocDir(task, true)
+	defer cleanup()
+
+	dth, _, err := d.StartTask(task)
+	must.NoError(t, err)
+
+	must.One(t, dth.Version)
+	must.One(t, mockVirtualizer.getNumberOfVMs())
+
+	callConfig := mockVirtualizer.getPassedConfig()
+	// Assert the correct configuration was passed on to the virtualizer.
+	must.Eq(t, "task-name-0000000", callConfig.Name)
+
+	ts, err := d.InspectTask(task.ID)
+	must.NoError(t, err)
+	must.Eq(t, drivers.TaskStateRunning, ts.State)
+	must.StrContains(t, task.ID, ts.ID)
+
+	d = virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
+
+	err = d.RecoverTask(dth)
+	must.NoError(t, err)
+
+	err = d.DestroyTask(task.ID, true)
+	must.NoError(t, err)
+	must.Zero(t, mockVirtualizer.getNumberOfVMs())
+}
+
 func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
 
 	tempDir, err := os.MkdirTemp("", "exampledir-*")
