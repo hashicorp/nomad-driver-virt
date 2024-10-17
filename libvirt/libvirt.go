@@ -338,7 +338,7 @@ func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 			Password: config.Password,
 			SSHKey:   config.SSHKey,
 		},
-		UserDataPath: config.CIUserData,
+		UserData: config.CIUserData,
 	}
 }
 
