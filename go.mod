@@ -13,7 +13,7 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/nomad v1.9.0
-	github.com/shoenig/test v1.11.0
+	github.com/shoenig/test v1.12.0
 	libvirt.org/go/libvirt v1.10009.0
 	libvirt.org/go/libvirtxml v1.10009.0
 )
