@@ -133,6 +133,7 @@ type DomainGetter interface {
 type ImageHandler interface {
 	GetImageFormat(basePath string) (string, error)
 	CreateThinCopy(basePath string, destination string, sizeM int64) error
+	RemoveCopy(basePath string) error
 }
 
 type VirtDriverPlugin struct {
@@ -374,6 +375,13 @@ func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
 		return fmt.Errorf("virt: failed to destroy task network: %w", err)
 	}
 
+	diskPath := filepath.Join(d.dataDir, taskName+".img")
+	if fileExists(diskPath) {
+		if err := d.imageHandler.RemoveCopy(diskPath); err != nil {
+			d.logger.Warn("unable to remove disk image")
+		}
+	}
+
 	d.tasks.Delete(taskName)
 
 	return nil
@@ -602,7 +610,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	if driverConfig.UseThinCopy {
 		copyPath := filepath.Join(d.dataDir, taskName+".img")
-		d.logger.Info("creating thin copy at", "path", copyPath) // TODO: Put back at info
+		d.logger.Info("creating thin copy at", "path", copyPath)
 
 		if err := d.imageHandler.CreateThinCopy(diskImagePath, copyPath,
 			cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
