@@ -273,7 +273,15 @@ virsh list
 ```
 ## Debugging a VM
 
-Sometimes things dont go as plan and extra tools are necessary to find the problem.
+### Before starting
+
+If running a job for the first time, you run into errors, remember to verify the runtime [Runtime dependencies](#runtime-dependencies).
+
+It is important to know that to protect the host machine from guests overusing the disk, managed vm don't have write access to the Nomad filesystem. 
+
+If Nomad is not running as root, the permissions for the directories used by both Nomad and the virt driver need to be adjusted.
+
+Once the vm is running things still don't go as plan and extra tools are necessary to find the problem.
 Here are some strategies to debug a failing VM:
 
 ### Connecting to a VM
