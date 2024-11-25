@@ -129,6 +129,7 @@ lsmod | grep -E '(kvm_intel|kvm_amd)'
 
 If the result is empty for either call, the machine does not support virtualization and the nomad client wont be able to run any virtualization workload.
 
+3. Verify permissions:
 `Nomad` runs as root, add the user `root` and the group `root` to the [QEMU configuration](https://libvirt.org/drvqemu.html#posix-users-groups) to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restarted after adding the qemu user/group configuration:
 
 ```
@@ -272,7 +273,15 @@ virsh list
 ```
 ## Debugging a VM
 
-Sometimes things dont go as plan and extra tools are necessary to find the problem.
+### Before starting
+
+If running a job for the first time, you run into errors, remember to verify the runtime [Runtime dependencies](#runtime-dependencies).
+
+It is important to know that to protect the host machine from guests overusing the disk, managed vm don't have write access to the Nomad filesystem. 
+
+If Nomad is not running as root, the permissions for the directories used by both Nomad and the virt driver need to be adjusted.
+
+Once the vm is running things still don't go as plan and extra tools are necessary to find the problem.
 Here are some strategies to debug a failing VM:
 
 ### Connecting to a VM
