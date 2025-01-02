@@ -81,7 +81,7 @@ func TestStartDomain(t *testing.T) {
 		name              string
 		domainName        string
 		removeConfigFiles bool
-		ciUserDataPath    string
+		ciUserData        string
 		expectError       error
 		expectedCIConfig  *cloudinit.Config
 		ciError           error
@@ -91,7 +91,7 @@ func TestStartDomain(t *testing.T) {
 			name:              "domain_created_successfully_dont_remove_files_with_userdata",
 			domainName:        "domain-1",
 			removeConfigFiles: false,
-			ciUserDataPath:    "/path/to/user/data",
+			ciUserData:        "/path/to/user/data",
 			expectedCIConfig: &cloudinit.Config{
 				VendorData: cloudinit.VendorData{
 					Password: "test-password",
@@ -122,15 +122,15 @@ func TestStartDomain(t *testing.T) {
 						},
 					},
 				},
-				MetaData:     cloudinit.MetaData{InstanceID: "domain-1", LocalHostname: "test-hostname"},
-				UserDataPath: "/path/to/user/data",
+				MetaData: cloudinit.MetaData{InstanceID: "domain-1", LocalHostname: "test-hostname"},
+				UserData: "/path/to/user/data",
 			},
 		},
 		{
 			name:              "domain_created_successfully_remove_files_with_userdata",
 			domainName:        "domain-2",
 			removeConfigFiles: true,
-			ciUserDataPath:    "/path/to/user/data",
+			ciUserData:        "/path/to/user/data",
 			expectedCIConfig: &cloudinit.Config{
 				VendorData: cloudinit.VendorData{
 					Password: "test-password",
@@ -164,7 +164,7 @@ func TestStartDomain(t *testing.T) {
 				MetaData: cloudinit.MetaData{
 					InstanceID:    "domain-2",
 					LocalHostname: "test-hostname"},
-				UserDataPath: "/path/to/user/data",
+				UserData: "/path/to/user/data",
 			},
 		},
 		{
@@ -215,7 +215,7 @@ func TestStartDomain(t *testing.T) {
 				Password:          "test-password",
 				CMDs:              []string{"cmd arg arg", "cmd arg arg"},
 				BOOTCMDs:          []string{"cmd arg arg", "cmd arg arg"},
-				CIUserData:        tt.ciUserDataPath,
+				CIUserData:        tt.ciUserData,
 				Mounts: []domain.MountFileConfig{
 					{
 						Source:      "/mount/source/one",
