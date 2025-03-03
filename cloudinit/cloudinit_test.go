@@ -14,8 +14,23 @@ import (
 	"github.com/shoenig/test/must"
 )
 
-func TestWriteConfigToISO(t *testing.T) {
+const validUserDataString = `
+#cloud-config
 
+ca_certs:
+  remove_defaults: true
+  trusted: 
+  - |
+   -----BEGIN CERTIFICATE-----
+   YOUR-ORGS-TRUSTED-CA-CERT-HERE
+   -----END CERTIFICATE-----
+  - |
+   -----BEGIN CERTIFICATE-----
+   YOUR-ORGS-TRUSTED-CA-CERT-HERE
+   -----END CERTIFICATE-----
+`
+
+func Test_WriteConfigToISO(t *testing.T) {
 	// Create temporary directory for testing
 	tempDir, err := os.MkdirTemp("", "cloudinit_test")
 	must.NoError(t, err)
@@ -29,13 +44,13 @@ func TestWriteConfigToISO(t *testing.T) {
 	must.NoError(t, err)
 
 	tests := []struct {
-		name         string
-		cloudInit    *Config
-		userDataPath string
-		expectError  bool
+		name        string
+		cloudInit   *Config
+		UserData    string
+		expectError bool
 	}{
 		{
-			name: "Valid CloudInit without UserDataPath",
+			name: "Valid CloudInit without UserData",
 			cloudInit: &Config{
 				MetaData: MetaData{
 					LocalHostname: "test-localhost",
@@ -43,12 +58,12 @@ func TestWriteConfigToISO(t *testing.T) {
 				VendorData: VendorData{
 					Password: "password",
 				},
-				UserDataPath: "",
+				UserData: "",
 			},
 			expectError: false,
 		},
 		{
-			name: "Valid CloudInit with UserDataPath",
+			name: "Valid CloudInit with UserData",
 			cloudInit: &Config{
 				MetaData: MetaData{
 					LocalHostname: "test-localhost",
@@ -56,7 +71,7 @@ func TestWriteConfigToISO(t *testing.T) {
 				VendorData: VendorData{
 					Password: "password",
 				},
-				UserDataPath: userDataFile,
+				UserData: userDataFile,
 			},
 			expectError: false,
 		},
@@ -69,9 +84,22 @@ func TestWriteConfigToISO(t *testing.T) {
 				VendorData: VendorData{
 					Password: "password",
 				},
-				UserDataPath: "invalid_userdata",
+				UserData: "invalid_userdata",
 			},
 			expectError: true,
+		},
+		{
+			name: "User data string",
+			cloudInit: &Config{
+				MetaData: MetaData{
+					LocalHostname: "test-localhost",
+				},
+				VendorData: VendorData{
+					Password: "password",
+				},
+				UserData: validUserDataString,
+			},
+			expectError: false,
 		},
 	}
 
@@ -94,7 +122,6 @@ func TestWriteConfigToISO(t *testing.T) {
 			} else {
 				must.NoError(t, err)
 				must.FileExists(t, isoPath)
-
 			}
 		})
 	}
@@ -138,7 +165,7 @@ func TestExecuteTemplate(t *testing.T) {
 					InstanceID:    "test-instanceID",
 					LocalHostname: "test-localhostname",
 				},
-				UserDataPath: "/path/to/some/file",
+				UserData: "/path/to/some/file",
 			},
 			templatePath:    "meta-data.tmpl",
 			expectError:     false,
@@ -161,7 +188,7 @@ func TestExecuteTemplate(t *testing.T) {
 				MetaData: MetaData{
 					LocalHostname: "test-localhostname",
 				},
-				UserDataPath: "some/path/to/file",
+				UserData: "some/path/to/file",
 			},
 			templatePath:    "user-data.tmpl",
 			expectError:     false,
@@ -242,7 +269,7 @@ bootcmd:
 					BootCMD: []string{"bootcmd1 arg arg", "bootcmd2 arg arg"},
 					RunCMD:  []string{"cmd1 arg arg", "cmd2 arg arg"},
 				},
-				UserDataPath: "/some/path/to/file",
+				UserData: "/some/path/to/file",
 			},
 			templatePath: "vendor-data.tmpl",
 			expectError:  false,
@@ -293,6 +320,50 @@ bootcmd:
 				must.NoError(t, err)
 				must.StrContains(t, tt.expectedContent, out.String())
 			}
+		})
+	}
+}
+
+func Test_IsValidPathSyntax(t *testing.T) {
+	testCases := []struct {
+		name   string
+		path   string
+		result bool
+	}{
+		{
+			name:   "Unix absolute path",
+			path:   "/valid/path/to/file.txt",
+			result: true,
+		},
+		{
+			name:   "Invalid file name (contains invalid characters)",
+			path:   `//`,
+			result: false,
+		},
+		{
+			name:   "Double slash in path (valid, but not ideal)",
+			path:   "/invalid//path/file",
+			result: true,
+		},
+		{
+			name:   "Empty path", // This wont happen in the code, as this function is only called on non empty strings, but just in case.
+			path:   "",
+			result: false,
+		},
+		{
+			name:   "User data string",
+			path:   validUserDataString,
+			result: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewController(hclog.NewNullLogger())
+			must.NoError(t, err)
+
+			r := c.isValidFilePathSyntax(tc.path)
+			must.True(t, tc.result == r)
 		})
 	}
 }
