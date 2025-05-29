@@ -319,7 +319,7 @@ Looking into these files can give a better understanding of any possible executi
 errors.
 
 If connecting to the terminal is not an option, it is possible to stop the job and
-mount the VM's disk to inspect it. If the `use_thin_image` option is used, the driver will create 
+mount the VM's disk to inspect it. If the `use_thin_copy` option is used, the driver will create 
 the disk image in the directory `${plugin_config.data_dir}/virt/vm-name.img`:
 
 ```
