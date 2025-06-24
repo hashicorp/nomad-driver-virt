@@ -30,7 +30,6 @@ job "virt-example" {
 
       config {
         image                           = "local/focal-server-cloudimg-amd64.img"
-        primary_disk_size               = 26000
         use_thin_copy                   = true
         default_user_password           = "password"
         cmds                            = ["touch /home/ubuntu/file.txt"]

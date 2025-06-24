@@ -33,7 +33,6 @@ var (
 	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 		"network_interface":               net.NetworkInterfaceHCLSpec(),
 		"use_thin_copy":                   hclspec.NewAttr("use_thin_copy", "bool", false),
-		"primary_disk_size":               hclspec.NewAttr("primary_disk_size", "number", true),
 		"image":                           hclspec.NewAttr("image", "string", true),
 		"hostname":                        hclspec.NewAttr("hostname", "string", false),
 		"user_data":                       hclspec.NewAttr("user_data", "string", false),

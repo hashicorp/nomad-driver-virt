@@ -53,7 +53,6 @@ job "python-server" {
 
       config {
         image                 = "local/focal-server-cloudimg-amd64.img"
-        primary_disk_size     = 10000
         use_thin_copy         = true
         default_user_password = "password"
         cmds                  = ["python3 -m http.server 8000"]
@@ -175,8 +174,6 @@ plugin "nomad-driver-virt" {
 * **default_user_password** - Initial password to be configured for the default user on the newly created VM, it will have to be updated on first connect.
 * **default_user_authorized_ssh_key** - SSH public key that will be added to the SSH configuration for the default user of the cloud image distribution.
 * **user_data** - Path to a cloud-init compliant user data file to be used as the user-data for the cloud-init configuration.
-* **primary_disk_size** - Disk space to assign to the VM, bear in mind it will fit the
-VM's OS.
 
 Regarding the resources, currently the driver has support for cpuSets or cores and memory.
 Every core will be treated as a vcpu.
@@ -193,7 +190,6 @@ artifact {
 
 config {
   image                           = "local/focal-server-cloudimg-amd64.img"
-  primary_disk_size               = 9000
   use_thin_copy                   = true
   default_user_password           = "password"
   cmds                            = ["touch /home/ubuntu/file.txt"]

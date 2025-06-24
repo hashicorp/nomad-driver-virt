@@ -46,7 +46,6 @@ func TestConfig_Task(t *testing.T) {
 	validHCL := `
   config {
 	image = "/path/to/image/here"
-	primary_disk_size = 26000
 	cmds = ["redis"]
 	hostname = "test-hostname"
 	user_data = "/path/to/user/data"
@@ -117,7 +116,6 @@ func Test_taskConfigSpec(t *testing.T) {
 			inputConfig: `
 config {
   image = "/path/to/image/here"
-  primary_disk_size = 26000
   os {
     arch    = "x86_64"
     machine = "pc-i440fx-jammy"
