@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	minDiskMB     = 2000
 	minMemoryMB   = 500
 	maxNameLength = 63 // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 )
@@ -68,7 +67,6 @@ type Config struct {
 	OsVariant         *OSVariant
 	BaseImage         string
 	DiskFmt           string
-	PrimaryDiskSize   uint64
 	HostName          string
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
@@ -94,10 +92,6 @@ func (dc *Config) Validate(allowedPaths []string) error {
 		if !isAllowedImagePath(allowedPaths, dc.BaseImage) {
 			mErr = multierror.Append(mErr, ErrPathNotAllowed)
 		}
-	}
-
-	if dc.PrimaryDiskSize < minDiskMB {
-		mErr = multierror.Append(mErr, ErrNotEnoughDisk)
 	}
 
 	if dc.Memory < minMemoryMB {
@@ -136,7 +130,6 @@ func (dc *Config) Copy() *Config {
 		CPUs:              dc.CPUs,
 		BaseImage:         dc.BaseImage,
 		DiskFmt:           dc.DiskFmt,
-		PrimaryDiskSize:   dc.PrimaryDiskSize,
 		NetworkInterfaces: slices.Clone(dc.NetworkInterfaces),
 		HostName:          dc.HostName,
 		Mounts:            slices.Clone(dc.Mounts),

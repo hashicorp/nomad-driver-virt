@@ -201,7 +201,6 @@ func newTaskConfig(image string) TaskConfig {
 		DefaultUserSSHKey:   "ssh-ed666 randomkey",
 		DefaultUserPassword: "password",
 		UseThinCopy:         false,
-		PrimaryDiskSize:     2666,
 		OS: &OS{
 			Arch:    "arch",
 			Machine: "machine",
@@ -263,7 +262,6 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	must.StrContains(t, "machine", callConfig.OsVariant.Machine)
 	must.StrContains(t, mockImage.Name(), callConfig.BaseImage)
 	must.StrContains(t, "tif", callConfig.DiskFmt)
-	must.Eq(t, 2666, callConfig.PrimaryDiskSize)
 	must.StrContains(t, "nomad-task-name-0000000", callConfig.HostName)
 	must.Eq(t, 3, len(callConfig.Mounts))
 	must.Eq(t, domain.MountFileConfig{

@@ -22,7 +22,7 @@ var (
 			"user":     hclspec.NewAttr("user", "string", false),
 			"password": hclspec.NewAttr("password", "string", false),
 		})),
-		"data_dir":     hclspec.NewAttr("data_dir", "string", false),
+		"data_dir":    hclspec.NewAttr("data_dir", "string", false),
 		"image_paths": hclspec.NewAttr("image_paths", "list(string)", false),
 	})
 
@@ -86,7 +86,6 @@ type TaskConfig struct {
 	DefaultUserSSHKey   string         `codec:"default_user_authorized_ssh_key"`
 	DefaultUserPassword string         `codec:"default_user_password"`
 	UseThinCopy         bool           `codec:"use_thin_copy"`
-	PrimaryDiskSize     uint64         `codec:"primary_disk_size"`
 	// The list of network interfaces that should be added to the VM.
 	net.NetworkInterfacesConfig `codec:"network_interface"`
 }
