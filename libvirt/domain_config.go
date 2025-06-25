@@ -5,6 +5,8 @@ package libvirt
 
 import (
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	disks2 "github.com/hashicorp/nomad-driver-virt/libvirt/disks"
+	"slices"
 
 	"libvirt.org/go/libvirtxml"
 )
@@ -13,22 +15,6 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 	zero := uint(0)
 
 	disks := []libvirtxml.DomainDisk{
-		{
-			Device: "disk",
-			Driver: &libvirtxml.DomainDiskDriver{
-				Name: "qemu",
-				Type: config.DiskFmt,
-			},
-			Source: &libvirtxml.DomainDiskSource{
-				File: &libvirtxml.DomainDiskSourceFile{
-					File: config.BaseImage,
-				},
-			},
-			Target: &libvirtxml.DomainDiskTarget{
-				Dev: "vda",
-				Bus: "virtio",
-			},
-		},
 		{
 			Device: "cdrom",
 			Driver: &libvirtxml.DomainDiskDriver{
@@ -46,8 +32,9 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 			},
 		},
 	}
+	disks = slices.Concat(disks, disks2.ParseDisks(config.DisksConfig))
 
-	mounts := []libvirtxml.DomainFilesystem{}
+	var mounts []libvirtxml.DomainFilesystem
 	for _, m := range config.Mounts {
 
 		var ro *libvirtxml.DomainFilesystemReadOnly
@@ -79,7 +66,7 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 		osType.Machine = config.OsVariant.Machine
 	}
 
-	interfaces := []libvirtxml.DomainInterface{}
+	var interfaces []libvirtxml.DomainInterface
 	if config.NetworkInterfaces != nil {
 		for _, networkInterface := range config.NetworkInterfaces {
 			if networkInterface.Bridge != nil {
