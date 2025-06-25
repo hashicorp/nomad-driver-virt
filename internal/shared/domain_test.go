@@ -13,10 +13,9 @@ func TestConfig_Validate(t *testing.T) {
 	allowedPath := "/allowed/path/"
 
 	validConfig := Config{
-		Name:      "test-domain",
-		CPUs:      2,
-		Memory:    600,
-		BaseImage: allowedPath + "image.qcow2",
+		Name:   "test-domain",
+		CPUs:   2,
+		Memory: 600,
 		OsVariant: &OSVariant{
 			Arch:    "x86_64",
 			Machine: "pc-i440fx-2.9",
@@ -34,35 +33,13 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "Image_path_not_alloweds",
-			config: Config{
-				Name:      validConfig.Name,
-				Memory:    validConfig.Memory,
-				CPUs:      validConfig.CPUs,
-				BaseImage: "/path/not/allowed/image.qcow2",
-				OsVariant: validConfig.OsVariant,
-			},
-			wantErr: multierror.Append(nil, ErrPathNotAllowed),
-		},
-		{
 			name: "Missing_domain_name",
 			config: Config{
 				Memory:    validConfig.Memory,
 				CPUs:      validConfig.CPUs,
-				BaseImage: validConfig.BaseImage,
 				OsVariant: validConfig.OsVariant,
 			},
 			wantErr: multierror.Append(nil, ErrEmptyName),
-		},
-		{
-			name: "Missing_base_image",
-			config: Config{
-				Name:      validConfig.Name,
-				Memory:    validConfig.Memory,
-				CPUs:      validConfig.CPUs,
-				OsVariant: validConfig.OsVariant,
-			},
-			wantErr: multierror.Append(nil, ErrMissingImage),
 		},
 		{
 			name: "Not_enough_memory",
@@ -70,7 +47,6 @@ func TestConfig_Validate(t *testing.T) {
 				Name:      validConfig.Name,
 				Memory:    2,
 				CPUs:      validConfig.CPUs,
-				BaseImage: validConfig.BaseImage,
 				OsVariant: validConfig.OsVariant,
 			},
 			wantErr: multierror.Append(nil, ErrNotEnoughMemory),
@@ -81,7 +57,6 @@ func TestConfig_Validate(t *testing.T) {
 				Name:      validConfig.Name,
 				Memory:    validConfig.Memory,
 				CPUs:      0,
-				BaseImage: validConfig.BaseImage,
 				OsVariant: validConfig.OsVariant,
 			},
 			wantErr: multierror.Append(nil, ErrNoCPUS),
@@ -89,10 +64,9 @@ func TestConfig_Validate(t *testing.T) {
 		{
 			name: "Incomplete_OS_variant",
 			config: Config{
-				Name:      validConfig.Name,
-				Memory:    validConfig.Memory,
-				CPUs:      validConfig.CPUs,
-				BaseImage: validConfig.BaseImage,
+				Name:   validConfig.Name,
+				Memory: validConfig.Memory,
+				CPUs:   validConfig.CPUs,
 				OsVariant: &OSVariant{
 					Arch:    "",
 					Machine: "",
@@ -108,8 +82,8 @@ func TestConfig_Validate(t *testing.T) {
 					Machine: "",
 				},
 			},
-			wantErr: multierror.Append(nil, ErrEmptyName, ErrMissingImage,
-				ErrNotEnoughDisk, ErrNotEnoughMemory, ErrIncompleteOSVariant,
+			wantErr: multierror.Append(nil, ErrEmptyName,
+				ErrNotEnoughMemory, ErrIncompleteOSVariant,
 				ErrNoCPUS),
 		},
 	}

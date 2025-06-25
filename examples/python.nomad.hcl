@@ -25,7 +25,6 @@ job "python-server" {
 
       config {
         image                 = "local/focal-server-cloudimg-amd64.img"
-        use_thin_copy         = true
         default_user_password = "password"
         cmds                  = ["python3 -m http.server 8000"]
 

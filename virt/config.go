@@ -4,6 +4,7 @@
 package virt
 
 import (
+	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"time"
 
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
@@ -32,8 +33,6 @@ var (
 	// when a job is submitted.
 	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 		"network_interface":               net.NetworkInterfaceHCLSpec(),
-		"use_thin_copy":                   hclspec.NewAttr("use_thin_copy", "bool", false),
-		"image":                           hclspec.NewAttr("image", "string", true),
 		"hostname":                        hclspec.NewAttr("hostname", "string", false),
 		"user_data":                       hclspec.NewAttr("user_data", "string", false),
 		"default_user_authorized_ssh_key": hclspec.NewAttr("default_user_authorized_ssh_key", "string", false),
@@ -42,6 +41,11 @@ var (
 		"os": hclspec.NewBlock("os", false, hclspec.NewObject(map[string]*hclspec.Spec{
 			"arch":    hclspec.NewAttr("arch", "string", false),
 			"machine": hclspec.NewAttr("machine", "string", false),
+		})),
+
+		"file_disk": hclspec.NewBlockMap("file_disk", []string{"label"}, hclspec.NewObject(map[string]*hclspec.Spec{
+			"path": hclspec.NewAttr("path", "string", true),
+			"fmt":  hclspec.NewAttr("fmt", "string", true),
 		})),
 	})
 
@@ -76,7 +80,6 @@ var (
 // TaskConfig contains configuration information for a task that runs within
 // this plugin.
 type TaskConfig struct {
-	ImagePath           string         `codec:"image"`
 	Hostname            string         `codec:"hostname"`
 	OS                  *OS            `codec:"os"`
 	UserData            string         `codec:"user_data"`
@@ -84,9 +87,9 @@ type TaskConfig struct {
 	CMDs                []string       `codec:"cmds"`
 	DefaultUserSSHKey   string         `codec:"default_user_authorized_ssh_key"`
 	DefaultUserPassword string         `codec:"default_user_password"`
-	UseThinCopy         bool           `codec:"use_thin_copy"`
 	// The list of network interfaces that should be added to the VM.
 	net.NetworkInterfacesConfig `codec:"network_interface"`
+	domain.FileDisks            `codec:"file_disk"`
 }
 
 type OS struct {

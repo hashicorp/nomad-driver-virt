@@ -27,8 +27,6 @@ var (
 	validLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
 
 	ErrEmptyName           = errors.New("domain name can not be empty")
-	ErrMissingImage        = errors.New("image path can not be empty")
-	ErrNotEnoughDisk       = errors.New("not enough disk space assigned to task")
 	ErrNoCPUS              = errors.New("no cpus configured, use resources.cores to assign cores in the job spec")
 	ErrNotEnoughMemory     = errors.New("not enough memory assigned to task")
 	ErrIncompleteOSVariant = errors.New("provided os information is incomplete: arch and machine are mandatory ")
@@ -65,8 +63,6 @@ type Config struct {
 	CPUset            string
 	CPUs              uint
 	OsVariant         *OSVariant
-	BaseImage         string
-	DiskFmt           string
 	HostName          string
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
@@ -77,6 +73,8 @@ type Config struct {
 	BOOTCMDs          []string
 	CIUserData        string
 
+	FileDisks *FileDisks
+
 	NetworkInterfaces net.NetworkInterfacesConfig
 }
 
@@ -84,14 +82,6 @@ func (dc *Config) Validate(allowedPaths []string) error {
 	var mErr *multierror.Error
 	if dc.Name == "" {
 		mErr = multierror.Append(mErr, ErrEmptyName)
-	}
-
-	if dc.BaseImage == "" {
-		mErr = multierror.Append(mErr, ErrMissingImage)
-	} else {
-		if !isAllowedImagePath(allowedPaths, dc.BaseImage) {
-			mErr = multierror.Append(mErr, ErrPathNotAllowed)
-		}
 	}
 
 	if dc.Memory < minMemoryMB {
@@ -113,6 +103,11 @@ func (dc *Config) Validate(allowedPaths []string) error {
 		mErr = multierror.Append(mErr, ErrInvalidHostName)
 	}
 
+	// todo
+	if dc.FileDisks == nil {
+		dc.FileDisks = &FileDisks{}
+	}
+
 	if err := dc.NetworkInterfaces.Validate(); err != nil {
 		mErr = multierror.Append(mErr, err)
 	}
@@ -128,8 +123,6 @@ func (dc *Config) Copy() *Config {
 		Memory:            dc.Memory,
 		CPUset:            dc.CPUset,
 		CPUs:              dc.CPUs,
-		BaseImage:         dc.BaseImage,
-		DiskFmt:           dc.DiskFmt,
 		NetworkInterfaces: slices.Clone(dc.NetworkInterfaces),
 		HostName:          dc.HostName,
 		Mounts:            slices.Clone(dc.Mounts),
