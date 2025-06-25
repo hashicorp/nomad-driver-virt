@@ -44,6 +44,8 @@ func TestConfig_Task(t *testing.T) {
 	expectedFileDiskLabel := "vda"
 	expectedFileDiskFmt := "qcow2"
 	expectedFileDiskPath := "/path/to/image"
+	expectedRbdDiskLabel := "vdb"
+	expectedRbdDiskName := "pool/image"
 
 	validHCL := `
   config {
@@ -61,6 +63,13 @@ func TestConfig_Task(t *testing.T) {
 			path = "/path/to/image"
 			fmt = "qcow2"
 		}
+		rbd "vdb" {
+			name = "pool/image"
+			host "ceph01.example.org" {
+				port = 6789
+			}
+			host "ceph02.example.org" {}
+		}
 	}
   }
 `
@@ -76,9 +85,12 @@ func TestConfig_Task(t *testing.T) {
 	must.StrContains(t, expectedARCH, tc.OS.Arch)
 	must.StrContains(t, expectedMachine, tc.OS.Machine)
 	must.StrContains(t, expectedMachine, tc.OS.Machine)
+	must.NotNil(t, tc.DisksConfig)
 	must.MapContainsKey(t, *tc.DisksConfig.FileDisksConfig, expectedFileDiskLabel)
 	must.StrContains(t, expectedFileDiskFmt, (*tc.DisksConfig.FileDisksConfig)[expectedFileDiskLabel].Fmt)
 	must.StrContains(t, expectedFileDiskPath, (*tc.DisksConfig.FileDisksConfig)[expectedFileDiskLabel].Path)
+	must.MapContainsKey(t, *tc.DisksConfig.RbdDisksConfig, expectedRbdDiskLabel)
+	must.StrContains(t, (*tc.DisksConfig.RbdDisksConfig)[expectedRbdDiskLabel].Name, expectedRbdDiskName)
 }
 
 func TestConfig_Plugin(t *testing.T) {
