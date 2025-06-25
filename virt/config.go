@@ -23,8 +23,9 @@ var (
 			"user":     hclspec.NewAttr("user", "string", false),
 			"password": hclspec.NewAttr("password", "string", false),
 		})),
-		"data_dir":    hclspec.NewAttr("data_dir", "string", false),
-		"image_paths": hclspec.NewAttr("image_paths", "list(string)", false),
+		"data_dir":           hclspec.NewAttr("data_dir", "string", false),
+		"image_paths":        hclspec.NewAttr("image_paths", "list(string)", false),
+		"allowed_ceph_uuids": hclspec.NewAttr("allowed_ceph_uuids", "list(string)", false),
 	})
 
 	// taskConfigSpec is the specification of the plugin's configuration for

@@ -19,6 +19,14 @@ type DisksConfig struct {
 	*RbdDisksConfig  `codec:"rbd"`
 }
 
+func (cfg *DisksConfig) Validate(mErr *multierror.Error, allowedPaths []string, allowedCephUUIDs []string) {
+	if cfg == nil {
+		return
+	}
+	cfg.RbdDisksConfig.Validate(mErr, allowedPaths, allowedCephUUIDs)
+	cfg.FileDisksConfig.Validate(mErr, allowedPaths)
+}
+
 func (cfg *DisksConfig) Copy() *DisksConfig {
 	if cfg == nil {
 		return nil

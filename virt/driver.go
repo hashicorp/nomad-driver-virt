@@ -150,8 +150,9 @@ type VirtDriverPlugin struct {
 	// networkInit indicates whether the network subsystem has had its init
 	// function called. While the function should be idempotent, this helps
 	// avoid unnecessary calls and work.
-	networkInit  atomic.Bool
-	imageHandler ImageHandler
+	networkInit      atomic.Bool
+	imageHandler     ImageHandler
+	allowedCephUUIDs []string
 }
 
 // NewPlugin returns a new driver plugin
@@ -625,9 +626,10 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		SSHKey:            driverConfig.DefaultUserSSHKey,
 		Files:             []domain.File{createEnvsFile(cfg.Env)},
 		NetworkInterfaces: driverConfig.NetworkInterfacesConfig,
+		DisksConfig:       &driverConfig.DisksConfig,
 	}
 
-	if err := dc.Validate(allowedPaths); err != nil {
+	if err := dc.Validate(allowedPaths, d.allowedCephUUIDs); err != nil {
 		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
 	}
 

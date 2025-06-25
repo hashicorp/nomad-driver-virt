@@ -77,7 +77,7 @@ type Config struct {
 	NetworkInterfaces net.NetworkInterfacesConfig
 }
 
-func (dc *Config) Validate(allowedPaths []string) error {
+func (dc *Config) Validate(allowedPaths []string, allowedCephUUIDs []string) error {
 	var mErr *multierror.Error
 	if dc.Name == "" {
 		mErr = multierror.Append(mErr, ErrEmptyName)
@@ -100,6 +100,10 @@ func (dc *Config) Validate(allowedPaths []string) error {
 
 	if dc.HostName != "" && !IsValidLabel(dc.HostName) {
 		mErr = multierror.Append(mErr, ErrInvalidHostName)
+	}
+
+	if dc.DisksConfig != nil {
+		(*dc.DisksConfig).Validate(mErr, allowedPaths, allowedCephUUIDs)
 	}
 
 	if err := dc.NetworkInterfaces.Validate(); err != nil {
