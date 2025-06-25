@@ -226,7 +226,8 @@ func HclSpec() *hclspec.Spec {
 			"path": hclspec.NewAttr("path", "string", true),
 			"fmt":  hclspec.NewAttr("fmt", "string", false),
 		})),
-		"rbd": hclspec.NewBlockMap("rbd", []string{"name"}, hclspec.NewObject(map[string]*hclspec.Spec{
+		"rbd": hclspec.NewBlockMap("rbd", []string{"label"}, hclspec.NewObject(map[string]*hclspec.Spec{
+			"name":     hclspec.NewAttr("name", "string", true),
 			"fmt":      hclspec.NewAttr("fmt", "string", false),
 			"config":   hclspec.NewAttr("config", "string", false),
 			"snapshot": hclspec.NewAttr("snap", "string", false),
@@ -234,7 +235,7 @@ func HclSpec() *hclspec.Spec {
 				"username": hclspec.NewAttr("username", "string", false),
 				"uuid":     hclspec.NewAttr("uuid", "string", false),
 			})),
-			"hosts": hostSpec,
+			"host": hostSpec,
 		})),
 	}))
 }
