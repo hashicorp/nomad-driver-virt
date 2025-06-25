@@ -6,7 +6,7 @@ package domain
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"regexp"
 	"slices"
 	"strings"
@@ -73,8 +73,7 @@ type Config struct {
 	BOOTCMDs          []string
 	CIUserData        string
 
-	FileDisks *FileDisks
-
+	*disks.DisksConfig
 	NetworkInterfaces net.NetworkInterfacesConfig
 }
 
@@ -103,11 +102,6 @@ func (dc *Config) Validate(allowedPaths []string) error {
 		mErr = multierror.Append(mErr, ErrInvalidHostName)
 	}
 
-	// todo
-	if dc.FileDisks == nil {
-		dc.FileDisks = &FileDisks{}
-	}
-
 	if err := dc.NetworkInterfaces.Validate(); err != nil {
 		mErr = multierror.Append(mErr, err)
 	}
@@ -132,6 +126,10 @@ func (dc *Config) Copy() *Config {
 		CMDs:              slices.Clone(dc.CMDs),
 		BOOTCMDs:          slices.Clone(dc.BOOTCMDs),
 		CIUserData:        dc.CIUserData,
+	}
+
+	if dc.DisksConfig != nil {
+		copy.DisksConfig = dc.DisksConfig.Copy()
 	}
 
 	if dc.OsVariant != nil {
@@ -190,19 +188,4 @@ func ValidateHostName(name string) error {
 	}
 
 	return nil
-}
-
-func isParent(parent, path string) bool {
-	rel, err := filepath.Rel(parent, path)
-	return err == nil && !strings.HasPrefix(rel, "..")
-}
-
-func isAllowedImagePath(allowedPaths []string, imagePath string) bool {
-	for _, ap := range allowedPaths {
-		if isParent(ap, imagePath) {
-			return true
-		}
-	}
-
-	return false
 }

@@ -5,6 +5,8 @@ package libvirt
 
 import (
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	disks2 "github.com/hashicorp/nomad-driver-virt/libvirt/disks"
+	"slices"
 
 	"libvirt.org/go/libvirtxml"
 )
@@ -30,7 +32,7 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 			},
 		},
 	}
-	disks = append(disks, config.FileDisks.ToVirt()...)
+	disks = slices.Concat(disks, disks2.ParseDisks(config.DisksConfig))
 
 	var mounts []libvirtxml.DomainFilesystem
 	for _, m := range config.Mounts {

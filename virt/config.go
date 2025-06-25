@@ -4,7 +4,7 @@
 package virt
 
 import (
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"time"
 
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
@@ -42,11 +42,7 @@ var (
 			"arch":    hclspec.NewAttr("arch", "string", false),
 			"machine": hclspec.NewAttr("machine", "string", false),
 		})),
-
-		"file_disk": hclspec.NewBlockMap("file_disk", []string{"label"}, hclspec.NewObject(map[string]*hclspec.Spec{
-			"path": hclspec.NewAttr("path", "string", true),
-			"fmt":  hclspec.NewAttr("fmt", "string", true),
-		})),
+		"disks": disks.HclSpec(),
 	})
 
 	// capabilities indicates what optional features this driver supports
@@ -89,7 +85,7 @@ type TaskConfig struct {
 	DefaultUserPassword string         `codec:"default_user_password"`
 	// The list of network interfaces that should be added to the VM.
 	net.NetworkInterfacesConfig `codec:"network_interface"`
-	domain.FileDisks            `codec:"file_disk"`
+	disks.DisksConfig           `codec:"disks"`
 }
 
 type OS struct {

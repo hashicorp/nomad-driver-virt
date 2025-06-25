@@ -4,7 +4,7 @@
 package virt
 
 import (
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"testing"
 
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
@@ -56,9 +56,11 @@ func TestConfig_Task(t *testing.T) {
 		arch = "arm78"
 		machine = "R2D2"
 	}
-	file_disk "vda" {
-		path = "/path/to/image"
-		fmt = "qcow2"
+	disks {
+		file "vda" {
+			path = "/path/to/image"
+			fmt = "qcow2"
+		}
 	}
   }
 `
@@ -74,9 +76,9 @@ func TestConfig_Task(t *testing.T) {
 	must.StrContains(t, expectedARCH, tc.OS.Arch)
 	must.StrContains(t, expectedMachine, tc.OS.Machine)
 	must.StrContains(t, expectedMachine, tc.OS.Machine)
-	must.MapContainsKey(t, tc.FileDisks, expectedFileDiskLabel)
-	must.StrContains(t, expectedFileDiskFmt, tc.FileDisks[expectedFileDiskLabel].Fmt)
-	must.StrContains(t, expectedFileDiskPath, tc.FileDisks[expectedFileDiskLabel].Path)
+	must.MapContainsKey(t, *tc.DisksConfig.FileDisksConfig, expectedFileDiskLabel)
+	must.StrContains(t, expectedFileDiskFmt, (*tc.DisksConfig.FileDisksConfig)[expectedFileDiskLabel].Fmt)
+	must.StrContains(t, expectedFileDiskPath, (*tc.DisksConfig.FileDisksConfig)[expectedFileDiskLabel].Path)
 }
 
 func TestConfig_Plugin(t *testing.T) {
@@ -147,7 +149,7 @@ config {
 						},
 					},
 				},
-				FileDisks: domain.FileDisks{},
+				DisksConfig: disks.DisksConfig{},
 			},
 		},
 	}
