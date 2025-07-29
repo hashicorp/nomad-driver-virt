@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 
+	"github.com/diskfs/go-diskfs/backend/file"
 	"github.com/diskfs/go-diskfs/filesystem"
 	"github.com/diskfs/go-diskfs/filesystem/iso9660"
 )
@@ -28,20 +29,21 @@ func Write(isoPath, label string, layout []Entry) error {
 	if err != nil {
 		return err
 	}
-
 	defer isoFile.Close()
 
 	workdir, err := os.MkdirTemp("", "diskfs_iso")
 	if err != nil {
 		return err
 	}
+	defer os.RemoveAll(workdir)
 
 	if runtime.GOOS == "windows" {
 		// go-embed unfortunately needs unix path
 		workdir = filepath.ToSlash(workdir)
 	}
 
-	fs, err := iso9660.Create(isoFile, 0, 0, 0, workdir)
+	backend := file.New(isoFile, false)
+	fs, err := iso9660.Create(backend, 0, 0, 0, workdir)
 	if err != nil {
 		return err
 	}
@@ -61,7 +63,7 @@ func Write(isoPath, label string, layout []Entry) error {
 		return err
 	}
 
-	return isoFile.Close()
+	return nil
 }
 
 func writeFile(fs filesystem.FileSystem, pathStr string, r io.Reader) (int64, error) {
