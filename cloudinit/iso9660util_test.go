@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/diskfs/go-diskfs/backend/file"
 	"github.com/diskfs/go-diskfs/filesystem/iso9660"
 )
 
@@ -99,7 +100,8 @@ func TestWriteFile(t *testing.T) {
 			}
 			defer isoFile.Close()
 
-			fs, err := iso9660.Create(isoFile, 0, 0, 0, workdir)
+			backend := file.New(isoFile, false)
+			fs, err := iso9660.Create(backend, 0, 0, 0, workdir)
 			if err != nil {
 				t.Fatalf("failed to create iso filesystem: %v", err)
 			}
