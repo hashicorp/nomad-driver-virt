@@ -649,7 +649,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		taskConfig: cfg,
 		procState:  drivers.TaskStateRunning,
 		startedAt:  time.Now().Round(time.Millisecond),
-		logger:     d.logger.Named("handle").With(cfg.AllocID),
+		logger:     d.logger.Named("handle").With("alloc-id", cfg.AllocID),
 		taskGetter: d.taskGetter,
 		name:       taskName,
 	}
@@ -728,7 +728,7 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 
 	h := &taskHandle{
 		name:        domainNameFromTaskID(handle.Config.ID),
-		logger:      d.logger.Named("handle").With(handle.Config.AllocID),
+		logger:      d.logger.Named("handle").With("alloc-id", handle.Config.AllocID),
 		taskConfig:  taskState.TaskConfig,
 		startedAt:   taskState.StartedAt,
 		taskGetter:  d.taskGetter,
