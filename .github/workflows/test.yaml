@@ -1,7 +1,16 @@
 name: test
 
 on:
+  pull_request:
+    paths-ignore:
+      CHANGELOG.md
+      README.md
+      GNUMakefile
   push:
+    paths-ignore:
+      CHANGELOG.md
+      README.md
+      GNUMakefile
 
 jobs:
   mod:
