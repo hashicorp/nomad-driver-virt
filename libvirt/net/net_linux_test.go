@@ -165,6 +165,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 	// Test a correct and full request.
 	fullReq := net.VMStartedBuildRequest{
 		DomainName: "nomad-0ea818bc",
+		Hwaddrs:    []string{"52:54:00:1c:7c:14"},
 		NetConfig: &net.NetworkInterfacesConfig{
 			{
 				Bridge: &net.NetworkInterfaceBridgeConfig{
@@ -287,14 +288,28 @@ func TestController_discoverDHCPLeaseIP(t *testing.T) {
 
 	// Query for a domain that does not have a lease entry and ensure the
 	// timeout is triggered.
-	nonExistentResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "non-existent-domain", "default")
+	nonExistentResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "non-existent-domain",
+		"default", []string{"00:00:00:00:00:00"})
 	must.ErrorContains(t, err, "timeout reached discovering DHCP lease")
 	must.Eq(t, nonExistentResp, "")
 
 	// Query for a domain which does have a lease.
-	existentResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-0ea818bc", "default")
+	existentResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-0ea818bc",
+		"default", []string{"52:54:00:1c:7c:14"})
 	must.NoError(t, err)
 	must.Eq(t, existentResp, "192.168.122.58")
+
+	// Query for a domain whose MAC matches serveral leases
+	multiResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-3edc43aa",
+		"default", []string{"11:22:33:44:55:66"})
+	must.NoError(t, err)
+	must.Eq(t, multiResp, "192.168.122.65")
+
+	// Query for domain who MAC only matches expired lease
+	expiredResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-eabba892",
+		"default", []string{"66:55:44:33:22:11"})
+	must.ErrorContains(t, err, "timeout reached discovering DHCP lease")
+	must.Eq(t, expiredResp, "")
 }
 
 func TestController_configureIPTables(t *testing.T) {

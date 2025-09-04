@@ -29,6 +29,7 @@ type VMStartedBuildRequest struct {
 	DomainName string
 	NetConfig  *NetworkInterfacesConfig
 	Resources  *drivers.Resources
+	Hwaddrs    []string
 }
 
 // VMStartedBuildResponse is the response sent object once the network
