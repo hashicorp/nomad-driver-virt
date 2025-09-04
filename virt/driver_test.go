@@ -137,6 +137,10 @@ func (mv *mockVirtualizar) GetInfo() (domain.VirtualizerInfo, error) {
 	return domain.VirtualizerInfo{}, nil
 }
 
+func (mv *mockVirtualizar) GetNetworkInterfaces(name string) ([]domain.NetworkInterface, error) {
+	return []domain.NetworkInterface{}, nil
+}
+
 func createBasicResources() *drivers.Resources {
 	res := drivers.Resources{
 		NomadResources: &structs.AllocatedTaskResources{

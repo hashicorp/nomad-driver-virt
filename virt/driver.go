@@ -124,6 +124,7 @@ type Virtualizer interface {
 	StopDomain(name string) error
 	DestroyDomain(name string) error
 	GetInfo() (domain.VirtualizerInfo, error)
+	GetNetworkInterfaces(name string) ([]domain.NetworkInterface, error)
 }
 
 type DomainGetter interface {
@@ -645,6 +646,15 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
+	ifaces, err := d.virtualizer.GetNetworkInterfaces(dc.Name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to retrieve guest interfaces %s: %w", cfg.AllocID, err)
+	}
+	hwaddrs := make([]string, len(ifaces))
+	for i, iface := range ifaces {
+		hwaddrs[i] = iface.MAC
+	}
+
 	h := &taskHandle{
 		taskConfig: cfg,
 		procState:  drivers.TaskStateRunning,
@@ -658,9 +668,11 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	// response will contain our teardown spec, which gets stored in the task
 	// handle, so we can easily perform deletions.
 	netBuildReq := net.VMStartedBuildRequest{
-		DomainName: hostname,
+		DomainName: taskName,
+		Hostname:   hostname,
 		NetConfig:  &driverConfig.NetworkInterfacesConfig,
 		Resources:  cfg.Resources,
+		Hwaddrs:    hwaddrs,
 	}
 
 	// Build out the network now that the VM has been started.

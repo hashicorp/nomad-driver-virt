@@ -12,6 +12,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/shoenig/test/must"
 	"libvirt.org/go/libvirt"
 )
@@ -330,4 +331,36 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 
 	// The domain is present as inactive anymore.
 	must.Zero(t, info.InactiveDomains)
+}
+
+func Test_GetNetworkInterfaces(t *testing.T) {
+	// The "test:///default" uri connects to a mock hypervisor provided by libvirt
+	// to use for testing.
+	ld := New(context.Background(), hclog.NewNullLogger(),
+		WithConnectionURI("test:///default"), WithCIController(&cloudInitMock{}))
+	err := ld.Start(t.TempDir())
+	must.NoError(t, err)
+	defer ld.Close()
+
+	domainName := "test-nomad-domain"
+	err = ld.CreateDomain(&domain.Config{
+		RemoveConfigFiles: true,
+		Name:              domainName,
+		Memory:            66600,
+		CPUs:              6,
+		BaseImage:         "/path/to/test/image",
+		NetworkInterfaces: []*net.NetworkInterfaceConfig{
+			{
+				Bridge: &net.NetworkInterfaceBridgeConfig{
+					Name: "testbr0",
+				},
+			},
+		},
+	})
+	must.NoError(t, err)
+
+	interfaces, err := ld.GetNetworkInterfaces(domainName)
+	must.NoError(t, err)
+	must.Len(t, 1, interfaces)
+	must.StrContains(t, interfaces[0].MAC, ":")
 }
