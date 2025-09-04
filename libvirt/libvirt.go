@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
@@ -72,6 +73,7 @@ type driver struct {
 	dataDir  string
 	sp       *libvirt.StoragePool
 	opts     []Option
+	m        sync.Mutex
 }
 
 type Option func(*driver)
@@ -121,6 +123,29 @@ func newConnection(uri string, user string, pass string) (*libvirt.Connect, erro
 	virConn, err := libvirt.NewConnectWithAuth(uri, auth, 0)
 
 	return virConn, err
+}
+
+func (d *driver) connection() (*libvirt.Connect, error) {
+	d.m.Lock()
+	defer d.m.Unlock()
+	if d.conn != nil {
+		alive, err := d.conn.IsAlive()
+		if alive {
+			return d.conn, nil
+		}
+
+		if err != nil {
+			d.logger.Warn("error on connection alive check", "error", err)
+		}
+	}
+
+	var err error
+	d.conn, err = newConnection(d.uri, d.user, d.password)
+	if err != nil {
+		return nil, err
+	}
+
+	return d.conn, nil
 }
 
 func (d *driver) monitorCtx(ctx context.Context) {
@@ -191,12 +216,9 @@ func (d *driver) Start(dataDir string) error {
 		return fmt.Errorf("libvirt: unable to create data dir: %w", err)
 	}
 
-	if d.conn == nil {
-		conn, err := newConnection(d.uri, d.user, d.password)
-		if err != nil {
-			return err
-		}
-		d.conn = conn
+	conn, err := d.connection()
+	if err != nil {
+		return err
 	}
 
 	// In order to make host files visible to the virtual machines, they need to be
@@ -222,7 +244,7 @@ func (d *driver) Start(dataDir string) error {
 		}
 
 		d.logger.Info("creating storage pool")
-		found, err = d.conn.StoragePoolCreateXML(spXML, 0)
+		found, err = conn.StoragePoolCreateXML(spXML, 0)
 		if err != nil {
 			return fmt.Errorf("libvirt: unable to create storage pool: %w", err)
 
@@ -236,47 +258,62 @@ func (d *driver) Start(dataDir string) error {
 }
 
 func (d *driver) ListNetworks() ([]string, error) {
-	return d.conn.ListNetworks()
+	conn, err := d.connection()
+	if err != nil {
+		return nil, err
+	}
+
+	return conn.ListNetworks()
 }
 
 func (d *driver) LookupNetworkByName(name string) (ConnectNetworkShim, error) {
-	return d.conn.LookupNetworkByName(name)
+	conn, err := d.connection()
+	if err != nil {
+		return nil, err
+	}
+
+	return conn.LookupNetworkByName(name)
 }
 
 func (d *driver) GetInfo() (domain.VirtualizerInfo, error) {
 	li := domain.VirtualizerInfo{}
 
-	ni, err := d.conn.GetNodeInfo()
+	conn, err := d.connection()
+	if err != nil {
+		return li, err
+	}
+
+	ni, err := conn.GetNodeInfo()
 	if err != nil {
 		return li, fmt.Errorf("libvirt: unable to get node info: %w", err)
 	}
 
-	ev, err := d.conn.GetVersion()
+	ev, err := conn.GetVersion()
 	if err != nil {
 		return li, fmt.Errorf("libvirt: unable to get e version: %w", err)
 	}
 
-	lv, err := d.conn.GetLibVersion()
+	lv, err := conn.GetLibVersion()
 	if err != nil {
 		return li, fmt.Errorf("libvirt: unable to get lib version: %w", err)
 	}
 
-	fm, err := d.conn.GetFreeMemory()
+	fm, err := conn.GetFreeMemory()
 	if err != nil {
 		return li, fmt.Errorf("libvirt: unable to get free memory: %w", err)
 	}
 
-	aDoms, err := d.conn.ListAllDomains(libvirt.CONNECT_LIST_DOMAINS_ACTIVE)
+	aDoms, err := conn.ListAllDomains(libvirt.CONNECT_LIST_DOMAINS_ACTIVE)
 	if err != nil {
 		return li, fmt.Errorf("libvirt: unable to get active domains: %w", err)
 	}
 
-	iDoms, err := d.conn.ListAllDomains(libvirt.CONNECT_LIST_DOMAINS_INACTIVE)
+	iDoms, err := conn.ListAllDomains(libvirt.CONNECT_LIST_DOMAINS_INACTIVE)
 	if err != nil {
 		return li, fmt.Errorf("libvirt: unable to get inactive domains: %w", err)
 	}
 
-	sps, err := d.conn.ListAllStoragePools(libvirt.CONNECT_LIST_STORAGE_POOLS_ACTIVE)
+	sps, err := conn.ListAllStoragePools(libvirt.CONNECT_LIST_STORAGE_POOLS_ACTIVE)
 	if err != nil {
 		return li, fmt.Errorf("libvirt: unable to get storage pools: %w", err)
 	}
@@ -296,6 +333,13 @@ func (d *driver) GetInfo() (domain.VirtualizerInfo, error) {
 }
 
 func (d *driver) Close() (int, error) {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	if d.conn == nil {
+		return 0, nil
+	}
+
 	return d.conn.Close()
 }
 
@@ -345,7 +389,12 @@ func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
 // getDomain looks up a domain by name, if an error ocurred, it will be returned.
 // If no domain is found, nil is returned.
 func (d *driver) getDomain(name string) (*libvirt.Domain, error) {
-	dom, err := d.conn.LookupDomainByName(name)
+	conn, err := d.connection()
+	if err != nil {
+		return nil, err
+	}
+
+	dom, err := conn.LookupDomainByName(name)
 	if err != nil {
 		lverr, ok := err.(libvirt.Error)
 		if ok {
@@ -418,6 +467,11 @@ func (d *driver) DestroyDomain(name string) error {
 // CreateDomain verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
 func (d *driver) CreateDomain(config *domain.Config) error {
+	conn, err := d.connection()
+	if err != nil {
+		return err
+	}
+
 	dom, err := d.getDomain(config.Name)
 	if err != nil {
 		return err
@@ -464,7 +518,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 
 	d.logger.Debug("creating domain", "xml", domXML)
 
-	dom, err = d.conn.DomainDefineXML(domXML)
+	dom, err = conn.DomainDefineXML(domXML)
 	if err != nil {
 		return fmt.Errorf("libvirt: unable to define domain %s: %w", config.Name, err)
 	}
@@ -503,7 +557,12 @@ func (d *driver) GetDomain(name string) (*domain.Info, error) {
 }
 
 func (d *driver) GetAllDomains() ([]string, error) {
-	doms, err := d.conn.ListAllDomains(libvirt.CONNECT_LIST_DOMAINS_ACTIVE)
+	conn, err := d.connection()
+	if err != nil {
+		return nil, err
+	}
+
+	doms, err := conn.ListAllDomains(libvirt.CONNECT_LIST_DOMAINS_ACTIVE)
 	if err != nil {
 		return nil, fmt.Errorf("libvirt: unable to list domains: %w", err)
 	}
