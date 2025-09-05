@@ -27,6 +27,7 @@ const (
 // sub-system to perform its configuration, once a VM has been started.
 type VMStartedBuildRequest struct {
 	DomainName string
+	Hostname   string
 	NetConfig  *NetworkInterfacesConfig
 	Resources  *drivers.Resources
 	Hwaddrs    []string

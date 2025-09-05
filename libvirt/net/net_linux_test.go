@@ -165,6 +165,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 	// Test a correct and full request.
 	fullReq := net.VMStartedBuildRequest{
 		DomainName: "nomad-0ea818bc",
+		Hostname:   "nomad-0ea818bc",
 		Hwaddrs:    []string{"52:54:00:1c:7c:14"},
 		NetConfig: &net.NetworkInterfacesConfig{
 			{
@@ -299,17 +300,29 @@ func TestController_discoverDHCPLeaseIP(t *testing.T) {
 	must.NoError(t, err)
 	must.Eq(t, existentResp, "192.168.122.58")
 
-	// Query for a domain whose MAC matches serveral leases
+	// Query for a domain with several matching leases.
 	multiResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-3edc43aa",
 		"default", []string{"11:22:33:44:55:66"})
 	must.NoError(t, err)
 	must.Eq(t, multiResp, "192.168.122.65")
 
-	// Query for domain who MAC only matches expired lease
+	// Query for domain with matching expired lease.
 	expiredResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-eabba892",
 		"default", []string{"66:55:44:33:22:11"})
 	must.ErrorContains(t, err, "timeout reached discovering DHCP lease")
 	must.Eq(t, expiredResp, "")
+
+	// Query for domain with matching MAC address only.
+	macOnlyResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "different-hostname",
+		"default", []string{"52:54:00:1c:7c:14"})
+	must.ErrorContains(t, err, "timeout reached discovering DHCP lease")
+	must.Eq(t, macOnlyResp, "")
+
+	// Query for domain with matching MAC address and empty hostname on lease.
+	macOnlyNoHostnameResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "custom-hostname",
+		"default", []string{"11:22:11:22:11:22"})
+	must.NoError(t, err)
+	must.Eq(t, macOnlyNoHostnameResp, "192.168.122.99")
 }
 
 func TestController_configureIPTables(t *testing.T) {

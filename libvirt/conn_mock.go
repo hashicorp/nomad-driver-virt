@@ -71,6 +71,15 @@ func (cm *ConnectMock) LookupNetworkByName(name string) (ConnectNetworkShim, err
 					Hostname:   "nomad-eabba892",
 					Clientid:   "ff:08:24:45:0e:00:02:00:00:ab:11:35:ab:f3:c7:ac:54:9e:ff",
 				},
+				{
+					Iface:      "virbr0",
+					ExpiryTime: time.Now().Add(5 * time.Minute),
+					Type:       libvirt.IP_ADDR_TYPE_IPV4,
+					Mac:        "11:22:11:22:11:22",
+					IPaddr:     "192.168.122.99",
+					Hostname:   "",
+					Clientid:   "ff:08:24:45:0e:00:02:00:00:ab:11:35:ab:f3:c7:ac:54:9e:bb",
+				},
 			},
 		}, nil
 	case "routed":

@@ -668,7 +668,8 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	// response will contain our teardown spec, which gets stored in the task
 	// handle, so we can easily perform deletions.
 	netBuildReq := net.VMStartedBuildRequest{
-		DomainName: hostname,
+		DomainName: taskName,
+		Hostname:   hostname,
 		NetConfig:  &driverConfig.NetworkInterfacesConfig,
 		Resources:  cfg.Resources,
 		Hwaddrs:    hwaddrs,
