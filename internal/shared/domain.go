@@ -6,6 +6,7 @@ package domain
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -164,8 +165,11 @@ func (dc *Config) Copy() *Config {
 
 type NetworkInterface struct {
 	NetworkName string
-	Address     string
-	PortMap     map[string]string
+	DeviceName  string
+	MAC         string
+	Addrs       []netip.Addr
+	Model       string
+	Driver      string
 }
 
 type VirtualizerInfo struct {
