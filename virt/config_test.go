@@ -4,6 +4,7 @@
 package virt
 
 import (
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"testing"
 
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
@@ -34,44 +35,62 @@ func TestConfig_Task(t *testing.T) {
 	parser := hclutils.NewConfigParser(taskConfigSpec)
 
 	expectedHostname := "test-hostname"
-	expectedImg := "/path/to/image/here"
 	expectedUserData := "/path/to/user/data"
 	expectedCmds := []string{"redis"}
 	expectedDefaultUserSSHKey := "ssh-ed25519 testtesttest..."
 	expectedDefaultUserPassword := "password"
-	expectedUseThinCopy := true
 	expectedARCH := "arm78"
 	expectedMachine := "R2D2"
+	expectedFileDiskLabel := "vda"
+	expectedFileDiskFmt := "qcow2"
+	expectedFileDiskPath := "/path/to/image"
+	expectedRbdDiskLabel := "vdb"
+	expectedRbdDiskName := "pool/image"
 
 	validHCL := `
   config {
-	image = "/path/to/image/here"
-	primary_disk_size = 26000
 	cmds = ["redis"]
 	hostname = "test-hostname"
 	user_data = "/path/to/user/data"
 	default_user_authorized_ssh_key =  "ssh-ed25519 testtesttest..."
 	default_user_password = "password"
-	use_thin_copy = true
 	os {
 		arch = "arm78"
 		machine = "R2D2"
+	}
+	disks {
+		file "vda" {
+			path = "/path/to/image"
+			fmt = "qcow2"
+		}
+		rbd "vdb" {
+			name = "pool/image"
+			host "ceph01.example.org" {
+				port = 6789
+			}
+			host "ceph02.example.org" {}
+		}
 	}
   }
 `
 
 	var tc *TaskConfig
 	parser.ParseHCL(t, validHCL, &tc)
+	println(tc)
 	must.SliceContainsAll(t, expectedCmds, tc.CMDs)
-	must.StrContains(t, expectedImg, tc.ImagePath)
-	must.Eq(t, expectedUseThinCopy, tc.UseThinCopy)
 	must.StrContains(t, expectedDefaultUserSSHKey, tc.DefaultUserSSHKey)
 	must.StrContains(t, expectedDefaultUserPassword, tc.DefaultUserPassword)
 	must.StrContains(t, expectedHostname, tc.Hostname)
 	must.StrContains(t, expectedUserData, tc.UserData)
 	must.StrContains(t, expectedARCH, tc.OS.Arch)
 	must.StrContains(t, expectedMachine, tc.OS.Machine)
-	must.Eq(t, 26000, tc.PrimaryDiskSize)
+	must.StrContains(t, expectedMachine, tc.OS.Machine)
+	must.NotNil(t, tc.DisksConfig)
+	must.MapContainsKey(t, *tc.DisksConfig.FileDisksConfig, expectedFileDiskLabel)
+	must.StrContains(t, expectedFileDiskFmt, (*tc.DisksConfig.FileDisksConfig)[expectedFileDiskLabel].Fmt)
+	must.StrContains(t, expectedFileDiskPath, (*tc.DisksConfig.FileDisksConfig)[expectedFileDiskLabel].Path)
+	must.MapContainsKey(t, *tc.DisksConfig.RbdDisksConfig, expectedRbdDiskLabel)
+	must.StrContains(t, (*tc.DisksConfig.RbdDisksConfig)[expectedRbdDiskLabel].Name, expectedRbdDiskName)
 }
 
 func TestConfig_Plugin(t *testing.T) {
@@ -117,8 +136,6 @@ func Test_taskConfigSpec(t *testing.T) {
 			name: "network interface with required",
 			inputConfig: `
 config {
-  image = "/path/to/image/here"
-  primary_disk_size = 26000
   os {
     arch    = "x86_64"
     machine = "pc-i440fx-jammy"
@@ -132,8 +149,6 @@ config {
 }
 `,
 			expectedOutput: TaskConfig{
-				ImagePath:       "/path/to/image/here",
-				PrimaryDiskSize: 26000,
 				OS: &OS{
 					Arch:    "x86_64",
 					Machine: "pc-i440fx-jammy",
@@ -145,7 +160,9 @@ config {
 							Ports: []string{"ssh"},
 						},
 					},
-				}},
+				},
+				DisksConfig: disks.DisksConfig{},
+			},
 		},
 	}
 
