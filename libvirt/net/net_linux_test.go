@@ -21,6 +21,7 @@ import (
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
 	"github.com/shoenig/test/must"
+	"libvirt.org/go/libvirtxml"
 )
 
 func TestController_Fingerprint(t *testing.T) {
@@ -289,40 +290,53 @@ func TestController_discoverDHCPLeaseIP(t *testing.T) {
 
 	// Query for a domain that does not have a lease entry and ensure the
 	// timeout is triggered.
-	nonExistentResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "non-existent-domain",
+	nonExistentResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "non-existent-domain",
 		"default", []string{"00:00:00:00:00:00"})
 	must.ErrorContains(t, err, "timeout reached discovering DHCP lease")
 	must.Eq(t, nonExistentResp, "")
+	must.Eq(t, mac, "")
 
 	// Query for a domain which does have a lease.
-	existentResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-0ea818bc",
+	existentResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-0ea818bc",
 		"default", []string{"52:54:00:1c:7c:14"})
 	must.NoError(t, err)
 	must.Eq(t, existentResp, "192.168.122.58")
+	must.Eq(t, mac, "52:54:00:1c:7c:14")
+
+	// Query for a domain which does have a lease using multiple MAC addresses.
+	existentResp, mac, err = mockController.discoverDHCPLeaseIP(defaultNet, "nomad-0ea818bc",
+		"default", []string{"11:11:11:11:11:11", "52:54:00:1c:7c:14", "22:22:22:22:22:22"})
+	must.NoError(t, err)
+	must.Eq(t, existentResp, "192.168.122.58")
+	must.Eq(t, mac, "52:54:00:1c:7c:14")
 
 	// Query for a domain with several matching leases.
-	multiResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-3edc43aa",
+	multiResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-3edc43aa",
 		"default", []string{"11:22:33:44:55:66"})
 	must.NoError(t, err)
 	must.Eq(t, multiResp, "192.168.122.65")
+	must.Eq(t, mac, "11:22:33:44:55:66")
 
 	// Query for domain with matching expired lease.
-	expiredResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-eabba892",
+	expiredResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-eabba892",
 		"default", []string{"66:55:44:33:22:11"})
 	must.ErrorContains(t, err, "timeout reached discovering DHCP lease")
 	must.Eq(t, expiredResp, "")
+	must.Eq(t, mac, "")
 
 	// Query for domain with matching MAC address only.
-	macOnlyResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "different-hostname",
+	macOnlyResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "different-hostname",
 		"default", []string{"52:54:00:1c:7c:14"})
 	must.ErrorContains(t, err, "timeout reached discovering DHCP lease")
 	must.Eq(t, macOnlyResp, "")
+	must.Eq(t, mac, "")
 
 	// Query for domain with matching MAC address and empty hostname on lease.
-	macOnlyNoHostnameResp, err := mockController.discoverDHCPLeaseIP(defaultNet, "custom-hostname",
+	macOnlyNoHostnameResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "custom-hostname",
 		"default", []string{"11:22:11:22:11:22"})
 	must.NoError(t, err)
 	must.Eq(t, macOnlyNoHostnameResp, "192.168.122.99")
+	must.Eq(t, mac, "11:22:11:22:11:22")
 }
 
 func TestController_configureIPTables(t *testing.T) {
@@ -460,7 +474,10 @@ func TestController_configureIPTables(t *testing.T) {
 
 func TestController_VMTerminatedTeardown(t *testing.T) {
 
-	mockController := &Controller{logger: hclog.NewNullLogger()}
+	mockController := &Controller{
+		logger:  hclog.NewNullLogger(),
+		netConn: &libvirt.ConnectMock{},
+	}
 
 	// Call the function with a nil argument, to ensure it handles this
 	// correctly and doesn't panic.
@@ -487,6 +504,7 @@ func TestController_VMTerminatedTeardown(t *testing.T) {
 	nonExistentRuleArgs := net.VMTerminatedTeardownRequest{
 		TeardownSpec: &net.TeardownSpec{
 			IPTablesRules: iptablesRules,
+			Network:       "default",
 		},
 	}
 	resp, err = mockController.VMTerminatedTeardown(&nonExistentRuleArgs)
@@ -528,6 +546,7 @@ func TestController_VMTerminatedTeardown(t *testing.T) {
 	existentRuleArgs := net.VMTerminatedTeardownRequest{
 		TeardownSpec: &net.TeardownSpec{
 			IPTablesRules: iptablesRules,
+			Network:       "default",
 		},
 	}
 	resp, err = mockController.VMTerminatedTeardown(&existentRuleArgs)
@@ -538,6 +557,122 @@ func TestController_VMTerminatedTeardown(t *testing.T) {
 		rules, err := ipt.List(rule[0], rule[1])
 		must.NoError(t, err)
 		must.SliceNotContains(t, rules, strings.Join(rule[2:], " "))
+	}
+}
+
+func Test_removeIPReservation(t *testing.T) {
+	mockController := &Controller{
+		logger:  hclog.NewNullLogger(),
+		netConn: &libvirt.ConnectMock{},
+	}
+
+	testCases := []struct {
+		desc        string
+		network     string
+		reservation *libvirtxml.NetworkDHCPHost
+		err         string
+	}{
+		{
+			desc:    "reservation does not exist",
+			network: "default",
+			reservation: &libvirtxml.NetworkDHCPHost{
+				IP:   "127.0.0.1",
+				MAC:  "00:00:00:11:11:11",
+				Name: "testing",
+			},
+		},
+		{
+			desc:    "reservation exists",
+			network: "default",
+			reservation: &libvirtxml.NetworkDHCPHost{
+				IP:   "192.168.122.45",
+				MAC:  "00:11:22:33:44:55",
+				Name: "test-hostname",
+			},
+		},
+		{
+			desc:    "network does not exist",
+			network: "does-not-exist",
+			reservation: &libvirtxml.NetworkDHCPHost{
+				IP:   "192.168.122.45",
+				MAC:  "00:11:22:33:44:55",
+				Name: "test-hostname",
+			},
+			err: "failed to find network",
+		},
+	}
+
+	for _, tc := range testCases {
+		entry, err := tc.reservation.Marshal()
+		must.NoError(t, err)
+
+		err = mockController.removeIPReservation(tc.network, entry)
+		if tc.err != "" {
+			println("looked up network", tc.network)
+			must.ErrorContains(t, err, tc.err)
+		} else {
+			must.NoError(t, err)
+		}
+	}
+}
+
+func Test_ipReservationExists(t *testing.T) {
+	mockController := &Controller{
+		logger:  hclog.NewNullLogger(),
+		netConn: &libvirt.ConnectMock{},
+	}
+
+	testCases := []struct {
+		desc           string
+		reservation    *libvirtxml.NetworkDHCPHost
+		reservationRaw string
+		exists         bool
+		err            string
+	}{
+		{
+			desc: "reservation does not exist",
+			reservation: &libvirtxml.NetworkDHCPHost{
+				IP:   "127.0.0.1",
+				MAC:  "00:00:00:11:11:11",
+				Name: "testing",
+			},
+		},
+		{
+			desc: "reservation exists",
+			reservation: &libvirtxml.NetworkDHCPHost{
+				IP:   "192.168.122.45",
+				MAC:  "00:11:22:33:44:55",
+				Name: "test-hostname",
+			},
+			exists: true,
+		},
+		{
+			desc:           "invalid reservation",
+			reservationRaw: "-",
+			exists:         false,
+			err:            "could not parse",
+		},
+	}
+
+	network, err := mockController.netConn.LookupNetworkByName("default")
+	must.NoError(t, err)
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			entry := tc.reservationRaw
+			if tc.reservation != nil {
+				entry, err = tc.reservation.Marshal()
+				must.NoError(t, err)
+			}
+
+			exists, err := mockController.ipReservationExists(network, entry)
+			must.Eq(t, tc.exists, exists)
+			if tc.err != "" {
+				must.ErrorContains(t, err, tc.err)
+			} else {
+				must.NoError(t, err)
+			}
+		})
 	}
 }
 
