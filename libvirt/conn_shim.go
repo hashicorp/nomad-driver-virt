@@ -56,4 +56,16 @@ type ConnectNetworkShim interface {
 	// Also see:
 	// https://libvirt.org/html/libvirt-libvirt-network.html#virNetworkGetDHCPLeases
 	GetDHCPLeases() ([]libvirt.NetworkDHCPLease, error)
+
+	// Update the definition of an existing network, either its live running state, its persistent configuration, or both.
+	//
+	// Also see:
+	// https://libvirt.org/html/libvirt-libvirt-network.html#virNetworkUpdate
+	Update(cmd libvirt.NetworkUpdateCommand, section libvirt.NetworkUpdateSection, parentIndex int, xml string, flags libvirt.NetworkUpdateFlags) error
+
+	// Provide an XML description of the network.
+	//
+	// Also see:
+	// https://libvirt.org/html/libvirt-libvirt-network.html#virNetworkGetXMLDesc
+	GetXMLDesc(flags libvirt.NetworkXMLFlags) (string, error)
 }

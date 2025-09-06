@@ -74,6 +74,14 @@ type TeardownSpec struct {
 	//   i[1] is the chain name.
 	//   i[2:] is the rule args.
 	IPTablesRules [][]string
+
+	// DHCPReservation specifies the reservation string used for registering
+	// a DHCP address for a domain.
+	DHCPReservation string
+
+	// Network is the name of the network used and which provided the
+	// DHCP lease.
+	Network string
 }
 
 // IsActiveString converts the boolean response from the IsActive call of
