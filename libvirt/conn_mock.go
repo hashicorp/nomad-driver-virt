@@ -81,6 +81,18 @@ func (cm *ConnectMock) LookupNetworkByName(name string) (ConnectNetworkShim, err
 					Clientid:   "ff:08:24:45:0e:00:02:00:00:ab:11:35:ab:f3:c7:ac:54:9e:bb",
 				},
 			},
+			xmlDesc: `<network>
+  <name>default</name>
+  <uuid>dd8fe884-6c02-601e-7551-cca97df1c5df</uuid>
+  <forward mode='nat'/>
+  <bridge name='virbr0' stp='on' delay='0'/>
+  <ip address='192.168.122.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.122.2' end='192.168.122.254'/>
+      <host mac="00:11:22:33:44:55" name="test-hostname" ip="192.168.122.45" />
+    </dhcp>
+  </ip>
+</network>`,
 		}, nil
 	case "routed":
 		return &ConnectNetworkMock{
@@ -113,6 +125,7 @@ type ConnectNetworkMock struct {
 	active     bool
 	bridgeName string
 	dhcpLeases []libvirt.NetworkDHCPLease
+	xmlDesc    string
 }
 
 func (cnm *ConnectNetworkMock) IsActive() (bool, error) { return cnm.active, nil }
@@ -121,4 +134,12 @@ func (cnm *ConnectNetworkMock) GetBridgeName() (string, error) { return cnm.brid
 
 func (cnm *ConnectNetworkMock) GetDHCPLeases() ([]libvirt.NetworkDHCPLease, error) {
 	return cnm.dhcpLeases, nil
+}
+
+func (cnm *ConnectNetworkMock) GetXMLDesc(flags libvirt.NetworkXMLFlags) (string, error) {
+	return cnm.xmlDesc, nil
+}
+
+func (cnm *ConnectNetworkMock) Update(cmd libvirt.NetworkUpdateCommand, section libvirt.NetworkUpdateSection, parentIndex int, xml string, flags libvirt.NetworkUpdateFlags) error {
+	return nil
 }
