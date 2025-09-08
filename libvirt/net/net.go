@@ -35,6 +35,10 @@ type Controller struct {
 	// passed IP address and identifies the interface it is assigned to. It is
 	// a field within the controller to aid testing.
 	interfaceByIPGetter
+
+	// ipByInterfaceGetter is the function that queries the host using the
+	// passed interface name and identifies the IP address assigned to it.
+	ipByInterfaceGetter
 }
 
 // NewController returns a Controller which implements the net.Net interface
@@ -45,6 +49,7 @@ func NewController(logger hclog.Logger, conn libvirt.ConnectShim) *Controller {
 		dhcpLeaseDiscoveryInterval: defaultDHCPLeaseDiscoveryInterval,
 		dhcpLeaseDiscoveryTimeout:  defaultDHCPLeaseDiscoveryTimeout,
 		interfaceByIPGetter:        getInterfaceByIP,
+		ipByInterfaceGetter:        getIPByInterface,
 		logger:                     logger.Named("net"),
 		netConn:                    conn,
 	}
@@ -55,3 +60,7 @@ func NewController(logger hclog.Logger, conn libvirt.ConnectShim) *Controller {
 // where we don't know the host, and we want to ensure stability and
 // consistency when this is called.
 type interfaceByIPGetter func(ip stdnet.IP) (string, error)
+
+// ipByInterfaceGetter is the function that queries the host using the
+// passed interface name and identifies the IP address assigned to it.
+type ipByInterfaceGetter func(name string) (stdnet.IP, error)
