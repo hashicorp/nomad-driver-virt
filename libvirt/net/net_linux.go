@@ -11,9 +11,12 @@ import (
 	stdnet "net"
 	"slices"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/coreos/go-iptables/iptables"
+	"github.com/gopacket/gopacket"
+	"github.com/gopacket/gopacket/layers"
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/go-set"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
@@ -44,6 +47,9 @@ const (
 	// automaticParentIndex is the special libvirt value to automatically
 	// determine placement when adding an element.
 	automaticParentIndex = -1
+
+	// dhcpServerPort is the port the DHCP server is listening on.
+	dhcpServerPort = "67"
 )
 
 func (c *Controller) Fingerprint(attr map[string]*structs.Attribute) {
@@ -503,6 +509,35 @@ func getInterfaceByIP(ip stdnet.IP) (string, error) {
 	return "", fmt.Errorf("failed to find interface for IP %q", ip.String())
 }
 
+// getIPByInterface is a helper function which returns the IP address
+// assigned to the interface.
+func getIPByInterface(name string) (stdnet.IP, error) {
+	interfaces, err := stdnet.Interfaces()
+	if err != nil {
+		return stdnet.IP{}, err
+	}
+
+	for _, iface := range interfaces {
+		if iface.Name != name {
+			continue
+		}
+
+		addrs, err := iface.Addrs()
+		if err != nil {
+			return stdnet.IP{}, err
+		}
+
+		for _, addr := range addrs {
+			res, _, err := stdnet.ParseCIDR(addr.String())
+			if err == nil {
+				return res, nil
+			}
+		}
+	}
+
+	return stdnet.IP{}, fmt.Errorf("could not find address for interface %s", name)
+}
+
 func (c *Controller) VMTerminatedTeardown(req *net.VMTerminatedTeardownRequest) (*net.VMTerminatedTeardownResponse, error) {
 
 	// We can't be exactly sure what the caller will give us, so make sure we
@@ -539,11 +574,17 @@ func (c *Controller) VMTerminatedTeardown(req *net.VMTerminatedTeardownRequest) 
 		}
 	}
 
-	// Remove the DHCP IP reservation
+	// Remove the DHCP IP reservation.
 	if err := c.removeIPReservation(req.TeardownSpec.Network, req.TeardownSpec.DHCPReservation); err != nil {
 		mErr.Errors = append(
 			mErr.Errors,
 			fmt.Errorf("failed to update network for IP reservation removal: %w", err))
+	}
+
+	// Release the DHCP lease. This is best effort only, so any errors encountered
+	// are simply logged.
+	if err := c.releaseDHCPLease(req.TeardownSpec.Network, req.TeardownSpec.DHCPReservation); err != nil {
+		c.logger.Error("failed to release DHCP lease", "error", err)
 	}
 
 	return &net.VMTerminatedTeardownResponse{}, mErr.ErrorOrNil()
@@ -598,4 +639,87 @@ func (c *Controller) ipReservationExists(network libvirt.ConnectNetworkShim, res
 	}
 
 	return false, nil
+}
+
+// releaseDHCPLease releases the DHCP lease associated to the reservation
+// if it exists.
+//
+// Implementation is inspired from:
+// https://github.com/imp/dnsmasq/blob/770bce967cfc9967273d0acfb3ea018fb7b17522/contrib/lease-tools/dhcp_release.c
+func (c *Controller) releaseDHCPLease(networkName, reservation string) error {
+	res := &libvirtxml.NetworkDHCPHost{}
+	if err := res.Unmarshal(reservation); err != nil {
+		return fmt.Errorf("failed to parse DHCP reservation: %w", err)
+	}
+
+	mac, err := stdnet.ParseMAC(res.MAC)
+	if err != nil {
+		return fmt.Errorf("failed to parse lease MAC address: %w", err)
+	}
+
+	network, err := c.netConn.LookupNetworkByName(networkName)
+	if err != nil {
+		return fmt.Errorf("failed to lookup network %q: %w", networkName, err)
+	}
+
+	bridge, err := network.GetBridgeName()
+	if err != nil {
+		return fmt.Errorf("failed to get bridge name for network %q: %w", networkName, err)
+	}
+
+	server, err := c.ipByInterfaceGetter(bridge)
+	if err != nil {
+		return fmt.Errorf("failed to get IP address for device %q: %w", bridge, err)
+	}
+
+	// Build a DHCP release packet to trigger releasing the lease.
+	pkt := layers.DHCPv4{
+		Operation:    layers.DHCPOpRequest,
+		HardwareType: layers.LinkTypeEthernet,
+		HardwareLen:  uint8(len(mac)),
+		ClientHWAddr: mac,
+		ClientIP:     stdnet.ParseIP(res.IP),
+		Options: []layers.DHCPOption{
+			{
+				Type:   layers.DHCPOptMessageType,
+				Length: 1,
+				Data:   []byte{byte(layers.DHCPMsgTypeRelease)},
+			},
+			{
+				Type:   layers.DHCPOptServerID,
+				Length: uint8(len(server.To4())),
+				Data:   server.To4(),
+			},
+		},
+	}
+	buf := gopacket.NewSerializeBuffer()
+	if err := pkt.SerializeTo(buf, gopacket.SerializeOptions{}); err != nil {
+		return fmt.Errorf("failed to serialize DHCP release packet: %w", err)
+	}
+
+	// Use a custom dialer so the underlying socket can be customized
+	// and bound to the bridge used for the network.
+	var controlErr error
+	dialer := &stdnet.Dialer{
+		Control: func(network, address string, raw syscall.RawConn) error {
+			return raw.Control(func(fd uintptr) {
+				controlErr = syscall.SetsockoptString(int(fd), syscall.SOL_SOCKET, syscall.SO_BINDTODEVICE, bridge)
+			})
+		},
+	}
+	if controlErr != nil {
+		return fmt.Errorf("failed to configure socket: %w", controlErr)
+	}
+
+	// Send the packet to the server
+	conn, err := dialer.Dial("udp", stdnet.JoinHostPort(server.To4().String(), dhcpServerPort))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	if _, err := conn.Write(buf.Bytes()); err != nil {
+		return fmt.Errorf("failed to write DHCP release packet: %w", err)
+	}
+
+	return nil
 }
