@@ -16,6 +16,7 @@ import (
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/testutil"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	nomadstructs "github.com/hashicorp/nomad/nomad/structs"
 	"github.com/hashicorp/nomad/plugins/drivers"
@@ -25,13 +26,12 @@ import (
 )
 
 func TestController_Fingerprint(t *testing.T) {
-
 	// Use a populated mock shim to test that we query and correctly populate
 	// the passed attributes.
-	mockController := NewController(hclog.NewNullLogger(), &libvirt.ConnectMock{})
+	controller := NewController(hclog.NewNullLogger(), &libvirt.ConnectMock{})
 
-	mockControllerAttrs := map[string]*structs.Attribute{}
-	mockController.Fingerprint(mockControllerAttrs)
+	controllerAttrs := map[string]*structs.Attribute{}
+	controller.Fingerprint(controllerAttrs)
 
 	expectedOutput := map[string]*structs.Attribute{
 		"driver.virt.network.default.state":       structs.NewStringAttribute("active"),
@@ -39,19 +39,20 @@ func TestController_Fingerprint(t *testing.T) {
 		"driver.virt.network.routed.state":        structs.NewStringAttribute("inactive"),
 		"driver.virt.network.routed.bridge_name":  structs.NewStringAttribute("br0"),
 	}
-	must.Eq(t, expectedOutput, mockControllerAttrs)
+	must.Eq(t, expectedOutput, controllerAttrs)
 
 	// Set the shim to our empty mock, to ensure we do not panic or have any
 	// other undesired outcome when the process does not find any networks
 	// available on the host.
-	mockEmptyController := NewController(hclog.NewNullLogger(), &libvirt.ConnectMockEmpty{})
+	emptyController := NewController(hclog.NewNullLogger(), &libvirt.ConnectMockEmpty{})
 
-	mockEmptyControllerAttrs := map[string]*structs.Attribute{}
-	mockEmptyController.Fingerprint(mockEmptyControllerAttrs)
-	must.Eq(t, map[string]*structs.Attribute{}, mockEmptyControllerAttrs)
+	emptyControllerAttrs := map[string]*structs.Attribute{}
+	emptyController.Fingerprint(emptyControllerAttrs)
+	must.Eq(t, map[string]*structs.Attribute{}, emptyControllerAttrs)
 }
 
 func TestController_ensureIPTables(t *testing.T) {
+	testutil.RequireRoot(t)
 
 	ipt, err := iptables.New()
 	must.NoError(t, err)
@@ -70,11 +71,11 @@ func TestController_ensureIPTables(t *testing.T) {
 	// and rule entries.
 	t.Cleanup(func() { iptablesCleanup(t, ipt) })
 
-	mockController := &Controller{logger: hclog.NewNullLogger()}
+	controller := &Controller{logger: hclog.NewNullLogger()}
 
 	// Trigger the ensure function which should add our base iptables chains
 	// and rules for the driver.
-	must.NoError(t, mockController.ensureIPTables())
+	must.NoError(t, controller.ensureIPTables())
 
 	// Ensure the custom chain is found within the NAT table and check that the
 	// table has a jump rule to the custom chain.
@@ -99,7 +100,7 @@ func TestController_ensureIPTables(t *testing.T) {
 	// Trigger the ensure function again. This tests that the function can
 	// handle being run multiple times without error, whilst maintaining the
 	// iptables setup we require.
-	must.NoError(t, mockController.ensureIPTables())
+	must.NoError(t, controller.ensureIPTables())
 
 	// Ensure the custom chain is found within the NAT table and check that the
 	// table has a jump rule to the custom chain.
@@ -123,8 +124,9 @@ func TestController_ensureIPTables(t *testing.T) {
 }
 
 func TestController_VMStartedBuild(t *testing.T) {
+	testutil.RequireRoot(t)
 
-	mockController := &Controller{
+	controller := &Controller{
 		dhcpLeaseDiscoveryInterval: 100 * time.Millisecond,
 		dhcpLeaseDiscoveryTimeout:  500 * time.Millisecond,
 		logger:                     hclog.NewNullLogger(),
@@ -132,7 +134,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 		interfaceByIPGetter:        func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
 	}
 
-	must.NoError(t, mockController.Init())
+	must.NoError(t, controller.Init())
 
 	ipt, err := iptables.New()
 	must.NoError(t, err)
@@ -142,20 +144,20 @@ func TestController_VMStartedBuild(t *testing.T) {
 	t.Cleanup(func() { iptablesCleanup(t, ipt) })
 
 	// Ensure passing a nil request object doesn't cause the function to panic.
-	nilRequestResp, err := mockController.VMStartedBuild(nil)
+	nilRequestResp, err := controller.VMStartedBuild(nil)
 	must.ErrorContains(t, err, "no request provided")
 	must.Nil(t, nilRequestResp)
 
 	// Ensure passing an empty request object doesn't cause the function to
 	// panic.
-	nilRequestResp, err = mockController.VMStartedBuild(&net.VMStartedBuildRequest{})
+	nilRequestResp, err = controller.VMStartedBuild(&net.VMStartedBuildRequest{})
 	must.NoError(t, err)
 	must.NotNil(t, nilRequestResp)
 	must.Nil(t, nilRequestResp.TeardownSpec)
 
 	// Pass a request that doesn't contain any configured networks to ensure we
 	// correctly handle that.
-	emptyNetworkRequestResp, err := mockController.VMStartedBuild(&net.VMStartedBuildRequest{
+	emptyNetworkRequestResp, err := controller.VMStartedBuild(&net.VMStartedBuildRequest{
 		NetConfig: &net.NetworkInterfacesConfig{},
 		Resources: &drivers.Resources{},
 	})
@@ -194,7 +196,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 		},
 	}
 
-	fullReqResp, err := mockController.VMStartedBuild(&fullReq)
+	fullReqResp, err := controller.VMStartedBuild(&fullReq)
 	must.NoError(t, err)
 	must.NotNil(t, fullReqResp)
 	must.NotNil(t, fullReqResp.DriverNetwork)
@@ -241,21 +243,20 @@ func TestController_VMStartedBuild(t *testing.T) {
 }
 
 func TestController_networkNameFromBridgeName(t *testing.T) {
-
 	// Create out controller which has a mocked connection with identified
 	// networks.
-	mockController := &Controller{
+	controller := &Controller{
 		logger:  hclog.NewNullLogger(),
 		netConn: &libvirt.ConnectMock{},
 	}
 
 	// Query a non-existent network.
-	nonExistentResp, err := mockController.networkNameFromBridgeName("non-existent-bridge")
+	nonExistentResp, err := controller.networkNameFromBridgeName("non-existent-bridge")
 	must.ErrorContains(t, err, "failed to find network with bridge")
 	must.Eq(t, nonExistentResp, "")
 
 	// Query a network which does exist.
-	virbr0Resp, err := mockController.networkNameFromBridgeName("virbr0")
+	virbr0Resp, err := controller.networkNameFromBridgeName("virbr0")
 	must.NoError(t, err)
 	must.Eq(t, virbr0Resp, "default")
 
@@ -273,66 +274,65 @@ func TestController_networkNameFromBridgeName(t *testing.T) {
 }
 
 func TestController_discoverDHCPLeaseIP(t *testing.T) {
-
 	// Create out controller which has a mocked connection with identified
 	// networks and low discovery time durations, so the tests do not take ages
 	// to run.
-	mockController := &Controller{
+	controller := &Controller{
 		logger:                     hclog.NewNullLogger(),
 		netConn:                    &libvirt.ConnectMock{},
 		dhcpLeaseDiscoveryInterval: 100 * time.Millisecond,
 		dhcpLeaseDiscoveryTimeout:  500 * time.Millisecond,
 	}
 
-	defaultNet, err := mockController.netConn.LookupNetworkByName("default")
+	defaultNet, err := controller.netConn.LookupNetworkByName("default")
 	must.NoError(t, err)
 	must.NotNil(t, defaultNet)
 
 	// Query for a domain that does not have a lease entry and ensure the
 	// timeout is triggered.
-	nonExistentResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "non-existent-domain",
+	nonExistentResp, mac, err := controller.discoverDHCPLeaseIP(defaultNet, "non-existent-domain",
 		"default", []string{"00:00:00:00:00:00"})
 	must.ErrorContains(t, err, "timeout reached discovering DHCP lease")
 	must.Eq(t, nonExistentResp, "")
 	must.Eq(t, mac, "")
 
 	// Query for a domain which does have a lease.
-	existentResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-0ea818bc",
+	existentResp, mac, err := controller.discoverDHCPLeaseIP(defaultNet, "nomad-0ea818bc",
 		"default", []string{"52:54:00:1c:7c:14"})
 	must.NoError(t, err)
 	must.Eq(t, existentResp, "192.168.122.58")
 	must.Eq(t, mac, "52:54:00:1c:7c:14")
 
 	// Query for a domain which does have a lease using multiple MAC addresses.
-	existentResp, mac, err = mockController.discoverDHCPLeaseIP(defaultNet, "nomad-0ea818bc",
+	existentResp, mac, err = controller.discoverDHCPLeaseIP(defaultNet, "nomad-0ea818bc",
 		"default", []string{"11:11:11:11:11:11", "52:54:00:1c:7c:14", "22:22:22:22:22:22"})
 	must.NoError(t, err)
 	must.Eq(t, existentResp, "192.168.122.58")
 	must.Eq(t, mac, "52:54:00:1c:7c:14")
 
 	// Query for a domain with several matching leases.
-	multiResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-3edc43aa",
+	multiResp, mac, err := controller.discoverDHCPLeaseIP(defaultNet, "nomad-3edc43aa",
 		"default", []string{"11:22:33:44:55:66"})
 	must.NoError(t, err)
 	must.Eq(t, multiResp, "192.168.122.65")
 	must.Eq(t, mac, "11:22:33:44:55:66")
 
 	// Query for domain with matching expired lease.
-	expiredResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "nomad-eabba892",
+	expiredResp, mac, err := controller.discoverDHCPLeaseIP(defaultNet, "nomad-eabba892",
 		"default", []string{"66:55:44:33:22:11"})
 	must.ErrorContains(t, err, "timeout reached discovering DHCP lease")
 	must.Eq(t, expiredResp, "")
 	must.Eq(t, mac, "")
 
 	// Query for domain with matching MAC address only.
-	macOnlyResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "different-hostname",
+	macOnlyResp, mac, err := controller.discoverDHCPLeaseIP(defaultNet, "different-hostname",
 		"default", []string{"52:54:00:1c:7c:14"})
 	must.ErrorContains(t, err, "timeout reached discovering DHCP lease")
 	must.Eq(t, macOnlyResp, "")
 	must.Eq(t, mac, "")
 
 	// Query for domain with matching MAC address and empty hostname on lease.
-	macOnlyNoHostnameResp, mac, err := mockController.discoverDHCPLeaseIP(defaultNet, "custom-hostname",
+	macOnlyNoHostnameResp, mac, err := controller.discoverDHCPLeaseIP(defaultNet, "custom-hostname",
 		"default", []string{"11:22:11:22:11:22"})
 	must.NoError(t, err)
 	must.Eq(t, macOnlyNoHostnameResp, "192.168.122.99")
@@ -340,8 +340,9 @@ func TestController_discoverDHCPLeaseIP(t *testing.T) {
 }
 
 func TestController_configureIPTables(t *testing.T) {
+	testutil.RequireRoot(t)
 
-	mockController := &Controller{
+	controller := &Controller{
 		logger:              hclog.NewNullLogger(),
 		netConn:             &libvirt.ConnectMock{},
 		interfaceByIPGetter: func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
@@ -379,7 +380,7 @@ func TestController_configureIPTables(t *testing.T) {
 	}
 
 	// Init the controller, so we have the required iptables chains available.
-	must.NoError(t, mockController.Init())
+	must.NoError(t, controller.Init())
 
 	ipt, err := iptables.New()
 	must.NoError(t, err)
@@ -390,7 +391,7 @@ func TestController_configureIPTables(t *testing.T) {
 
 	// Execute the function, collecting the teardown rules and building our
 	// expected output.
-	actualTeardownRules, err := mockController.configureIPTables(
+	actualTeardownRules, err := controller.configureIPTables(
 		&driverReq, &netInterfaceReq, "192.168.122.58")
 	must.NoError(t, err)
 
@@ -473,15 +474,16 @@ func TestController_configureIPTables(t *testing.T) {
 }
 
 func TestController_VMTerminatedTeardown(t *testing.T) {
+	testutil.RequireRoot(t)
 
-	mockController := &Controller{
+	controller := &Controller{
 		logger:  hclog.NewNullLogger(),
 		netConn: &libvirt.ConnectMock{},
 	}
 
 	// Call the function with a nil argument, to ensure it handles this
 	// correctly and doesn't panic.
-	resp, err := mockController.VMTerminatedTeardown(nil)
+	resp, err := controller.VMTerminatedTeardown(nil)
 	must.NoError(t, err)
 	must.NotNil(t, resp)
 
@@ -507,7 +509,7 @@ func TestController_VMTerminatedTeardown(t *testing.T) {
 			Network:       "default",
 		},
 	}
-	resp, err = mockController.VMTerminatedTeardown(&nonExistentRuleArgs)
+	resp, err = controller.VMTerminatedTeardown(&nonExistentRuleArgs)
 	must.NoError(t, err)
 	must.NotNil(t, resp)
 
@@ -549,7 +551,7 @@ func TestController_VMTerminatedTeardown(t *testing.T) {
 			Network:       "default",
 		},
 	}
-	resp, err = mockController.VMTerminatedTeardown(&existentRuleArgs)
+	resp, err = controller.VMTerminatedTeardown(&existentRuleArgs)
 	must.NoError(t, err)
 	must.NotNil(t, resp)
 
@@ -561,7 +563,7 @@ func TestController_VMTerminatedTeardown(t *testing.T) {
 }
 
 func Test_removeIPReservation(t *testing.T) {
-	mockController := &Controller{
+	controller := &Controller{
 		logger:  hclog.NewNullLogger(),
 		netConn: &libvirt.ConnectMock{},
 	}
@@ -606,7 +608,7 @@ func Test_removeIPReservation(t *testing.T) {
 		entry, err := tc.reservation.Marshal()
 		must.NoError(t, err)
 
-		err = mockController.removeIPReservation(tc.network, entry)
+		err = controller.removeIPReservation(tc.network, entry)
 		if tc.err != "" {
 			println("looked up network", tc.network)
 			must.ErrorContains(t, err, tc.err)
@@ -617,7 +619,7 @@ func Test_removeIPReservation(t *testing.T) {
 }
 
 func Test_ipReservationExists(t *testing.T) {
-	mockController := &Controller{
+	controller := &Controller{
 		logger:  hclog.NewNullLogger(),
 		netConn: &libvirt.ConnectMock{},
 	}
@@ -654,7 +656,7 @@ func Test_ipReservationExists(t *testing.T) {
 		},
 	}
 
-	network, err := mockController.netConn.LookupNetworkByName("default")
+	network, err := controller.netConn.LookupNetworkByName("default")
 	must.NoError(t, err)
 
 	for _, tc := range testCases {
@@ -665,7 +667,7 @@ func Test_ipReservationExists(t *testing.T) {
 				must.NoError(t, err)
 			}
 
-			exists, err := mockController.ipReservationExists(network, entry)
+			exists, err := controller.ipReservationExists(network, entry)
 			must.Eq(t, tc.exists, exists)
 			if tc.err != "" {
 				must.ErrorContains(t, err, tc.err)
@@ -677,7 +679,7 @@ func Test_ipReservationExists(t *testing.T) {
 }
 
 func Test_releaseDHCPLease(t *testing.T) {
-	mockController := &Controller{
+	controller := &Controller{
 		logger:              hclog.NewNullLogger(),
 		netConn:             &libvirt.ConnectMock{},
 		ipByInterfaceGetter: func(_ string) (stdnet.IP, error) { return stdnet.ParseIP("192.168.122.1"), nil },
@@ -735,7 +737,7 @@ func Test_releaseDHCPLease(t *testing.T) {
 				must.NoError(t, err)
 			}
 
-			err = mockController.releaseDHCPLease(tc.network, reservation)
+			err = controller.releaseDHCPLease(tc.network, reservation)
 			if tc.err != "" {
 				must.ErrorContains(t, err, tc.err)
 			} else {
