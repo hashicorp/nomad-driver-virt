@@ -38,16 +38,11 @@ func (cim *cloudInitMock) Apply(ci *cloudinit.Config, path string) error {
 }
 
 func TestGetInfo(t *testing.T) {
-	tempDataDir, err := os.MkdirTemp("", "testdir_*")
-	must.NoError(t, err)
-
-	defer os.RemoveAll(tempDataDir)
-
 	// The "test:///default" uri connects to a mock hypervisor provided by libvirt
 	// to use for testing.
 	ld := New(context.Background(), hclog.NewNullLogger(), WithConnectionURI("test:///default"))
 
-	err = ld.Start(tempDataDir)
+	err := ld.Start(t.TempDir())
 
 	must.NoError(t, err)
 	i, err := ld.GetInfo()
@@ -183,11 +178,6 @@ func TestStartDomain(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			tempDataDir, err := os.MkdirTemp("", "testdir_*")
-			must.NoError(t, err)
-
-			defer os.RemoveAll(tempDataDir)
-
 			cim := &cloudInitMock{
 				err: tt.ciError,
 			}
@@ -197,7 +187,7 @@ func TestStartDomain(t *testing.T) {
 			ld := New(context.Background(), hclog.NewNullLogger(),
 				WithConnectionURI("test:///default"), WithCIController(cim))
 
-			err = ld.Start(tempDataDir)
+			err := ld.Start(t.TempDir())
 			must.NoError(t, err)
 			defer ld.Close()
 
@@ -260,11 +250,6 @@ func TestStartDomain(t *testing.T) {
 }
 
 func Test_CreateStopAndDestroyDomain(t *testing.T) {
-	tempDataDir, err := os.MkdirTemp("", "testdir_*")
-	must.NoError(t, err)
-
-	defer os.RemoveAll(tempDataDir)
-
 	cim := &cloudInitMock{}
 
 	// The "test:///default" uri connects to a mock hypervisor provided by libvirt
@@ -272,7 +257,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	ld := New(context.Background(), hclog.NewNullLogger(),
 		WithConnectionURI("test:///default"), WithCIController(cim))
 
-	err = ld.Start(tempDataDir)
+	err := ld.Start(t.TempDir())
 	must.NoError(t, err)
 	defer ld.Close()
 

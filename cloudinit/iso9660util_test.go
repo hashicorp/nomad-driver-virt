@@ -23,32 +23,32 @@ func TestWrite(t *testing.T) {
 	}{
 		{
 			name:    "Empty layout",
-			isoPath: "test_empty.iso",
+			isoPath: filepath.Join(t.TempDir(), "test_empty.iso"),
 			label:   "EMPTY",
 			layout:  []Entry{},
 		},
 		{
 			name:    "Single file",
-			isoPath: "test_single_file.iso",
+			isoPath: filepath.Join(t.TempDir(), "test_single_file.iso"),
 			label:   "SINGLE",
 			layout: []Entry{
 				{
-					Path:   "/file.txt",
+					Path:   filepath.Join(t.TempDir(), "/file.txt"),
 					Reader: bytes.NewReader([]byte("Hello, World!")),
 				},
 			},
 		},
 		{
 			name:    "Multiple files",
-			isoPath: "test_multiple_files.iso",
+			isoPath: filepath.Join(t.TempDir(), "test_multiple_files.iso"),
 			label:   "MULTIPLE",
 			layout: []Entry{
 				{
-					Path:   "/file1.txt",
+					Path:   filepath.Join(t.TempDir(), "/file1.txt"),
 					Reader: bytes.NewReader([]byte("Hello, World 1!")),
 				},
 				{
-					Path:   "/file2.txt",
+					Path:   filepath.Join(t.TempDir(), "/file2.txt"),
 					Reader: bytes.NewReader([]byte("Hello, World 2!")),
 				},
 			},
@@ -76,12 +76,12 @@ func TestWriteFile(t *testing.T) {
 	}{
 		{
 			name:    "Create new file",
-			pathStr: "/newfile.txt",
+			pathStr: filepath.Join(t.TempDir(), "/newfile.txt"),
 			content: "This is a new file",
 		},
 		{
 			name:    "Create file in new directory",
-			pathStr: "/newdir/newfile.txt",
+			pathStr: filepath.Join(t.TempDir(), "/newdir/newfile.txt"),
 			content: "This is a file in a new directory",
 		},
 	}
