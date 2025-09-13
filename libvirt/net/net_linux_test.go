@@ -15,8 +15,8 @@ import (
 
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/testutil"
+	"github.com/hashicorp/nomad-driver-virt/testutil/mock/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	nomadstructs "github.com/hashicorp/nomad/nomad/structs"
 	"github.com/hashicorp/nomad/plugins/drivers"
@@ -52,7 +52,7 @@ func TestController_Fingerprint(t *testing.T) {
 }
 
 func TestController_ensureIPTables(t *testing.T) {
-	testutil.RequireRoot(t)
+	testutil.RequireIPTables(t)
 
 	ipt, err := iptables.New()
 	must.NoError(t, err)
@@ -71,7 +71,7 @@ func TestController_ensureIPTables(t *testing.T) {
 	// and rule entries.
 	t.Cleanup(func() { iptablesCleanup(t, ipt) })
 
-	controller := &Controller{logger: hclog.NewNullLogger()}
+	controller := &Controller{logger: hclog.NewNullLogger(), iptablesInterfaceGetter: newIPTables}
 
 	// Trigger the ensure function which should add our base iptables chains
 	// and rules for the driver.
@@ -124,7 +124,7 @@ func TestController_ensureIPTables(t *testing.T) {
 }
 
 func TestController_VMStartedBuild(t *testing.T) {
-	testutil.RequireRoot(t)
+	testutil.RequireIPTables(t)
 
 	controller := &Controller{
 		dhcpLeaseDiscoveryInterval: 100 * time.Millisecond,
@@ -132,6 +132,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 		logger:                     hclog.NewNullLogger(),
 		netConn:                    &libvirt.ConnectMock{},
 		interfaceByIPGetter:        func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
+		iptablesInterfaceGetter:    newIPTables,
 	}
 
 	must.NoError(t, controller.Init())
@@ -340,12 +341,13 @@ func TestController_discoverDHCPLeaseIP(t *testing.T) {
 }
 
 func TestController_configureIPTables(t *testing.T) {
-	testutil.RequireRoot(t)
+	testutil.RequireIPTables(t)
 
 	controller := &Controller{
-		logger:              hclog.NewNullLogger(),
-		netConn:             &libvirt.ConnectMock{},
-		interfaceByIPGetter: func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
+		logger:                  hclog.NewNullLogger(),
+		netConn:                 &libvirt.ConnectMock{},
+		interfaceByIPGetter:     func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
+		iptablesInterfaceGetter: newIPTables,
 	}
 
 	// Create driver and network interface request arguments. The allocated
@@ -474,11 +476,12 @@ func TestController_configureIPTables(t *testing.T) {
 }
 
 func TestController_VMTerminatedTeardown(t *testing.T) {
-	testutil.RequireRoot(t)
+	testutil.RequireIPTables(t)
 
 	controller := &Controller{
-		logger:  hclog.NewNullLogger(),
-		netConn: &libvirt.ConnectMock{},
+		logger:                  hclog.NewNullLogger(),
+		netConn:                 &libvirt.ConnectMock{},
+		iptablesInterfaceGetter: newIPTables,
 	}
 
 	// Call the function with a nil argument, to ensure it handles this
@@ -610,7 +613,6 @@ func Test_removeIPReservation(t *testing.T) {
 
 		err = controller.removeIPReservation(tc.network, entry)
 		if tc.err != "" {
-			println("looked up network", tc.network)
 			must.ErrorContains(t, err, tc.err)
 		} else {
 			must.NoError(t, err)

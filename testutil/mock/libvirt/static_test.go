@@ -6,13 +6,14 @@ package libvirt
 import (
 	"testing"
 
+	iface "github.com/hashicorp/nomad-driver-virt/libvirt"
 	"github.com/shoenig/test/must"
 )
 
 var (
-	_ ConnectShim        = &ConnectMock{}
-	_ ConnectShim        = &ConnectMockEmpty{}
-	_ ConnectNetworkShim = &ConnectNetworkMock{}
+	_ iface.ConnectShim        = &ConnectMock{}
+	_ iface.ConnectShim        = &ConnectMockEmpty{}
+	_ iface.ConnectNetworkShim = &ConnectNetworkMock{}
 )
 
 func TestMock_ListNetworks(t *testing.T) {

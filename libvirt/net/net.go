@@ -39,6 +39,10 @@ type Controller struct {
 	// ipByInterfaceGetter is the function that queries the host using the
 	// passed interface name and identifies the IP address assigned to it.
 	ipByInterfaceGetter
+
+	// iptablesInterfaceGetter is the function that returns an interface
+	// for IPTables.
+	iptablesInterfaceGetter
 }
 
 // NewController returns a Controller which implements the net.Net interface
@@ -50,6 +54,7 @@ func NewController(logger hclog.Logger, conn libvirt.ConnectShim) *Controller {
 		dhcpLeaseDiscoveryTimeout:  defaultDHCPLeaseDiscoveryTimeout,
 		interfaceByIPGetter:        getInterfaceByIP,
 		ipByInterfaceGetter:        getIPByInterface,
+		iptablesInterfaceGetter:    newIPTables,
 		logger:                     logger.Named("net"),
 		netConn:                    conn,
 	}
@@ -64,3 +69,7 @@ type interfaceByIPGetter func(ip stdnet.IP) (string, error)
 // ipByInterfaceGetter is the function that queries the host using the
 // passed interface name and identifies the IP address assigned to it.
 type ipByInterfaceGetter func(name string) (stdnet.IP, error)
+
+// iptablesInterfaceGetter is the function that returns an interface
+// for IPTables.
+type iptablesInterfaceGetter func() (IPTables, error)
