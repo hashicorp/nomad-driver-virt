@@ -7,25 +7,26 @@ import (
 	"fmt"
 	"time"
 
+	iface "github.com/hashicorp/nomad-driver-virt/libvirt"
 	"libvirt.org/go/libvirt"
 )
 
-// ConnectMock is the primary mock interface that has default values for
+// StaticConnect is the primary mock interface that has default values for
 // testing. It implements the ConnectShim interface.
-type ConnectMock struct{}
+type StaticConnect struct{}
 
-func (cm *ConnectMock) ListNetworks() ([]string, error) {
+func (cm *StaticConnect) ListNetworks() ([]string, error) {
 	return []string{"default", "routed"}, nil
 }
 
-func (cm *ConnectMock) LookupNetworkByName(name string) (ConnectNetworkShim, error) {
+func (cm *StaticConnect) LookupNetworkByName(name string) (iface.ConnectNetworkShim, error) {
 	switch name {
 	case "default":
-		return &ConnectNetworkMock{
-			name:       "default",
-			active:     true,
-			bridgeName: "virbr0",
-			dhcpLeases: []libvirt.NetworkDHCPLease{
+		return &StaticNetwork{
+			Name:       "default",
+			Active:     true,
+			BridgeName: "virbr0",
+			DhcpLeases: []libvirt.NetworkDHCPLease{
 				{
 					Iface:      "virbr0",
 					ExpiryTime: time.Now().Add(1 * time.Hour),
@@ -81,7 +82,7 @@ func (cm *ConnectMock) LookupNetworkByName(name string) (ConnectNetworkShim, err
 					Clientid:   "ff:08:24:45:0e:00:02:00:00:ab:11:35:ab:f3:c7:ac:54:9e:bb",
 				},
 			},
-			xmlDesc: `<network>
+			XmlDesc: `<network>
   <name>default</name>
   <uuid>dd8fe884-6c02-601e-7551-cca97df1c5df</uuid>
   <forward mode='nat'/>
@@ -95,51 +96,53 @@ func (cm *ConnectMock) LookupNetworkByName(name string) (ConnectNetworkShim, err
 </network>`,
 		}, nil
 	case "routed":
-		return &ConnectNetworkMock{
-			name:       "routed",
-			active:     false,
-			bridgeName: "br0",
-			dhcpLeases: []libvirt.NetworkDHCPLease{},
+		return &StaticNetwork{
+			Name:       "routed",
+			Active:     false,
+			BridgeName: "br0",
+			DhcpLeases: []libvirt.NetworkDHCPLease{},
 		}, nil
 	default:
 		return nil, fmt.Errorf("unknown network: %q", name)
 	}
 }
 
-// ConnectMockEmpty is a secondary mock that can be used to mimic a host where
+// ConnectEmpty is a secondary mock that can be used to mimic a host where
 // no libvirt networks or other resources are available. It implements the
 // ConnectShim interface.
-type ConnectMockEmpty struct{}
+type ConnectEmpty struct{}
 
-func (cme *ConnectMockEmpty) ListNetworks() ([]string, error) {
+func (cme *ConnectEmpty) ListNetworks() ([]string, error) {
 	return []string{}, nil
 }
 
-func (cme *ConnectMockEmpty) LookupNetworkByName(name string) (ConnectNetworkShim, error) {
+func (cme *ConnectEmpty) LookupNetworkByName(name string) (iface.ConnectNetworkShim, error) {
 	return nil, fmt.Errorf("unknown network: %q", name)
 }
 
-// ConnectNetworkMock implements the shim.Network interface for testing.
-type ConnectNetworkMock struct {
-	name       string
-	active     bool
-	bridgeName string
-	dhcpLeases []libvirt.NetworkDHCPLease
-	xmlDesc    string
+// StaticNetwork implements the shim.Network interface for testing.
+type StaticNetwork struct {
+	Name       string
+	Active     bool
+	BridgeName string
+	DhcpLeases []libvirt.NetworkDHCPLease
+	XmlDesc    string
 }
 
-func (cnm *ConnectNetworkMock) IsActive() (bool, error) { return cnm.active, nil }
+func (cnm *StaticNetwork) IsActive() (bool, error) { return cnm.Active, nil }
 
-func (cnm *ConnectNetworkMock) GetBridgeName() (string, error) { return cnm.bridgeName, nil }
+func (cnm *StaticNetwork) GetBridgeName() (string, error) { return cnm.BridgeName, nil }
 
-func (cnm *ConnectNetworkMock) GetDHCPLeases() ([]libvirt.NetworkDHCPLease, error) {
-	return cnm.dhcpLeases, nil
+func (cnm *StaticNetwork) GetDHCPLeases() ([]libvirt.NetworkDHCPLease, error) {
+	return cnm.DhcpLeases, nil
 }
 
-func (cnm *ConnectNetworkMock) GetXMLDesc(flags libvirt.NetworkXMLFlags) (string, error) {
-	return cnm.xmlDesc, nil
+func (cnm *StaticNetwork) GetXMLDesc(flags libvirt.NetworkXMLFlags) (string, error) {
+	return cnm.XmlDesc, nil
 }
 
-func (cnm *ConnectNetworkMock) Update(cmd libvirt.NetworkUpdateCommand, section libvirt.NetworkUpdateSection, parentIndex int, xml string, flags libvirt.NetworkUpdateFlags) error {
+func (cnm *StaticNetwork) Update(cmd libvirt.NetworkUpdateCommand, section libvirt.NetworkUpdateSection, parentIndex int, xml string, flags libvirt.NetworkUpdateFlags) error {
 	return nil
 }
+
+var _ iface.ConnectNetworkShim = (*StaticNetwork)(nil)
