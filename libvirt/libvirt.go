@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sync"
@@ -535,7 +536,7 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 func (d *driver) GetDomain(name string) (*domain.Info, error) {
 	dom, err := d.getDomain(name)
 	if err != nil {
-		return nil, fmt.Errorf("libvirt: unable to get domains: %w", err)
+		return nil, fmt.Errorf("libvirt: unable to get domain %s: %w", name, err)
 	}
 
 	if dom == nil {
@@ -554,6 +555,99 @@ func (d *driver) GetDomain(name string) (*domain.Info, error) {
 		CPUTime:   info.CpuTime,
 		NrVirtCPU: info.NrVirtCpu,
 	}, nil
+}
+
+// GetNetworkInterfaces retrieves the network interfaces defined for the given
+// domain. Interfaces information population is best effort, as not all information
+// will be available depending on the state of the domain.
+func (d *driver) GetNetworkInterfaces(name string) ([]domain.NetworkInterface, error) {
+	dom, err := d.getDomain(name)
+	if err != nil {
+		d.logger.Error("cannot get domain", "domain", name, "error", err)
+		return nil, fmt.Errorf("libvirt: unable to get domain %s: %w", name, err)
+	}
+	xml, err := dom.GetXMLDesc(0)
+	if err != nil {
+		d.logger.Error("cannot get domain XML", "domain", name, "error", err)
+		return nil, fmt.Errorf("libvirt: unable to get domain XML %s: %w", name, err)
+	}
+
+	dxml := &libvirtxml.Domain{}
+	if err := dxml.Unmarshal(xml); err != nil {
+		d.logger.Error("cannot parse domain XML", "domain", name, "error", err)
+		return nil, fmt.Errorf("libvirt: unable to parse domain XML %s: %w", name, err)
+	}
+
+	interfaces := make([]domain.NetworkInterface, len(dxml.Devices.Interfaces))
+
+	allNetworks, err := d.conn.ListAllNetworks(libvirt.CONNECT_LIST_NETWORKS_ACTIVE)
+	if err != nil {
+		d.logger.Error("cannot list available networks", "domain", name, "error", err)
+		return nil, fmt.Errorf("libvirt: unable to get domain interfaces list %s: %w", name, err)
+	}
+
+	bridgeNetworks := map[string]string{}
+	for _, network := range allNetworks {
+		netname, err := network.GetName()
+		if err != nil {
+			d.logger.Debug("failed to get network name", "domain", name, "error", err)
+			continue
+		}
+		bridge, err := network.GetBridgeName()
+		if err != nil {
+			d.logger.Debug("failed to get network bridge", "domain", name, "network", netname,
+				"error", err)
+			continue
+		}
+
+		bridgeNetworks[bridge] = netname
+	}
+
+	for i, iface := range dxml.Devices.Interfaces {
+		interfaces[i] = domain.NetworkInterface{}
+
+		if iface.Source != nil && iface.Source.Bridge != nil {
+			if netName, ok := bridgeNetworks[iface.Source.Bridge.Bridge]; ok {
+				interfaces[i].NetworkName = netName
+			} else {
+				d.logger.Debug("no matching network found for bridge", "domain", name,
+					"bridge", iface.Source.Bridge.Bridge)
+			}
+		}
+
+		if iface.Model != nil {
+			interfaces[i].Model = iface.Model.Type
+		}
+
+		if iface.Driver != nil {
+			interfaces[i].Driver = iface.Driver.Name
+		}
+
+		if iface.MAC != nil {
+			interfaces[i].MAC = iface.MAC.Address
+		}
+
+		// The Guest and IP values will only be set if the guest agent
+		// is available (as it is responsible for reporting these values).
+		// If it is not, these value will remain unset.
+		if iface.Guest != nil {
+			interfaces[i].DeviceName = iface.Guest.Dev
+		}
+
+		interfaces[i].Addrs = make([]netip.Addr, len(iface.IP))
+		for j, addr := range iface.IP {
+			interfaces[i].Addrs[j], err = netip.ParseAddr(addr.Address)
+			if err != nil {
+				d.logger.Warn("failed to parse interface address",
+					"domain", name, "address", addr.Address, "error", err)
+			}
+		}
+
+		d.logger.Debug("domain network interface retrieved", "domain", name,
+			"interface", interfaces[i])
+	}
+
+	return interfaces, nil
 }
 
 func (d *driver) GetAllDomains() ([]string, error) {
