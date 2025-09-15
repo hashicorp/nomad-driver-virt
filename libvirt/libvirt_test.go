@@ -209,7 +209,6 @@ func TestStartDomain(t *testing.T) {
 				Name:              tt.domainName,
 				Memory:            66600,
 				CPUs:              2,
-				BaseImage:         "/path/to/test/image",
 				HostName:          "test-hostname",
 				SSHKey:            "sshkey lkbfubwfu...",
 				Password:          "test-password",
@@ -292,7 +291,6 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 		Name:              domainName,
 		Memory:            66600,
 		CPUs:              6,
-		BaseImage:         "/path/to/test/image",
 	})
 	must.NoError(t, err)
 

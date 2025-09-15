@@ -4,6 +4,7 @@
 package virt
 
 import (
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"time"
 
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
@@ -22,8 +23,9 @@ var (
 			"user":     hclspec.NewAttr("user", "string", false),
 			"password": hclspec.NewAttr("password", "string", false),
 		})),
-		"data_dir":     hclspec.NewAttr("data_dir", "string", false),
-		"image_paths": hclspec.NewAttr("image_paths", "list(string)", false),
+		"data_dir":           hclspec.NewAttr("data_dir", "string", false),
+		"image_paths":        hclspec.NewAttr("image_paths", "list(string)", false),
+		"allowed_ceph_uuids": hclspec.NewAttr("allowed_ceph_uuids", "list(string)", false),
 	})
 
 	// taskConfigSpec is the specification of the plugin's configuration for
@@ -32,9 +34,6 @@ var (
 	// when a job is submitted.
 	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 		"network_interface":               net.NetworkInterfaceHCLSpec(),
-		"use_thin_copy":                   hclspec.NewAttr("use_thin_copy", "bool", false),
-		"primary_disk_size":               hclspec.NewAttr("primary_disk_size", "number", true),
-		"image":                           hclspec.NewAttr("image", "string", true),
 		"hostname":                        hclspec.NewAttr("hostname", "string", false),
 		"user_data":                       hclspec.NewAttr("user_data", "string", false),
 		"default_user_authorized_ssh_key": hclspec.NewAttr("default_user_authorized_ssh_key", "string", false),
@@ -44,6 +43,7 @@ var (
 			"arch":    hclspec.NewAttr("arch", "string", false),
 			"machine": hclspec.NewAttr("machine", "string", false),
 		})),
+		"disks": disks.HclSpec(),
 	})
 
 	// capabilities indicates what optional features this driver supports
@@ -77,7 +77,6 @@ var (
 // TaskConfig contains configuration information for a task that runs within
 // this plugin.
 type TaskConfig struct {
-	ImagePath           string         `codec:"image"`
 	Hostname            string         `codec:"hostname"`
 	OS                  *OS            `codec:"os"`
 	UserData            string         `codec:"user_data"`
@@ -85,10 +84,9 @@ type TaskConfig struct {
 	CMDs                []string       `codec:"cmds"`
 	DefaultUserSSHKey   string         `codec:"default_user_authorized_ssh_key"`
 	DefaultUserPassword string         `codec:"default_user_password"`
-	UseThinCopy         bool           `codec:"use_thin_copy"`
-	PrimaryDiskSize     uint64         `codec:"primary_disk_size"`
 	// The list of network interfaces that should be added to the VM.
 	net.NetworkInterfacesConfig `codec:"network_interface"`
+	disks.DisksConfig           `codec:"disks"`
 }
 
 type OS struct {

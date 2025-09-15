@@ -30,8 +30,6 @@ job "virt-example" {
 
       config {
         image                           = "local/focal-server-cloudimg-amd64.img"
-        primary_disk_size               = 26000
-        use_thin_copy                   = true
         default_user_password           = "password"
         cmds                            = ["touch /home/ubuntu/file.txt"]
         default_user_authorized_ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI..."

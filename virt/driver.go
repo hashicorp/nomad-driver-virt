@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -151,8 +150,9 @@ type VirtDriverPlugin struct {
 	// networkInit indicates whether the network subsystem has had its init
 	// function called. While the function should be idempotent, this helps
 	// avoid unnecessary calls and work.
-	networkInit  atomic.Bool
-	imageHandler ImageHandler
+	networkInit      atomic.Bool
+	imageHandler     ImageHandler
+	allowedCephUUIDs []string
 }
 
 // NewPlugin returns a new driver plugin
@@ -583,9 +583,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	// paths to load images from.
 	allowedPaths := append(d.config.ImagePaths, d.dataDir, cfg.AllocDir)
 
-	diskImagePath := driverConfig.ImagePath
+	//diskImagePath := driverConfig.ImagePath
 
-	if !fileExists(diskImagePath) {
+	/*if !fileExists(diskImagePath) {
 
 		// Assuming the image was downloaded using artifacts and will be placed
 		// somewhere in the alloc's filesystem.
@@ -593,14 +593,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		if !fileExists(diskImagePath) {
 			return nil, nil, fmt.Errorf("virt: %s, %w", cfg.AllocID, ErrImageNotFound)
 		}
-	}
+	}*/
 
-	diskFormat, err := d.imageHandler.GetImageFormat(diskImagePath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("virt: unable to get disk format %s: %w", cfg.AllocID, err)
-	}
-
-	if driverConfig.UseThinCopy {
+	/*if driverConfig.UseThinCopy {
 		copyPath := filepath.Join(d.dataDir, taskName+".img")
 		d.logger.Info("creating thin copy at", "path", copyPath) // TODO: Put back at info
 
@@ -611,8 +606,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		}
 
 		diskImagePath = copyPath
-		diskFormat = "qcow2"
-	}
+	}*/
 
 	cpuSet := idset.Parse[hw.CoreID](cfg.Resources.LinuxResources.CpusetCpus)
 
@@ -623,9 +617,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		CPUs:              uint(cpuSet.Size()),
 		CPUset:            cfg.Resources.LinuxResources.CpusetCpus,
 		OsVariant:         osVariant,
-		BaseImage:         diskImagePath,
-		DiskFmt:           diskFormat,
-		PrimaryDiskSize:   driverConfig.PrimaryDiskSize,
 		HostName:          hostname,
 		Mounts:            allocFSMounts,
 		CMDs:              driverConfig.CMDs,
@@ -635,9 +626,10 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		SSHKey:            driverConfig.DefaultUserSSHKey,
 		Files:             []domain.File{createEnvsFile(cfg.Env)},
 		NetworkInterfaces: driverConfig.NetworkInterfacesConfig,
+		DisksConfig:       &driverConfig.DisksConfig,
 	}
 
-	if err := dc.Validate(allowedPaths); err != nil {
+	if err := dc.Validate(allowedPaths, d.allowedCephUUIDs); err != nil {
 		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
 	}
 

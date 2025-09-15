@@ -195,13 +195,10 @@ func virtDriverHarness(t *testing.T, v Virtualizer, dg DomainGetter, ih ImageHan
 
 func newTaskConfig(image string) TaskConfig {
 	return TaskConfig{
-		ImagePath:           image,
 		UserData:            "/path/to/user/data",
 		CMDs:                []string{"cmd arg arg", "cmd arg arg"},
 		DefaultUserSSHKey:   "ssh-ed666 randomkey",
 		DefaultUserPassword: "password",
-		UseThinCopy:         false,
-		PrimaryDiskSize:     2666,
 		OS: &OS{
 			Arch:    "arch",
 			Machine: "machine",
@@ -261,9 +258,6 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	must.Eq(t, 3, callConfig.CPUs)
 	must.StrContains(t, "arch", callConfig.OsVariant.Arch)
 	must.StrContains(t, "machine", callConfig.OsVariant.Machine)
-	must.StrContains(t, mockImage.Name(), callConfig.BaseImage)
-	must.StrContains(t, "tif", callConfig.DiskFmt)
-	must.Eq(t, 2666, callConfig.PrimaryDiskSize)
 	must.StrContains(t, "nomad-task-name-0000000", callConfig.HostName)
 	must.Eq(t, 3, len(callConfig.Mounts))
 	must.Eq(t, domain.MountFileConfig{
@@ -512,7 +506,6 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			taskCfg := newTaskConfig(mockImage.Name())
-			taskCfg.UseThinCopy = tt.enableThinCopy
 
 			taskID := fmt.Sprintf("%s/%s/%s", allocID[:7], "task-name", "0000000")
 			task := &drivers.TaskConfig{
@@ -528,10 +521,6 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 
 			_, _, err = d.StartTask(task)
 			must.NoError(t, err)
-
-			calledConfig := mockVirtualizer.getPassedConfig()
-			must.StrContains(t, tt.expectedPath, calledConfig.BaseImage)
-			must.StrContains(t, tt.expectedFormat, calledConfig.DiskFmt)
 		})
 	}
 }

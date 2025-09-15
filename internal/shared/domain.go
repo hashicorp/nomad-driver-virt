@@ -6,7 +6,7 @@ package domain
 import (
 	"errors"
 	"fmt"
-	"path/filepath"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"regexp"
 	"slices"
 	"strings"
@@ -17,7 +17,6 @@ import (
 )
 
 const (
-	minDiskMB     = 2000
 	minMemoryMB   = 500
 	maxNameLength = 63 // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 )
@@ -28,8 +27,6 @@ var (
 	validLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
 
 	ErrEmptyName           = errors.New("domain name can not be empty")
-	ErrMissingImage        = errors.New("image path can not be empty")
-	ErrNotEnoughDisk       = errors.New("not enough disk space assigned to task")
 	ErrNoCPUS              = errors.New("no cpus configured, use resources.cores to assign cores in the job spec")
 	ErrNotEnoughMemory     = errors.New("not enough memory assigned to task")
 	ErrIncompleteOSVariant = errors.New("provided os information is incomplete: arch and machine are mandatory ")
@@ -66,9 +63,6 @@ type Config struct {
 	CPUset            string
 	CPUs              uint
 	OsVariant         *OSVariant
-	BaseImage         string
-	DiskFmt           string
-	PrimaryDiskSize   uint64
 	HostName          string
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
@@ -79,25 +73,14 @@ type Config struct {
 	BOOTCMDs          []string
 	CIUserData        string
 
+	*disks.DisksConfig
 	NetworkInterfaces net.NetworkInterfacesConfig
 }
 
-func (dc *Config) Validate(allowedPaths []string) error {
+func (dc *Config) Validate(allowedPaths []string, allowedCephUUIDs []string) error {
 	var mErr *multierror.Error
 	if dc.Name == "" {
 		mErr = multierror.Append(mErr, ErrEmptyName)
-	}
-
-	if dc.BaseImage == "" {
-		mErr = multierror.Append(mErr, ErrMissingImage)
-	} else {
-		if !isAllowedImagePath(allowedPaths, dc.BaseImage) {
-			mErr = multierror.Append(mErr, ErrPathNotAllowed)
-		}
-	}
-
-	if dc.PrimaryDiskSize < minDiskMB {
-		mErr = multierror.Append(mErr, ErrNotEnoughDisk)
 	}
 
 	if dc.Memory < minMemoryMB {
@@ -119,6 +102,10 @@ func (dc *Config) Validate(allowedPaths []string) error {
 		mErr = multierror.Append(mErr, ErrInvalidHostName)
 	}
 
+	if dc.DisksConfig != nil {
+		(*dc.DisksConfig).Validate(mErr, allowedPaths, allowedCephUUIDs)
+	}
+
 	if err := dc.NetworkInterfaces.Validate(); err != nil {
 		mErr = multierror.Append(mErr, err)
 	}
@@ -134,9 +121,6 @@ func (dc *Config) Copy() *Config {
 		Memory:            dc.Memory,
 		CPUset:            dc.CPUset,
 		CPUs:              dc.CPUs,
-		BaseImage:         dc.BaseImage,
-		DiskFmt:           dc.DiskFmt,
-		PrimaryDiskSize:   dc.PrimaryDiskSize,
 		NetworkInterfaces: slices.Clone(dc.NetworkInterfaces),
 		HostName:          dc.HostName,
 		Mounts:            slices.Clone(dc.Mounts),
@@ -146,6 +130,10 @@ func (dc *Config) Copy() *Config {
 		CMDs:              slices.Clone(dc.CMDs),
 		BOOTCMDs:          slices.Clone(dc.BOOTCMDs),
 		CIUserData:        dc.CIUserData,
+	}
+
+	if dc.DisksConfig != nil {
+		copy.DisksConfig = dc.DisksConfig.Copy()
 	}
 
 	if dc.OsVariant != nil {
@@ -204,19 +192,4 @@ func ValidateHostName(name string) error {
 	}
 
 	return nil
-}
-
-func isParent(parent, path string) bool {
-	rel, err := filepath.Rel(parent, path)
-	return err == nil && !strings.HasPrefix(rel, "..")
-}
-
-func isAllowedImagePath(allowedPaths []string, imagePath string) bool {
-	for _, ap := range allowedPaths {
-		if isParent(ap, imagePath) {
-			return true
-		}
-	}
-
-	return false
 }
