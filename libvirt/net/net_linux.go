@@ -21,6 +21,7 @@ import (
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
 	lv "libvirt.org/go/libvirt"
+	"libvirt.org/go/libvirtxml"
 )
 
 const (
@@ -39,6 +40,10 @@ const (
 
 	// iptablesFilterTableName is the name of the filter table within iptables.
 	iptablesFilterTableName = "filter"
+
+	// automaticParentIndex is the special libvirt value to automatically
+	// determine placement when adding an element.
+	automaticParentIndex = -1
 )
 
 func (c *Controller) Fingerprint(attr map[string]*structs.Attribute) {
@@ -201,9 +206,16 @@ func (c *Controller) VMStartedBuild(req *net.VMStartedBuildRequest) (*net.VMStar
 		return nil, fmt.Errorf("failed to lookup network: %w", err)
 	}
 
-	ipAddr, err := c.discoverDHCPLeaseIP(network, req.Hostname, networkName, req.Hwaddrs)
+	ipAddr, macAddr, err := c.discoverDHCPLeaseIP(network, req.Hostname, networkName, req.Hwaddrs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to discover IP address: %w", err)
+	}
+
+	// Register the IP to the domain to ensure it does not change.
+	dhcpEntry, err := c.reserveIP(network, ipAddr, req.Hostname, macAddr)
+	if err != nil {
+		c.logger.Warn("failed to reserve IP address", "network", network, "address", ipAddr, "hostname",
+			req.Hostname, "mac", macAddr, "error", err)
 	}
 
 	teardownRules, err := c.configureIPTables(req.Resources, netInterface.Bridge, ipAddr)
@@ -216,9 +228,37 @@ func (c *Controller) VMStartedBuild(req *net.VMStartedBuildRequest) (*net.VMStar
 			IP: ipAddr,
 		},
 		TeardownSpec: &net.TeardownSpec{
-			IPTablesRules: teardownRules,
+			IPTablesRules:   teardownRules,
+			DHCPReservation: dhcpEntry,
+			Network:         networkName,
 		},
 	}, nil
+}
+
+// reserveIP reserves an IP address with the DHCP server for a specific domain
+// based on MAC address and hostname.
+func (c *Controller) reserveIP(network libvirt.ConnectNetworkShim, ipAddr, hostname, mac string) (string, error) {
+	reservation := libvirtxml.NetworkDHCPHost{
+		IP:   ipAddr,
+		MAC:  mac,
+		Name: hostname,
+	}
+
+	c.logger.Debug("adding dhcp reservation", "reservation", reservation)
+
+	entry, err := reservation.Marshal()
+	if err != nil {
+		return "", err
+	}
+
+	err = network.Update(lv.NETWORK_UPDATE_COMMAND_ADD_LAST, lv.NETWORK_SECTION_IP_DHCP_HOST,
+		automaticParentIndex, entry, lv.NETWORK_UPDATE_AFFECT_LIVE|lv.NETWORK_UPDATE_AFFECT_CONFIG)
+
+	if err != nil {
+		return "", fmt.Errorf("failed to update network: %w", err)
+	}
+
+	return entry, nil
 }
 
 // networkNameFromBridgeName translates the name of a bridge network interface
@@ -255,7 +295,7 @@ func (c *Controller) networkNameFromBridgeName(name string) (string, error) {
 // network. The function includes a ticker in order to poll for the information
 // as this can take several seconds to become available.
 func (c *Controller) discoverDHCPLeaseIP(
-	network libvirt.ConnectNetworkShim, hostname, netName string, hwaddrs []string) (string, error) {
+	network libvirt.ConnectNetworkShim, hostname, netName string, hwaddrs []string) (ipAddr string, macAddr string, err error) {
 
 	ticker := time.NewTicker(c.dhcpLeaseDiscoveryInterval)
 	defer ticker.Stop()
@@ -325,9 +365,12 @@ func (c *Controller) discoverDHCPLeaseIP(
 				return b.ExpiryTime.Compare(a.ExpiryTime)
 			})
 
-			return matches[0].IPaddr, nil
+			lease := matches[len(matches)-1]
+
+			return lease.IPaddr, lease.Mac, nil
+
 		case <-timeout.C:
-			return "", fmt.Errorf("timeout reached discovering DHCP lease for %q", hostname)
+			return "", "", fmt.Errorf("timeout reached discovering DHCP lease for %q", hostname)
 		}
 	}
 }
@@ -496,5 +539,63 @@ func (c *Controller) VMTerminatedTeardown(req *net.VMTerminatedTeardownRequest) 
 		}
 	}
 
+	// Remove the DHCP IP reservation
+	if err := c.removeIPReservation(req.TeardownSpec.Network, req.TeardownSpec.DHCPReservation); err != nil {
+		mErr.Errors = append(
+			mErr.Errors,
+			fmt.Errorf("failed to update network for IP reservation removal: %w", err))
+	}
+
 	return &net.VMTerminatedTeardownResponse{}, mErr.ErrorOrNil()
+}
+
+// removeIPReservation removes the DHCP IP reservation if it exists.
+func (c *Controller) removeIPReservation(networkName, reservation string) error {
+	if reservation == "" {
+		return nil
+	}
+
+	network, err := c.netConn.LookupNetworkByName(networkName)
+	if err != nil {
+		return fmt.Errorf("failed to find network %q: %w", networkName, err)
+	}
+
+	exists, err := c.ipReservationExists(network, reservation)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		c.logger.Debug("ip reservation not found", "reservation", reservation)
+		return nil
+	}
+
+	err = network.Update(lv.NETWORK_UPDATE_COMMAND_DELETE, lv.NETWORK_SECTION_IP_DHCP_HOST,
+		automaticParentIndex, reservation, lv.NETWORK_UPDATE_AFFECT_LIVE|lv.NETWORK_UPDATE_AFFECT_CONFIG)
+
+	return err
+}
+
+// ipReservationExists checks if the DHCP reservation currently exists.
+func (c *Controller) ipReservationExists(network libvirt.ConnectNetworkShim, reservation string) (bool, error) {
+	res := &libvirtxml.NetworkDHCPHost{}
+	if err := res.Unmarshal(reservation); err != nil {
+		return false, fmt.Errorf("could not parse IP reservation: %w", err)
+	}
+
+	networkCfg := &libvirtxml.Network{}
+	networkDoc, err := network.GetXMLDesc(0)
+	if err = networkCfg.Unmarshal(networkDoc); err != nil {
+		return false, err
+	}
+
+	for _, ip := range networkCfg.IPs {
+		for _, host := range ip.DHCP.Hosts {
+			if host.IP == res.IP && host.MAC == res.MAC && host.Name == res.Name {
+				return true, nil
+			}
+		}
+	}
+
+	return false, nil
 }
