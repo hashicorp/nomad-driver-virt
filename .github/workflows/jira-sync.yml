@@ -20,16 +20,23 @@ jobs:
     runs-on: ubuntu-latest
     name: Jira Issue sync
     steps:
+      # Always use the latest version of the composite
+      # actions available within the nomad repository
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          repository: hashicorp/nomad
+          ref: main
+          sparse-checkout: ./.github/actions/jira
       - name: Search
         if: github.event.action != 'opened'
         id: search
-        uses: hashicorp/nomad/.github/actions/jira/search@main
+        uses: ./.github/actions/jira/search
         with:
           # cf[10089] is Issue Link (use JIRA API to retrieve)
           jql: 'cf[10089] = "${{ github.event.issue.html_url || github.event.pull_request.html_url }}"'
       - name: Create ticket if an issue is labeled with hcc/jira
         if: github.event.action == 'labeled' && github.event.label.name == 'hcc/jira' && !steps.search.outputs.issue
-        uses: hashicorp/nomad/.github/actions/jira/create@main
+        uses: ./.github/actions/jira/create
         with:
           project: NMD
           issuetype: "GH Issue"
@@ -47,19 +54,19 @@ jobs:
                           "labels": ["community", "GitHub"] }'
       - name: Sync comment
         if: github.event.action == 'created' && steps.search.outputs.issue
-        uses: hashicorp/nomad/.github/actions/jira/sync-comment@main
+        uses: ./.github/actions/jira/sync-comment
         with:
           issue: ${{ steps.search.outputs.issue }}
           comment: "${{ github.actor }} ${{ github.event.review.state || 'commented' }}:\n\n${{ github.event.comment.body || github.event.review.body }}\n\n${{ github.event.comment.html_url || github.event.review.html_url }}"
       - name: Close ticket
         if: ( github.event.action == 'closed' || github.event.action == 'deleted' ) && steps.search.outputs.issue
-        uses: hashicorp/nomad/.github/actions/jira/transition@main
+        uses: ./.github/actions/jira/transition
         with:
           issue: ${{ steps.search.outputs.issue }}
           transition: "Closed"
       - name: Reopen ticket
         if: github.event.action == 'reopened' && steps.search.outputs.issue
-        uses: hashicorp/nomad/.github/actions/jira/transition@main
+        uses: ./.github/actions/jira/transition
         with:
           issue: ${{ steps.search.outputs.issue }}
           transition: "To Do"
