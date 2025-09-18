@@ -11,13 +11,13 @@ import (
 )
 
 var (
-	_ iface.ConnectShim        = &ConnectMock{}
-	_ iface.ConnectShim        = &ConnectMockEmpty{}
-	_ iface.ConnectNetworkShim = &ConnectNetworkMock{}
+	_ iface.ConnectShim        = &StaticConnect{}
+	_ iface.ConnectShim        = &ConnectEmpty{}
+	_ iface.ConnectNetworkShim = &StaticNetwork{}
 )
 
 func TestMock_ListNetworks(t *testing.T) {
-	mockConnect := &ConnectMock{}
+	mockConnect := &StaticConnect{}
 
 	netList, err := mockConnect.ListNetworks()
 	must.NoError(t, err)
@@ -25,7 +25,7 @@ func TestMock_ListNetworks(t *testing.T) {
 }
 
 func TestMock_LookupNetworkByName(t *testing.T) {
-	mockConnect := &ConnectMock{}
+	mockConnect := &StaticConnect{}
 
 	// Try looking up a network that doesn't exist.
 	net, err := mockConnect.LookupNetworkByName("no-found")
@@ -44,7 +44,7 @@ func TestMock_LookupNetworkByName(t *testing.T) {
 }
 
 func TestMockEmpty_ListNetworks(t *testing.T) {
-	mockConnect := &ConnectMockEmpty{}
+	mockConnect := &ConnectEmpty{}
 
 	netList, err := mockConnect.ListNetworks()
 	must.NoError(t, err)
@@ -52,7 +52,7 @@ func TestMockEmpty_ListNetworks(t *testing.T) {
 }
 
 func TestMockEmpty_LookupNetworkByName(t *testing.T) {
-	mockConnect := &ConnectMockEmpty{}
+	mockConnect := &ConnectEmpty{}
 
 	// Try looking up a network that doesn't exist.
 	net, err := mockConnect.LookupNetworkByName("no-found")
@@ -71,13 +71,13 @@ func TestMockEmpty_LookupNetworkByName(t *testing.T) {
 }
 
 func TestMockNetwork(t *testing.T) {
-	mockNetwork := &ConnectNetworkMock{name: "default", active: true, bridgeName: "virbr0"}
+	mockNetwork := &StaticNetwork{Name: "default", Active: true, BridgeName: "virbr0"}
 
 	bridgeName, err := mockNetwork.GetBridgeName()
 	must.NoError(t, err)
-	must.Eq(t, mockNetwork.bridgeName, bridgeName)
+	must.Eq(t, mockNetwork.BridgeName, bridgeName)
 
 	active, err := mockNetwork.IsActive()
 	must.NoError(t, err)
-	must.Eq(t, mockNetwork.active, active)
+	must.Eq(t, mockNetwork.Active, active)
 }
