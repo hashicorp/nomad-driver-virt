@@ -1,0 +1,52 @@
+steps:
+  - label: "🏗️ Build & Unit Tests"
+    command: |
+      set -euxo pipefail
+      echo "--- Go environment setup"
+      go version
+      go env
+
+      echo "--- Dependencies and linting"
+      go mod tidy
+      go vet ./...
+
+      echo "--- Unit tests"
+      go test -count=1 -race ./...
+
+      echo "--- Build binary"
+      go build -v ./...
+
+  - label: "🔬 Cloud Hypervisor Integration Test"
+    command: |
+      set -euxo pipefail
+
+      echo "--- Verify Cloud Hypervisor binary"
+      ${CH_BIN:-/usr/bin/cloud-hypervisor} --version
+
+      echo "--- Check network bridge"
+      ip link show ${BRIDGE:-br0} || (echo "Bridge ${BRIDGE:-br0} not found" && exit 1)
+
+      echo "--- Verify test artifacts exist"
+      ls -la ${KERNEL_PATH:-/root/vmlinux-normal}
+      ls -la ${INITRD_PATH:-/root/raiin-fc.cpio.gz}
+      ls -la ${ROOTFS_PATH:-/root/rootfs.img}
+
+      echo "--- Integration tests"
+      sudo -E env \
+        KERNEL_PATH="${KERNEL_PATH:-/root/vmlinux-normal}" \
+        INITRD_PATH="${INITRD_PATH:-/root/raiin-fc.cpio.gz}" \
+        ROOTFS_PATH="${ROOTFS_PATH:-/root/rootfs.img}" \
+        CH_BIN="${CH_BIN:-/usr/bin/cloud-hypervisor}" \
+        BRIDGE="${BRIDGE:-br0}" \
+        go test -v -count=1 ./...
+
+env:
+  KERNEL_PATH: "/root/vmlinux-normal"
+  INITRD_PATH: "/root/raiin-fc.cpio.gz"
+  ROOTFS_PATH: "/root/rootfs.img"
+  CH_BIN: "/usr/bin/cloud-hypervisor"
+  BRIDGE: "br0"
+
+agents:
+  # Run on the agent with Cloud Hypervisor capabilities
+  queue: "cloud-hypervisor"

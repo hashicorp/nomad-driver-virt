@@ -15,8 +15,8 @@ import (
 
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
-	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/ccheshirecat/nomad-driver-ch/libvirt"
+	"github.com/ccheshirecat/nomad-driver-ch/virt/net"
 	nomadstructs "github.com/hashicorp/nomad/nomad/structs"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/shared/structs"

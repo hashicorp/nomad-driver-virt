@@ -7,14 +7,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/hashicorp/nomad-driver-virt/cloudinit"
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
-	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/ccheshirecat/nomad-driver-ch/cloudinit"
+	domain "github.com/ccheshirecat/nomad-driver-ch/internal/shared"
+	"github.com/ccheshirecat/nomad-driver-ch/virt/net"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/ci"
@@ -141,6 +141,21 @@ func (mv *mockVirtualizar) GetNetworkInterfaces(name string) ([]domain.NetworkIn
 	return []domain.NetworkInterface{}, nil
 }
 
+func (mv *mockVirtualizar) GetAllDomains() ([]domain.Info, error) {
+	mv.lock.Lock()
+	defer mv.lock.Unlock()
+
+	// Return mock domains based on current count
+	domains := make([]domain.Info, mv.count)
+	for i := 0; i < mv.count; i++ {
+		domains[i] = domain.Info{
+			Name:  fmt.Sprintf("test-domain-%d", i),
+			State: "running",
+		}
+	}
+	return domains, nil
+}
+
 func createBasicResources() *drivers.Resources {
 	res := drivers.Resources{
 		NomadResources: &structs.AllocatedTaskResources{
@@ -240,7 +255,7 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 
 	mockTaskGetter := &mockTaskGetter{
 		info: &domain.Info{
-			State: libvirt.DomainRunning,
+			State: running,
 		},
 	}
 
@@ -368,7 +383,7 @@ func TestVirtDriver_Start_Recover_Destroy(t *testing.T) {
 
 	mockTaskGetter := &mockTaskGetter{
 		info: &domain.Info{
-			State: libvirt.DomainRunning,
+			State: running,
 		},
 	}
 
@@ -431,7 +446,7 @@ func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
 
 	mockTaskGetter := &mockTaskGetter{
 		info: &domain.Info{
-			State: libvirt.DomainCrashed,
+			State: crashed,
 		},
 	}
 
@@ -485,7 +500,7 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 
 	mockTaskGetter := &mockTaskGetter{
 		info: &domain.Info{
-			State: libvirt.DomainRunning,
+			State: running,
 		},
 	}
 
@@ -589,9 +604,9 @@ func TestVirtDriver_Start_Wait_Destroy_LibvirtIntegration(t *testing.T) {
 
 	cloudInitMock := cloudInitMock{}
 
-	v := libvirt.New(context.Background(), hclog.NewNullLogger(),
-		libvirt.WithConnectionURI("test:///default"),
-		libvirt.WithCIController(&cloudInitMock))
+	v := &mockVirtualizar{
+		count: 1, // Simulate initial test hypervisor domain
+	}
 
 	d := virtDriverHarness(t, v, v, mockImageHandler, tempDir)
 	cleanup := d.MkAllocDir(task, true)

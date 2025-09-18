@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/ccheshirecat/nomad-driver-ch/libvirt"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
 	"github.com/shoenig/test/must"
 )

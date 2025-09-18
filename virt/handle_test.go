@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	domain "github.com/ccheshirecat/nomad-driver-ch/internal/shared"
 	"github.com/hashicorp/nomad/client/structs"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/shoenig/test/must"

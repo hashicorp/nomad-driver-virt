@@ -12,8 +12,8 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/hashicorp/nomad-driver-virt/cloudinit"
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/ccheshirecat/nomad-driver-ch/cloudinit"
+	domain "github.com/ccheshirecat/nomad-driver-ch/internal/shared"
 
 	"github.com/hashicorp/go-hclog"
 	"libvirt.org/go/libvirt"

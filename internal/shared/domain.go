@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/ccheshirecat/nomad-driver-ch/virt/net"
 )
 
 const (
@@ -223,4 +223,33 @@ func isAllowedImagePath(allowedPaths []string, imagePath string) bool {
 	}
 
 	return false
+}
+
+// Network configuration for Cloud Hypervisor networking
+type Network struct {
+	Bridge      string `codec:"bridge"`
+	SubnetCIDR  string `codec:"subnet_cidr"`
+	Gateway     string `codec:"gateway"`
+	IPPoolStart string `codec:"ip_pool_start"`
+	IPPoolEnd   string `codec:"ip_pool_end"`
+	TAPPrefix   string `codec:"tap_prefix"`
+}
+
+// CloudHypervisor configuration for the Cloud Hypervisor VMM
+type CloudHypervisor struct {
+	Bin              string `codec:"bin"`
+	RemoteBin        string `codec:"remote_bin"`
+	VirtiofsdBin     string `codec:"virtiofsd_bin"`
+	DefaultKernel    string `codec:"default_kernel"`
+	DefaultInitramfs string `codec:"default_initramfs"`
+	Firmware         string `codec:"firmware"`
+	Seccomp          string `codec:"seccomp"`
+	LogFile          string `codec:"log_file"`
+}
+
+// VFIO configuration for device passthrough
+type VFIO struct {
+	Allowlist         []string `codec:"allowlist"`
+	IOMMUAddressWidth uint     `codec:"iommu_address_width"`
+	PCISegments       uint     `codec:"pci_segments"`
 }

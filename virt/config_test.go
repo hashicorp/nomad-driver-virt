@@ -6,7 +6,7 @@ package virt
 import (
 	"testing"
 
-	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/ccheshirecat/nomad-driver-ch/virt/net"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"

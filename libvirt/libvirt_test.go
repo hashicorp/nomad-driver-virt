@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/nomad-driver-virt/cloudinit"
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
-	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/ccheshirecat/nomad-driver-ch/cloudinit"
+	domain "github.com/ccheshirecat/nomad-driver-ch/internal/shared"
+	"github.com/ccheshirecat/nomad-driver-ch/virt/net"
 	"github.com/shoenig/test/must"
 	"libvirt.org/go/libvirt"
 )

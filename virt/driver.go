@@ -14,11 +14,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
-	virtnet "github.com/hashicorp/nomad-driver-virt/libvirt/net"
-	"github.com/hashicorp/nomad-driver-virt/virt/image_tools"
-	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/ccheshirecat/nomad-driver-ch/chnet"
+	"github.com/ccheshirecat/nomad-driver-ch/cloudhypervisor"
+	domain "github.com/ccheshirecat/nomad-driver-ch/internal/shared"
+	"github.com/ccheshirecat/nomad-driver-ch/virt/image_tools"
+	"github.com/ccheshirecat/nomad-driver-ch/virt/net"
 	"github.com/hashicorp/nomad/client/lib/idset"
 
 	"github.com/hashicorp/go-hclog"
@@ -65,7 +65,7 @@ var (
 	}
 
 	ErrExistingTaks    = errors.New("task is already running")
-	ErrStartingLibvirt = errors.New("unable to start libvirt")
+	ErrStartingCH      = errors.New("unable to start cloud hypervisor")
 	ErrImageNotFound   = errors.New("disk image not found at path")
 	ErrTaskCrashed     = errors.New("task has crashed")
 )
@@ -143,6 +143,7 @@ type VirtDriverPlugin struct {
 	config         *Config
 	nomadConfig    *base.ClientDriverConfig
 	tasks          *taskStore
+	baseCtx        context.Context
 	signalShutdown context.CancelFunc
 	logger         hclog.Logger
 	dataDir        string
@@ -161,22 +162,18 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 	ctx, cancel := context.WithCancel(context.Background())
 	logger = logger.Named(pluginName)
 
-	v := libvirt.New(ctx, logger)
-
-	// Should we check if extentions and kernel modules are there?
-	// grep -E 'svm|vmx' /proc/cpuinfo
-	// lsmod | grep kvm -> kvm_intel, kvm_amd, nvme-tcp
+	// Cloud Hypervisor driver will be initialized later in SetConfig
+	// when we have the full configuration available
 	return &VirtDriverPlugin{
 		eventer:           eventer.NewEventer(ctx, logger),
 		config:            &Config{},
 		tasks:             newTaskStore(),
+		baseCtx:           ctx,
 		signalShutdown:    cancel,
 		logger:            logger,
 		networkInit:       atomic.Bool{},
 		imageHandler:      image_tools.NewHandler(logger),
-		virtualizer:       v,
-		taskGetter:        v,
-		networkController: virtnet.NewController(logger, v),
+		// virtualizer and networkController will be set in SetConfig
 	}
 }
 
@@ -217,6 +214,14 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 	if err != nil {
 		return fmt.Errorf("virt: unable to create data dir: %w", err)
 	}
+
+	// Initialize Cloud Hypervisor driver with config
+	v := cloudhypervisor.New(d.baseCtx, d.logger, &d.config.CloudHypervisor, &d.config.Network, d.dataDir)
+	d.virtualizer = v
+	d.taskGetter = v
+
+	// Initialize network controller with config
+	d.networkController = chnet.NewController(d.logger, &d.config.Network)
 
 	err = d.virtualizer.Start(d.dataDir)
 	if err != nil {
@@ -276,21 +281,32 @@ func (d *VirtDriverPlugin) handleFingerprint(ctx context.Context, ch chan<- *dri
 
 // buildFingerprint returns the driver's fingerprint data
 func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
+	// Skip if virtualizer not yet initialized
+	if d.virtualizer == nil {
+		return &drivers.Fingerprint{
+			Attributes:        map[string]*structs.Attribute{},
+			Health:            drivers.HealthStateUndetected,
+			HealthDescription: "driver not initialized",
+		}
+	}
+
 	virtInfo, err := d.virtualizer.GetInfo()
 	if err != nil {
 		return &drivers.Fingerprint{
 			Attributes:        map[string]*structs.Attribute{},
 			Health:            drivers.HealthStateUndetected,
-			HealthDescription: "",
+			HealthDescription: fmt.Sprintf("failed to get virtualizer info: %v", err),
 		}
 	}
 	attrs := map[string]*structs.Attribute{}
 
 	attrs["driver.virt"] = structs.NewBoolAttribute(true)
-	attrs["driver.virt.libvirt.version"] = structs.NewIntAttribute(int64(virtInfo.LibvirtVersion), "")
-	attrs["driver.virt.emulator.version"] = structs.NewIntAttribute(int64(virtInfo.EmulatorVersion), "")
+	attrs["driver.virt.cloud_hypervisor.version"] = structs.NewIntAttribute(int64(virtInfo.EmulatorVersion), "")
+	attrs["driver.virt.emulator.type"] = structs.NewStringAttribute("cloud-hypervisor")
 
-	d.networkController.Fingerprint(attrs)
+	if d.networkController != nil {
+		d.networkController.Fingerprint(attrs)
+	}
 
 	fp := &drivers.Fingerprint{
 		Attributes:        attrs,
@@ -514,25 +530,14 @@ func fileExists(path string) bool {
 	return !info.IsDir()
 }
 
-func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
-	cmds := []string{}
-	for _, m := range mounts {
-		c := []string{
-			fmt.Sprintf("mkdir -p %s", m.Destination),
-			fmt.Sprintf("mountpoint -q %s || mount -t 9p -o trans=virtio %s %s", m.Destination, m.Tag, m.Destination),
-		}
-
-		cmds = append(cmds, c...)
-	}
-
-	return cmds
-}
+// addCMDsForMounts was removed - virtio-fs mount commands are now generated
+// by the Cloud Hypervisor backend during cloud-init creation
 
 func setUpTaskState(vmState string) drivers.TaskState {
 	switch vmState {
-	case libvirt.DomainRunning:
+	case "running":
 		return drivers.TaskStateRunning
-	case libvirt.DomainShutdown, libvirt.DomainShutOff, libvirt.DomainCrashed:
+	case "shutdown", "shutoff", "crashed":
 		return drivers.TaskStateExited
 	default:
 		return drivers.TaskStateUnknown
@@ -560,12 +565,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	d.logger.Info("starting task", "name", taskName)
 
-	// The process to have directories mounted on the VM consists on two steps,
-	// one is declaring them as backing storage in the VM and the second is to
-	// create the directory inside the VM and executing the mount using 9P.
-	// These commands are added here to execute at bootime.
+	// Create alloc file system mounts for virtio-fs
+	// The CH backend will handle launching virtiofsd and generating cloud-init mount commands
 	allocFSMounts := createAllocFileMounts(cfg)
-	bootCMDs := addCMDsForMounts(allocFSMounts)
 
 	var osVariant *domain.OSVariant
 	if driverConfig.OS != nil {
@@ -630,7 +632,8 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		HostName:          hostname,
 		Mounts:            allocFSMounts,
 		CMDs:              driverConfig.CMDs,
-		BOOTCMDs:          bootCMDs,
+		// BOOTCMDs will be generated by CH backend for virtio-fs mounts
+		BOOTCMDs:          []string{},
 		CIUserData:        driverConfig.UserData,
 		Password:          driverConfig.DefaultUserPassword,
 		SSHKey:            driverConfig.DefaultUserSSHKey,

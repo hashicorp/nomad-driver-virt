@@ -8,7 +8,7 @@ package net
 import (
 	stdnet "net"
 
-	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/ccheshirecat/nomad-driver-ch/virt/net"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
 )
 

@@ -9,9 +9,8 @@ import (
 	"sync"
 	"time"
 
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
-	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	domain "github.com/ccheshirecat/nomad-driver-ch/internal/shared"
+	"github.com/ccheshirecat/nomad-driver-ch/virt/net"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/client/structs"
@@ -99,7 +98,7 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 				continue
 			}
 
-			if domain == nil || domain.State != libvirt.DomainRunning {
+			if domain == nil || domain.State != "running" {
 				er := fillExitResult(domain)
 
 				h.stateLock.Lock()
@@ -128,10 +127,10 @@ func fillExitResult(info *domain.Info) *drivers.ExitResult {
 	}
 
 	switch info.State {
-	case libvirt.DomainCrashed:
+	case "crashed":
 		er.ExitCode = 1
 		er.Err = ErrTaskCrashed
-	case libvirt.DomainShutdown, libvirt.DomainShutOff:
+	case "shutdown", "shutoff":
 		er.ExitCode = 0
 	default:
 		er.ExitCode = 1

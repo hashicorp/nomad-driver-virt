@@ -4,7 +4,7 @@
 package libvirt
 
 import (
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	domain "github.com/ccheshirecat/nomad-driver-ch/internal/shared"
 
 	"libvirt.org/go/libvirtxml"
 )
