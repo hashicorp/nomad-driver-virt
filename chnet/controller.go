@@ -10,7 +10,6 @@ import (
 	"fmt"
 	stdnet "net"
 	"strconv"
-	"time"
 
 	"github.com/coreos/go-iptables/iptables"
 	"github.com/hashicorp/go-hclog"

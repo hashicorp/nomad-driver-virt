@@ -9,7 +9,7 @@ steps:
         sudo tar -C /usr/local -xzf go.tar.gz
         rm go.tar.gz
       fi
-      export PATH=$PATH:/usr/local/go/bin
+      export PATH="/usr/local/go/bin:$PATH"
       go version
 
       echo "--- Download Cloud Hypervisor binary"
@@ -23,7 +23,7 @@ steps:
   - label: "🏗️ Build & Unit Tests"
     command: |
       set -euxo pipefail
-      export PATH=$PATH:/usr/local/go/bin
+      export PATH="/usr/local/go/bin:$PATH"
       echo "--- Go environment"
       go version
       go env
@@ -41,7 +41,7 @@ steps:
   - label: "🔬 Cloud Hypervisor Integration Test"
     command: |
       set -euxo pipefail
-      export PATH=$PATH:/usr/local/go/bin
+      export PATH="/usr/local/go/bin:$PATH"
 
       echo "--- Verify Cloud Hypervisor binary"
       cloud-hypervisor --version
