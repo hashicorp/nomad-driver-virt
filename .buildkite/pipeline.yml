@@ -14,7 +14,9 @@ steps:
 
       echo "--- Download Cloud Hypervisor binary"
       if ! command -v cloud-hypervisor &> /dev/null; then
-        curl -L -o cloud-hypervisor https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v48.0/cloud-hypervisor
+        wget --max-redirect=20 --timeout=30 --tries=3 \
+             -O cloud-hypervisor \
+             https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v48.0/cloud-hypervisor
         chmod +x cloud-hypervisor
         sudo mv cloud-hypervisor /usr/local/bin/
       fi
