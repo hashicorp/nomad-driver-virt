@@ -676,6 +676,76 @@ func Test_ipReservationExists(t *testing.T) {
 	}
 }
 
+func Test_releaseDHCPLease(t *testing.T) {
+	mockController := &Controller{
+		logger:              hclog.NewNullLogger(),
+		netConn:             &libvirt.ConnectMock{},
+		ipByInterfaceGetter: func(_ string) (stdnet.IP, error) { return stdnet.ParseIP("192.168.122.1"), nil },
+	}
+
+	testCases := []struct {
+		desc           string
+		reservation    *libvirtxml.NetworkDHCPHost
+		reservationRaw string
+		network        string
+		err            string
+	}{
+		{
+			desc: "ok",
+			reservation: &libvirtxml.NetworkDHCPHost{
+				IP:   "192.168.122.45",
+				MAC:  "00:11:22:33:44:55",
+				Name: "test-hostname",
+			},
+			network: "default",
+		},
+		{
+			desc: "unknown network",
+			reservation: &libvirtxml.NetworkDHCPHost{
+				IP:   "192.168.122.45",
+				MAC:  "00:11:22:33:44:55",
+				Name: "test-hostname",
+			},
+			network: "unknown",
+			err:     "failed to lookup network",
+		},
+		{
+			desc: "invalid reservation MAC",
+			reservation: &libvirtxml.NetworkDHCPHost{
+				IP:   "192.168.122.45",
+				Name: "test-hostname",
+			},
+			network: "default",
+			err:     "failed to parse lease MAC",
+		},
+		{
+			desc:           "invalid reservation",
+			reservationRaw: "-",
+			network:        "default",
+			err:            "failed to parse DHCP reservation",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			var err error
+			reservation := tc.reservationRaw
+			if tc.reservation != nil {
+				reservation, err = tc.reservation.Marshal()
+				must.NoError(t, err)
+			}
+
+			err = mockController.releaseDHCPLease(tc.network, reservation)
+			if tc.err != "" {
+				must.ErrorContains(t, err, tc.err)
+			} else {
+				must.NoError(t, err)
+
+			}
+		})
+	}
+}
+
 // iptablesCleanup can be used as a cleanup function which will remove all the
 // added iptables chain and rule entries. This avoids polluting the machine
 // that runs the test, so our development machines do not require manual
