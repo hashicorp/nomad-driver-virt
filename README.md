@@ -1,240 +1,418 @@
-Nomad Virt Driver
-==================
-The virt driver task plugin expands the types of workloads Nomad can run to add virtual machines.
-Leveraging on the power of Libvirt, the Virt driver allows the user to define virtual machine tasks using the Nomad job spec.
+# Nomad Cloud Hypervisor Driver
 
-> **_IMPORTANT:_** This plugin is in tech preview, still under active development, there might be breaking changes in future releases
+**Production-ready Nomad task driver for Intel Cloud Hypervisor virtual machines**
 
-**: This is an Alpha version still under development**
+[![Build Status](https://badge.buildkite.com/your-build-badge)](https://buildkite.com/hypr/nomad-driver-ch)
+[![License](https://img.shields.io/badge/license-MPL%202.0-blue.svg)](LICENSE)
+[![Go Report Card](https://goreportcard.com/badge/github.com/ccheshirecat/nomad-driver-ch)](https://goreportcard.com/report/github.com/ccheshirecat/nomad-driver-ch)
 
-## Features
+The `nomad-driver-ch` is a task driver for [HashiCorp Nomad](https://www.nomadproject.io/) that enables orchestration of [Intel Cloud Hypervisor](https://www.cloudhypervisor.org/) virtual machines. This driver provides a modern, lightweight alternative to traditional hypervisor solutions while maintaining full compatibility with Nomad's scheduling and resource management capabilities.
 
-* Use the job's `task.config` to define the cloud image for your virtual machine
-* Start/stop virtual machines
-* [Nomad runtime environment](https://www.nomadproject.io/docs/runtime/environment.html) is populated
-* Use Nomad alloc data in the virtual machine.
-* Publish ports
-* Monitor the memory consumption
-* Monitor CPU usage
-* Task config cpu value is used to populate virtual machine CpuShares
-* The tasks `task`, `alloc`, and `secrets` directories are mounted within the VM at the filesystem
-  root. These are currently mounted read-only (RO), so VMs do not write excessive amounts of data
-  which results in the host filesystem filling. Once correct guardrails are in place, this
-  restriction will be lifted. Please see the
-  [filesystem concepts page](https://developer.hashicorp.com/nomad/docs/concepts/filesystem) for
-  more detail about an allocations working directory.
+## 🚀 Key Features
 
-## Ubuntu Example job
+- **🏃‍♂️ Lightweight Virtualization**: Leverages Intel Cloud Hypervisor for minimal overhead VM orchestration
+- **🔧 Dynamic Resource Management**: CPU, memory, and disk allocation with Nomad's resource constraints
+- **🌐 Advanced Networking**: Bridge networking with static IP support and dynamic configuration
+- **☁️ Cloud-Init Integration**: Automatic VM provisioning with user data, SSH keys, and custom scripts
+- **💾 Flexible Storage**: Virtio-fs shared filesystems and disk image management with thin provisioning
+- **🚧 PCIe Device Passthrough**: VFIO support coming very soon - high priority feature in active development
+- **🔒 Security Isolation**: Secure VM boundaries with configurable seccomp filtering
+- **📊 Resource Monitoring**: Real-time VM statistics and health monitoring
+- **🔄 Lifecycle Management**: Complete VM lifecycle with start, stop, restart, and recovery capabilities
 
-Here is a simple Python server on Ubuntu example:
+## 📋 Table of Contents
+
+- [Quick Start](#-quick-start)
+- [Installation](#-installation)
+- [Configuration](#️-configuration)
+- [Task Examples](#-task-examples)
+- [Networking](#-networking)
+- [Cloud-Init](#️-cloud-init)
+- [Storage](#-storage)
+- [Device Passthrough](#-device-passthrough)
+- [Monitoring](#-monitoring)
+- [Troubleshooting](#-troubleshooting)
+- [API Reference](#-api-reference)
+- [Development](#-development)
+- [Contributing](#-contributing)
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+- **Nomad** v1.4.0 or later
+- **Cloud Hypervisor** v48.0.0 or later
+- **Linux kernel** with KVM support
+- **Bridge networking** configured on host
+
+### Basic Example
 
 ```hcl
-job "python-server" {
+job "web-server" {
+  datacenters = ["dc1"]
+  type = "service"
 
-  group "virt-group" {
-    count = 1
-
-    network {
-      mode = "host"
-      port "http" {
-        to = 8000
-      }
-    }
-
-    task "virt-task" {
-
-      driver = "nomad-driver-virt"
-
-      artifact {
-        source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
-        destination = "local/focal-server-cloudimg-amd64.img"
-        mode        = "file"
-      }
+  group "web" {
+    task "nginx" {
+      driver = "nomad-driver-ch"
 
       config {
-        image                 = "local/focal-server-cloudimg-amd64.img"
-        primary_disk_size     = 10000
-        use_thin_copy         = true
-        default_user_password = "password"
-        cmds                  = ["python3 -m http.server 8000"]
+        image = "/var/lib/images/alpine-nginx.img"
 
         network_interface {
           bridge {
-            name  = "virbr0"
-            ports = ["http"]
+            name = "br0"
+            static_ip = "192.168.1.100"
           }
         }
       }
 
       resources {
-        cores  = 2
-        memory = 4000
+        cpu    = 1000
+        memory = 512
+      }
+    }
+  }
+}
+```## 📦 Installation
+
+### 1. Install Dependencies
+
+**Cloud Hypervisor:**
+```bash
+# Download and install Cloud Hypervisor v48+
+wget https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v48.0.0/cloud-hypervisor-static
+sudo mv cloud-hypervisor-static /usr/bin/cloud-hypervisor
+sudo chmod +x /usr/bin/cloud-hypervisor
+
+# Install ch-remote for VM management
+wget https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v48.0.0/ch-remote-static
+sudo mv ch-remote-static /usr/bin/ch-remote
+sudo chmod +x /usr/bin/ch-remote
+```
+
+**VirtioFS daemon:**
+```bash
+# Install virtiofsd for filesystem sharing
+sudo apt-get install virtiofsd  # Ubuntu/Debian
+# or
+sudo yum install virtiofsd      # RHEL/CentOS
+```
+
+### 2. Configure Bridge Networking
+
+```bash
+# Create bridge interface
+sudo ip link add br0 type bridge
+sudo ip addr add 192.168.1.1/24 dev br0
+sudo ip link set br0 up
+
+# Configure bridge persistence (systemd-networkd)
+cat > /etc/systemd/network/br0.netdev << EOF
+[NetDev]
+Name=br0
+Kind=bridge
+EOF
+
+cat > /etc/systemd/network/br0.network << EOF
+[Match]
+Name=br0
+
+[Network]
+IPForward=yes
+Address=192.168.1.1/24
+EOF
+
+sudo systemctl restart systemd-networkd
+```
+
+### 3. Install Driver Plugin
+
+**Option A: Download Release**
+```bash
+# Download latest release
+wget https://github.com/ccheshirecat/nomad-driver-ch/releases/latest/download/nomad-driver-ch
+sudo mv nomad-driver-ch /opt/nomad/plugins/
+sudo chmod +x /opt/nomad/plugins/nomad-driver-ch
+```
+
+**Option B: Build from Source**
+```bash
+git clone https://github.com/ccheshirecat/nomad-driver-ch.git
+cd nomad-driver-ch
+go build -o nomad-driver-ch .
+sudo mv nomad-driver-ch /opt/nomad/plugins/
+```
+
+### 4. Configure Nomad
+
+**Client Configuration:**
+```hcl
+# /etc/nomad.d/client.hcl
+client {
+  enabled = true
+
+  plugin "nomad-driver-ch" {
+    config {
+      # Cloud Hypervisor configuration
+      cloud_hypervisor {
+        bin = "/usr/bin/cloud-hypervisor"
+        remote_bin = "/usr/bin/ch-remote"
+        virtiofsd_bin = "/usr/bin/virtiofsd"
+        default_kernel = "/boot/vmlinuz"
+        default_initramfs = "/boot/initramfs.img"
+      }
+
+      # Network configuration
+      network {
+        bridge = "br0"
+        subnet_cidr = "192.168.1.0/24"
+        gateway = "192.168.1.1"
+        ip_pool_start = "192.168.1.100"
+        ip_pool_end = "192.168.1.200"
+      }
+
+      # Allowed image paths for security
+      image_paths = ["/var/lib/images", "/opt/vm-images"]
+    }
+  }
+}
+```
+
+### 5. Start Nomad
+
+```bash
+sudo systemctl restart nomad
+```
+
+Verify the driver is loaded:
+```bash
+nomad node status -self | grep nomad-driver-ch
+```
+
+For detailed installation instructions, see [docs/INSTALLATION.md](docs/INSTALLATION.md).
+
+## ⚙️ Configuration
+
+### Driver Configuration
+
+The driver configuration is specified in the Nomad client configuration file:
+
+```hcl
+plugin "nomad-driver-ch" {
+  config {
+    # Cloud Hypervisor binaries
+    cloud_hypervisor {
+      bin = "/usr/bin/cloud-hypervisor"           # Cloud Hypervisor binary path
+      remote_bin = "/usr/bin/ch-remote"           # ch-remote binary path
+      virtiofsd_bin = "/usr/bin/virtiofsd"        # virtiofsd binary path
+      default_kernel = "/boot/vmlinuz"            # Default kernel for VMs
+      default_initramfs = "/boot/initramfs.img"   # Default initramfs for VMs
+      firmware = "/usr/share/qemu/OVMF.fd"        # UEFI firmware (optional)
+      seccomp = "true"                            # Enable seccomp filtering
+      log_file = "/var/log/cloud-hypervisor.log" # VM log file path
+    }
+
+    # Network configuration
+    network {
+      bridge = "br0"                      # Bridge interface name
+      subnet_cidr = "192.168.1.0/24"      # Subnet for VMs
+      gateway = "192.168.1.1"             # Gateway IP address
+      ip_pool_start = "192.168.1.100"     # IP pool start range
+      ip_pool_end = "192.168.1.200"       # IP pool end range
+      tap_prefix = "tap"                  # TAP interface prefix
+    }
+
+    # VFIO device passthrough (not yet implemented)
+    # vfio {
+    #   allowlist = ["10de:*", "8086:0d26"]  # PCI device allowlist
+    #   iommu_address_width = 48              # IOMMU address width
+    #   pci_segments = 1                      # Number of PCI segments
+    # }
+
+    # Security and paths
+    data_dir = "/opt/nomad/data"              # Nomad data directory
+    image_paths = [                           # Allowed image paths
+      "/var/lib/images",
+      "/opt/vm-images",
+      "/mnt/shared-storage"
+    ]
+  }
+}
+```
+
+### Configuration Reference
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `cloud_hypervisor.bin` | string | `/usr/bin/cloud-hypervisor` | Path to Cloud Hypervisor binary |
+| `cloud_hypervisor.remote_bin` | string | `/usr/bin/ch-remote` | Path to ch-remote binary |
+| `cloud_hypervisor.virtiofsd_bin` | string | `/usr/bin/virtiofsd` | Path to virtiofsd binary |
+| `cloud_hypervisor.default_kernel` | string | - | Default kernel path for VMs |
+| `cloud_hypervisor.default_initramfs` | string | - | Default initramfs path for VMs |
+| `cloud_hypervisor.firmware` | string | - | UEFI firmware path (optional) |
+| `cloud_hypervisor.seccomp` | string | `"true"` | Enable seccomp filtering |
+| `cloud_hypervisor.log_file` | string | - | VM log file path |
+| `network.bridge` | string | `"br0"` | Bridge interface name |
+| `network.subnet_cidr` | string | `"192.168.1.0/24"` | VM subnet CIDR |
+| `network.gateway` | string | `"192.168.1.1"` | Network gateway |
+| `network.ip_pool_start` | string | `"192.168.1.100"` | IP allocation pool start |
+| `network.ip_pool_end` | string | `"192.168.1.200"` | IP allocation pool end |
+| `network.tap_prefix` | string | `"tap"` | TAP interface name prefix |
+| `vfio.allowlist` | []string | - | ⚠️ Not implemented yet |
+| `vfio.iommu_address_width` | number | - | ⚠️ Not implemented yet |
+| `vfio.pci_segments` | number | - | ⚠️ Not implemented yet |
+| `data_dir` | string | - | Nomad data directory |
+| `image_paths` | []string | - | Allowed VM image paths |
+
+For complete configuration details, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
+
+## 📝 Task Examples
+
+### Basic VM Task
+
+```hcl
+job "basic-vm" {
+  datacenters = ["dc1"]
+
+  group "app" {
+    task "vm" {
+      driver = "nomad-driver-ch"
+
+      config {
+        image = "/var/lib/images/ubuntu-22.04.img"
+        hostname = "app-server"
+
+        # Custom kernel and initramfs
+        kernel = "/boot/vmlinuz-5.15.0"
+        initramfs = "/boot/initramfs-5.15.0.img"
+        cmdline = "console=ttyS0 root=/dev/vda1"
+      }
+
+      resources {
+        cpu    = 2000  # 2 CPU cores
+        memory = 2048  # 2GB RAM
       }
     }
   }
 }
 ```
 
-```sh
-$ nomad job run examples/python.nomad.hcl
-
-==> 2024-09-10T13:01:22+02:00: Monitoring evaluation "c0424142"
-    2024-09-10T13:01:22+02:00: Evaluation triggered by job "python-server"
-    2024-09-10T13:01:23+02:00: Evaluation within deployment: "d546f16e"
-    2024-09-10T13:01:23+02:00: Allocation "db146826" created: node "c20ee15a", group "virt-group"
-    2024-09-10T13:01:23+02:00: Evaluation status changed: "pending" -> "complete"
-==> 2024-09-10T13:01:23+02:00: Evaluation "c0424142" finished with status "complete"
-
-$ virsh list
-
- Id   Name                 State
-------------------------------------
- 4    virt-task-5a6e215e   running
-
-```
-
-## Building The Driver from source
-
-In order to be able to build the binary, the `libvirt-dev` module is necessary,
-use any of the package managers to get it:
-
- ```
-sudo apt install libvirt-dev
-```
-
-```shell-session
-git clone git@github.com:hashicorp/nomad-driver-virt
-cd nomad-driver-virt
-make dev
-```
-
-The compiled binary will be located at `./build/nomad-driver-virt`.
-
-## Runtime dependencies
-
-* [Nomad](https://www.nomadproject.io/downloads.html) 1.9.0+
-* [libvirt-daemon-system](https://pkgs.org/download/libvirt-daemon-system)
-* [qemu-utils](https://pkgs.org/download/qemu-utils)
-
-Make sure the node where the client will run supports virtualization, in Linux you can do it in a couple of ways:
-1. Reading the CPU flags:
-```sh
-egrep -o '(vmx|svm)' /proc/cpuinfo
-```
-
-2. Reading the kernel modules and looking for the virtualization ones:
-```sh
-lsmod | grep -E '(kvm_intel|kvm_amd)'
-```
-
-If the result is empty for either call, the machine does not support virtualization and the nomad client wont be able to run any virtualization workload.
-
-3. Verify permissions:
-`Nomad` runs as root, add the user `root` and the group `root` to the [QEMU configuration](https://libvirt.org/drvqemu.html#posix-users-groups) to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restarted after adding the qemu user/group configuration:
-
-```
-systemctl start libvirtd
-```
-or
-```
-systemctl restart libvirtd
-```
-
-Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject.io/docs/configuration/index.html#plugin_dir)
-
-## Driver Configuration
-
-* **emulator block**
-  * **uri** - Since libvirt supports many different kinds of virtualization (often referred to as "drivers" or "hypervisors"), it is necessary to use a `uri` to specify which one
-  to use. It defaults to `"qemu:///system"`
-  * **user** - User for the [connection authentication](https://libvirt.org/auth.html).
-  * **password** - Password for the [connection authentication](https://libvirt.org/auth.html).
-
-* **data_dir** - The plugin will create VM configuration files and intermediate files in
-  this directory. If not defined it will default to `/var/lib/virt`.
-* **image_paths** - Specifies the host paths the QEMU driver is allowed to load images from. If not defined, it defaults to the plugin data_dir directory and alloc directory.
+### VM with Custom User Data
 
 ```hcl
-plugin "nomad-driver-virt" {
-  config {
-    emulator {
-      uri = "qemu:///default"
+job "custom-vm" {
+  datacenters = ["dc1"]
+
+  group "web" {
+    task "nginx" {
+      driver = "nomad-driver-ch"
+
+      config {
+        image = "/var/lib/images/alpine.img"
+        hostname = "nginx-server"
+
+        # Cloud-init user data
+        user_data = "/etc/cloud-init/nginx-setup.yml"
+
+        # Default user configuration
+        default_user_password = "secure123"
+        default_user_authorized_ssh_key = "ssh-rsa AAAAB3NzaC1yc2E..."
+
+        # Custom commands to run
+        cmds = [
+          "apk add --no-cache nginx",
+          "rc-service nginx start",
+          "rc-update add nginx default"
+        ]
+      }
+
+      resources {
+        cpu    = 1000
+        memory = 512
+      }
     }
-    data_dir    = "/opt/ubuntu/virt_temp"
-    image_paths = ["/var/local/statics/images/"]
   }
 }
 ```
 
-## Task Configuration
-* **image** - Path to .img cloud image to base the VM disk on, it should be located in an allowed path. It is very important that the cloud image includes cloud init, otherwise most features will not be available for teh task.
-* **use_thin_copy** - Make a thin copy of the image using qemu, and use it as the backing cloud image for the VM.
-* **hostname** - The hostname to assign which defaults to a short uuid that will be unique to every VM, to avoid clashes when there are multiple instances of the same task running. Since it's used as a network host name, it must be a valid DNS label according to RFC 1123.
-* **os** - Guest configuration for a specific machine and architecture to emulate if they are to be different from the host. Both the architecture and machine have to be available for KVM. If not defined, libvirt will use the same ones as the host machine.
-* **command** - List of commands to execute on the VM once it is running. They can provide the operator with a quick and easy way to start a process on the newly created VM, used in conjunction with the template, it can be a simple yet powerful start up tool.
-* **default_user_password** - Initial password to be configured for the default user on the newly created VM, it will have to be updated on first connect.
-* **default_user_authorized_ssh_key** - SSH public key that will be added to the SSH configuration for the default user of the cloud image distribution.
-* **user_data** - Path to a cloud-init compliant user data file to be used as the user-data for the cloud-init configuration.
-* **primary_disk_size** - Disk space to assign to the VM, bear in mind it will fit the
-VM's OS.
+### VM with Storage and Networking
 
-Regarding the resources, currently the driver has support for cpuSets or cores and memory.
-Every core will be treated as a vcpu.
-Do not use `resources.cpus`, they will be ignored.
-
-```sh
-driver = "nomad-driver-virt"
-
-artifact {
-  source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
-  destination = "local/focal-server-cloudimg-amd64.img"
-  mode        = "file"
-}
-
-config {
-  image                           = "local/focal-server-cloudimg-amd64.img"
-  primary_disk_size               = 9000
-  use_thin_copy                   = true
-  default_user_password           = "password"
-  cmds                            = ["touch /home/ubuntu/file.txt"]
-  default_user_authorized_ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1..."
-}
-```
-
-### Network Configuration
-The following configuration options are available within the task's driver configuration block:
-* **network_interface** - A list of network interfaces that should be attached to the VM. This
-  currently only supports a single entry.
-  * **bridge** - Attach the VM to a network of bridged type. `virbr0`, the default libvirt network
-  is a bridged network.
-    * **name** - The name of the bridge interface to use. This relates to the output seen from
-    commands such as `virsh net-info`.
-    * **ports** - A list of port labels which will be exposed on the host via mapping to the
-    network interface. These labels must exist within the job specification
-    [network block](https://developer.hashicorp.com/nomad/docs/job-specification/network).
-
-The example below shows the network configuration and task configuration required to expose and map
-ports `22` and `80`:
 ```hcl
-group "virt-group" {
+job "database" {
+  datacenters = ["dc1"]
 
-  network {
-    mode = "host"
-    port "ssh" {
-      to = 22
-    }
-    port "http" {
-      to = 80
+  group "db" {
+    task "postgres" {
+      driver = "nomad-driver-ch"
+
+      config {
+        image = "/var/lib/images/postgres-14.img"
+        hostname = "postgres-primary"
+
+        # Enable thin copy for faster startup
+        use_thin_copy = true
+        primary_disk_size = 20480  # 20GB
+
+        # Network configuration with static IP
+        network_interface {
+          bridge {
+            name = "br0"
+            static_ip = "192.168.1.50"
+            gateway = "192.168.1.1"
+            netmask = "24"
+            dns = ["8.8.8.8", "1.1.1.1"]
+          }
+        }
+
+        # Custom timezone
+        timezone = "America/New_York"
+      }
+
+      resources {
+        cpu    = 4000  # 4 CPU cores
+        memory = 8192  # 8GB RAM
+      }
+
+      # Mount shared storage
+      volume_mount {
+        volume      = "postgres-data"
+        destination = "/var/lib/postgresql"
+      }
     }
   }
 
-  task "virt-task" {
-    driver = "nomad-driver-virt"
-    config {
-      network_interface {
-        bridge {
-          name  = "virbr0"
-          ports = ["ssh", "http"]
+  volume "postgres-data" {
+    type      = "host"
+    source    = "postgres-data"
+    read_only = false
+  }
+}
+```
+
+### GPU-Accelerated VM
+
+```hcl
+job "ml-workload" {
+  datacenters = ["dc1"]
+
+  group "gpu" {
+    task "training" {
+      driver = "nomad-driver-ch"
+
+      config {
+        image = "/var/lib/images/cuda-ubuntu.img"
+        hostname = "ml-trainer"
+
+        # VFIO GPU passthrough (not yet implemented)
+        # vfio_devices = ["10de:2204"]  # NVIDIA RTX 3080
+      }
+
+      resources {
+        cpu      = 8000  # 8 CPU cores
+        memory   = 16384 # 16GB RAM
+        device "nvidia/gpu" {
+          count = 1
         }
       }
     }
@@ -242,139 +420,562 @@ group "virt-group" {
 }
 ```
 
-Exposed ports and services can make use of the existing
-[service block](https://developer.hashicorp.com/nomad/docs/job-specification/service),
-so that registrations can be performed using the specified backend provider.
+For more examples, see [docs/EXAMPLES.md](docs/EXAMPLES.md).
 
-## Local Development
+## 🌐 Networking
 
-Make sure the node supports virtualization.
+### Bridge Networking
 
-```
-# Build the task driver plugin
-make dev
+The driver supports bridge networking with automatic IP allocation or static IP assignment:
 
-# Copy the build nomad-driver-plugin executable to the plugin dir
-cp ./build/nomad-driver-virt - /opt/nomad/plugins
+#### Automatic IP Allocation
 
-# Start Nomad
-nomad agent -config=examples/server.nomad.hcl 2>&1 > server.log &
-
-# Run the client as sudo
-sudo nomad agent -config=examples/client.nomad.hcl 2>&1 > client.log &
-
-# Run a job
-nomad job run examples/job.nomad.hcl
-
-# Verify
-nomad job status virt-example
-
-virsh list
-```
-## Debugging a VM
-
-### Before starting
-
-If running a job for the first time, you run into errors, remember to verify the runtime [Runtime dependencies](#runtime-dependencies).
-
-It is important to know that to protect the host machine from guests overusing the disk, managed vm don't have write access to the Nomad filesystem. 
-
-If Nomad is not running as root, the permissions for the directories used by both Nomad and the virt driver need to be adjusted.
-
-Once the vm is running things still don't go as plan and extra tools are necessary to find the problem.
-Here are some strategies to debug a failing VM:
-
-### Connecting to a VM
-
-By default, cloud images are password protected, by adding a `default_user_password`
-a new password is assigned to the default user of the used distribution (for example, 
-`ubuntu` for ubuntu `fedora` for fedora, or `root` for alpine)
-By running `virsh console [vm-name]`, a terminal is started inside the VM that will allow an internal inspection of the VM.
-
-```
-$ virsh list
- Id   Name                 State
-------------------------------------
- 1    virt-task-8bc0a63f   running
-
-$ virsh console virt-task-8bc0a63f 
-Connected to domain 'virt-task-8bc0a63f'
-Escape character is ^] (Ctrl + ])
-
-nomad-virt-task-8bc0a63f login: ubuntu
-Password:
+```hcl
+config {
+  network_interface {
+    bridge {
+      name = "br0"
+      # IP will be allocated from pool automatically
+    }
+  }
+}
 ```
 
-If no login prompt shows up, it can mean the virtual machine is not booting and 
-adding  some extra  space to the disk may solve the problem. Remember the disk 
-has to fit the root image plus any other process running in the VM.
+#### Static IP Assignment
 
-The virt driver heavily relies on `cloud-init` to execute the virtual machine's 
-configuration. Once you have managed to connect to the terminal, the results of 
-cloud init can be found in two different places:
-  * `/var/log/cloud-init.log`
-  * `/var/log/cloud-init-output.log`
-
-Looking into these files can give a better understanding of any possible execution
-errors.
-
-If connecting to the terminal is not an option, it is possible to stop the job and
-mount the VM's disk to inspect it. If the `use_thin_copy` option is used, the driver will create 
-the disk image in the directory `${plugin_config.data_dir}/virt/vm-name.img`:
-
-```
-# Find the virtual machine disk image
-$ ls /var/lib/virt
-virt-task-8bc0a63f.img
-
-# Enable Network Block Devices on the Host
-modprobe nbd max_part=8
-
-# Connect the disk as network block device
-qemu-nbd --connect=/dev/nbd0 '/var/lib/virt/virt-task-dc8187e3.img'
-
-# Find The Virtual Machine Partitions
-fdisk /dev/nbd0 -l
-
-# Mount the partition from the VM
-mount /dev/nbd0p1 /mnt/somepoint/
+```hcl
+config {
+  network_interface {
+    bridge {
+      name = "br0"
+      static_ip = "192.168.1.100"
+      gateway = "192.168.1.1"
+      netmask = "24"
+      dns = ["8.8.8.8", "1.1.1.1"]
+    }
+  }
+}
 ```
 
-**Important** Don't forget to unmount the disk after finishing:
+### Network Configuration Priority
 
-```
-umount /mnt/somepoint/
-qemu-nbd --disconnect /dev/nbd0
-rmmod nbd
+The driver uses a hierarchical configuration approach:
+
+1. **Task-Level Configuration** (highest priority)
+   - `static_ip`, `gateway`, `netmask`, `dns` from task config
+
+2. **Driver-Level Configuration** (medium priority)
+   - IP pool allocation, default gateway, subnet settings
+
+3. **DHCP Fallback** (lowest priority)
+   - When no static configuration is provided
+
+### Port Mapping
+
+Map container ports to host ports:
+
+```hcl
+config {
+  network_interface {
+    bridge {
+      name = "br0"
+      ports = ["web", "api"]  # Reference port labels from network block
+    }
+  }
+}
+
+network {
+  port "web" {
+    static = 80
+  }
+  port "api" {
+    static = 8080
+  }
+}
 ```
 
-### Networking
+## ☁️ Cloud-Init
 
-For networking, the plugin leverages on the libvirt default network `default`:
-```
-$ virsh net-list
- Name      State    Autostart   Persistent
---------------------------------------------
- default   active   yes         yes
- ```
- 
-Under the hood, libvirt uses [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html) to lease 
-IP addresses to the virtual machines, there are mutiple ways to find the IP assigned 
-to the nomad task.
-Using virsh to find the leased IP:
+The driver integrates with cloud-init for automated VM provisioning and configuration.
 
-```
-$ virsh net-dhcp-leases default
- Expiry Time           MAC address         Protocol   IP address           Hostname                   Client ID or DUID
-----------------------------------------------------------------------------------------------------------------------------------------------------------------
- 2024-10-07 18:48:09   52:54:00:b5:0b:d4   ipv4       192.168.122.211/24   nomad-virt-task-dc8187e3   ff:08:24:45:0e:00:02:00:00:ab:11:63:3c:26:5b:b7:fe:b3:13
- ```
- 
- or using the mac address to find the IP via ARP: 
+### User Data Sources
 
+#### File-Based User Data
+
+```hcl
+config {
+  user_data = "/etc/cloud-init/web-server.yml"
+}
 ```
-$ virsh dumpxml virt-task-8473ccfb  | grep "mac address" | awk -F\' '{ print $2}'
-52:54:00:b5:0b:d4
-$ arp -an | grep 52:54:00:b5:0b:d4
-? (192.168.122.211) at 52:54:00:b5:0b:d4 [ether] on virbr0
+
+Example user data file (`/etc/cloud-init/web-server.yml`):
+```yaml
+#cloud-config
+packages:
+  - nginx
+  - curl
+  - htop
+
+runcmd:
+  - systemctl enable nginx
+  - systemctl start nginx
+  - ufw allow 80
+  - ufw --force enable
+
+write_files:
+  - path: /var/www/html/index.html
+    content: |
+      <!DOCTYPE html>
+      <html>
+        <head><title>Hello from Nomad VM</title></head>
+        <body><h1>VM deployed via Nomad Cloud Hypervisor driver!</h1></body>
+      </html>
+    permissions: '0644'
 ```
+
+#### Inline User Data
+
+```hcl
+config {
+  user_data = <<EOF
+#cloud-config
+package_update: true
+packages:
+  - docker.io
+runcmd:
+  - systemctl enable docker
+  - systemctl start docker
+  - docker run -d -p 80:80 nginx:alpine
+EOF
+}
+```
+
+### Built-in Cloud-Init Features
+
+#### User Authentication
+
+```hcl
+config {
+  default_user_password = "secure-password"
+  default_user_authorized_ssh_key = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQAB..."
+}
+```
+
+#### Custom Commands
+
+```hcl
+config {
+  # Commands run during boot process
+  cmds = [
+    "apt-get update",
+    "apt-get install -y docker.io",
+    "systemctl enable docker"
+  ]
+}
+```
+
+#### Network Configuration
+
+Cloud-init automatically generates network configuration based on:
+- Static IP settings from task configuration
+- Driver network configuration
+- DHCP fallback for dynamic assignment
+
+## 💾 Storage
+
+### Disk Images
+
+#### Supported Formats
+- **Raw** (`.img`)
+- **QCOW2** (`.qcow2`)
+- **VHD** (`.vhd`)
+- **VMDK** (`.vmdk`)
+
+### Thin Provisioning
+
+Enable thin copy for faster VM startup:
+
+```hcl
+config {
+  image = "/var/lib/images/base-ubuntu.img"
+  use_thin_copy = true
+  primary_disk_size = 10240  # 10GB allocated space
+}
+```
+
+### Shared Filesystems
+
+Mount host directories into VMs using VirtioFS:
+
+```hcl
+job "shared-storage" {
+  group "app" {
+    volume "shared-data" {
+      type   = "host"
+      source = "app-data"
+    }
+
+    task "processor" {
+      driver = "nomad-driver-ch"
+
+      config {
+        image = "/var/lib/images/data-processor.img"
+      }
+
+      volume_mount {
+        volume      = "shared-data"
+        destination = "/app/data"
+        read_only   = false
+      }
+
+      resources {
+        cpu    = 2000
+        memory = 4096
+      }
+    }
+  }
+}
+```
+
+## 🚧 Device Passthrough (Coming Very Soon!)
+
+### VFIO Configuration
+
+⚠️ **VFIO passthrough is a high-priority feature in active development and will be available very soon.** This is one of Cloud Hypervisor's most valuable capabilities and is being prioritized for the next release.
+
+The configuration would look like this when implemented:
+
+```hcl
+# This feature is not yet available
+# config {
+#   vfio {
+#     allowlist = [
+#       "10de:*",      # All NVIDIA devices
+#       "8086:0d26",   # Intel specific device
+#       "1002:67df"    # AMD Radeon RX 480
+#     ]
+#     iommu_address_width = 48
+#     pci_segments = 1
+#   }
+# }
+```
+
+### GPU Passthrough Example
+
+```hcl
+job "ai-training" {
+  datacenters = ["dc1"]
+
+  constraint {
+    attribute = "${node.unique.name}"
+    value     = "gpu-node-1"
+  }
+
+  group "training" {
+    task "model-training" {
+      driver = "nomad-driver-ch"
+
+      config {
+        image = "/var/lib/images/cuda-pytorch.img"
+
+        # Pass through NVIDIA RTX 3080 (not yet implemented)
+        # vfio_devices = ["10de:2204", "10de:1aef"]  # GPU + Audio controller
+      }
+
+      resources {
+        cpu    = 8000
+        memory = 32768
+        device "nvidia/gpu" {
+          count = 1
+        }
+      }
+    }
+  }
+}
+```
+
+## 📊 Monitoring
+
+### Resource Statistics
+
+The driver provides real-time VM resource statistics:
+
+```bash
+# View allocation statistics
+nomad alloc status <alloc-id>
+
+# Monitor resource usage
+nomad alloc logs -f <alloc-id> <task-name>
+```
+
+### VM Health Checks
+
+Configure health checks for VM services:
+
+```hcl
+task "web-server" {
+  driver = "virt"
+
+  config {
+    image = "/var/lib/images/nginx.img"
+    network_interface {
+      bridge {
+        name = "br0"
+        static_ip = "192.168.1.100"
+      }
+    }
+  }
+
+  service {
+    name = "web"
+    port = "http"
+
+    check {
+      type     = "http"
+      path     = "/"
+      interval = "30s"
+      timeout  = "5s"
+      address_mode = "alloc"
+    }
+  }
+}
+```
+
+## 🔧 Troubleshooting
+
+### Common Issues
+
+#### VM Fails to Start
+
+**Symptoms:**
+- Task fails during startup
+- Error: "Failed to parse disk image format"
+
+**Solutions:**
+```bash
+# 1. Verify image format
+qemu-img info /path/to/image.img
+
+# 2. Check image paths configuration
+nomad agent-info | grep -A 10 virt
+
+# 3. Validate kernel/initramfs paths
+ls -la /boot/vmlinuz* /boot/initramfs*
+
+# 4. Test Cloud Hypervisor directly
+cloud-hypervisor --kernel /boot/vmlinuz --disk path=/path/to/image.img
+```
+
+#### Network Connectivity Issues
+
+**Symptoms:**
+- VM has no network access
+- Cannot reach VM from host
+
+**Solutions:**
+```bash
+# 1. Check bridge configuration
+ip link show br0
+brctl show br0
+
+# 2. Verify TAP interface creation
+ip link show | grep tap
+
+# 3. Test bridge connectivity
+ping 192.168.1.1  # Gateway IP
+
+# 4. Check iptables rules
+iptables -L -v -n
+```
+
+### Debugging Steps
+
+#### 1. Enable Debug Logging
+
+**Nomad Client:**
+```hcl
+log_level = "DEBUG"
+enable_debug = true
+```
+
+#### 2. Inspect VM State
+
+```bash
+# Check Cloud Hypervisor processes
+ps aux | grep cloud-hypervisor
+
+# Inspect VM via ch-remote
+ch-remote --api-socket /path/to/api.sock info
+
+# Monitor VM console output
+tail -f /opt/nomad/data/alloc/<alloc-id>/<task>/serial.log
+```
+
+## 📚 API Reference
+
+### Task Configuration Specification
+
+Complete HCL task configuration reference:
+
+```hcl
+config {
+  # Required: VM disk image path
+  image = "/path/to/vm-image.img"
+
+  # Optional: VM hostname
+  hostname = "my-vm-host"
+
+  # Optional: Operating system variant
+  os {
+    arch    = "x86_64"        # CPU architecture
+    machine = "q35"           # Machine type
+    variant = "ubuntu20.04"   # OS variant
+  }
+
+  # Optional: Cloud-init user data
+  user_data = "/path/to/user-data.yml"  # File path
+  # OR
+  user_data = <<EOF           # Inline YAML
+  #cloud-config
+  packages:
+    - nginx
+  EOF
+
+  # Optional: Timezone configuration
+  timezone = "America/New_York"
+
+  # Optional: Custom commands to run
+  cmds = [
+    "apt-get update",
+    "systemctl enable nginx"
+  ]
+
+  # Optional: Default user configuration
+  default_user_authorized_ssh_key = "ssh-rsa AAAAB3..."
+  default_user_password = "secure-password"
+
+  # Optional: Storage configuration
+  use_thin_copy = true        # Enable thin provisioning
+  primary_disk_size = 20480   # Primary disk size in MB
+
+  # Optional: Cloud Hypervisor specific
+  kernel = "/boot/custom-kernel"      # Custom kernel path
+  initramfs = "/boot/custom-initrd"   # Custom initramfs path
+  cmdline = "console=ttyS0 quiet"     # Kernel command line
+
+  # Optional: Network interface configuration
+  network_interface {
+    bridge {
+      name = "br0"                    # Bridge name (required)
+      ports = ["web", "api"]          # Port labels to expose
+      static_ip = "192.168.1.100"     # Static IP address
+      gateway = "192.168.1.1"         # Custom gateway
+      netmask = "24"                  # Subnet mask (CIDR)
+      dns = ["8.8.8.8", "1.1.1.1"]   # Custom DNS servers
+    }
+  }
+
+  # Optional: VFIO device passthrough (coming very soon!)
+  # vfio_devices = ["10de:2204"]  # PCI device IDs
+
+  # Optional: USB device passthrough
+  usb_devices = ["046d:c52b"]   # USB vendor:product IDs
+}
+```
+
+### Resource Configuration
+
+```hcl
+resources {
+  cpu    = 2000    # CPU shares (1 core = 1000)
+  memory = 2048    # Memory in MB
+
+  # Optional: GPU devices
+  device "nvidia/gpu" {
+    count = 1
+    constraint {
+      attribute = "${device.attr.compute_capability}"
+      operator  = ">="
+      value     = "6.0"
+    }
+  }
+}
+```
+
+## 🛠 Development
+
+### Building from Source
+
+**Prerequisites:**
+- Go 1.19 or later
+- Git
+
+**Build Steps:**
+```bash
+# Clone repository
+git clone https://github.com/ccheshirecat/nomad-driver-ch.git
+cd nomad-driver-ch
+
+# Install dependencies
+go mod download
+
+# Run tests
+go test ./...
+
+# Build binary
+go build -o nomad-driver-ch .
+
+# Install plugin
+sudo cp nomad-driver-ch /opt/nomad/plugins/
+```
+
+### Testing
+
+**Unit Tests:**
+```bash
+go test ./...
+```
+
+**Integration Tests:**
+```bash
+# Requires Cloud Hypervisor installation
+sudo go test -v ./virt/... -run Integration
+```
+
+## 🤝 Contributing
+
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+
+### Quick Contribution Checklist
+
+- [ ] Fork the repository
+- [ ] Create a feature branch (`git checkout -b feature/amazing-feature`)
+- [ ] Write tests for your changes
+- [ ] Ensure all tests pass (`go test ./...`)
+- [ ] Run linting (`golangci-lint run`)
+- [ ] Commit with clear messages
+- [ ] Push to your fork
+- [ ] Create a Pull Request
+
+### Development Guidelines
+
+1. **Code Style**: Follow Go conventions and use `gofmt`
+2. **Testing**: Maintain >80% test coverage
+3. **Documentation**: Update docs for user-facing changes
+4. **Compatibility**: Maintain backward compatibility
+5. **Security**: Never commit secrets or credentials
+
+## 📄 License
+
+This project is licensed under the Mozilla Public License 2.0 - see the [LICENSE](LICENSE) file for details.
+
+## 🙏 Acknowledgments
+
+- [HashiCorp Nomad](https://www.nomadproject.io/) team for the excellent orchestration platform
+- [Intel Cloud Hypervisor](https://www.cloudhypervisor.org/) team for the lightweight VMM
+- [Cloud-init](https://cloud-init.io/) project for VM initialization
+- All contributors who help improve this driver
+
+---
+
+**Made with ❤️ for the cloud-native community**

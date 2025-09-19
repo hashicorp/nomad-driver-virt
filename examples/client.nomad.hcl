@@ -7,7 +7,7 @@ client {
   servers = ["${NOMAD_SERVER}:4647"]
 }
 
-plugin "nomad-driver-virt" {
+plugin "nomad-driver-ch" {
   config {
     data_dir    = "/opt/ubuntu/virt_temp"
     image_paths = ["/var/local/statics/images/"]
