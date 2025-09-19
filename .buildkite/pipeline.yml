@@ -1,8 +1,30 @@
 steps:
+  - label: "🏗️ Setup Dependencies"
+    command: |
+      set -euxo pipefail
+      echo "--- Download and install Go"
+      if ! command -v go &> /dev/null; then
+        wget -O go.tar.gz https://go.dev/dl/go1.24.7.linux-amd64.tar.gz
+        sudo rm -rf /usr/local/go
+        sudo tar -C /usr/local -xzf go.tar.gz
+        rm go.tar.gz
+      fi
+      export PATH=$PATH:/usr/local/go/bin
+      go version
+
+      echo "--- Download Cloud Hypervisor binary"
+      if ! command -v cloud-hypervisor &> /dev/null; then
+        wget -O cloud-hypervisor https://github.com/cloud-hypervisor/cloud-hypervisor/releases/download/v48.0/cloud-hypervisor
+        chmod +x cloud-hypervisor
+        sudo mv cloud-hypervisor /usr/local/bin/
+      fi
+      cloud-hypervisor --version
+
   - label: "🏗️ Build & Unit Tests"
     command: |
       set -euxo pipefail
-      echo "--- Go environment setup"
+      export PATH=$PATH:/usr/local/go/bin
+      echo "--- Go environment"
       go version
       go env
 
@@ -19,9 +41,10 @@ steps:
   - label: "🔬 Cloud Hypervisor Integration Test"
     command: |
       set -euxo pipefail
+      export PATH=$PATH:/usr/local/go/bin
 
       echo "--- Verify Cloud Hypervisor binary"
-      ${CH_BIN:-/usr/bin/cloud-hypervisor} --version
+      cloud-hypervisor --version
 
       echo "--- Check network bridge"
       ip link show ${BRIDGE:-br0} || (echo "Bridge ${BRIDGE:-br0} not found" && exit 1)
@@ -33,10 +56,11 @@ steps:
 
       echo "--- Integration tests"
       sudo -E env \
+        PATH="$PATH" \
         KERNEL_PATH="${KERNEL_PATH:-/root/vmlinux-normal}" \
         INITRD_PATH="${INITRD_PATH:-/root/raiin-fc.cpio.gz}" \
         ROOTFS_PATH="${ROOTFS_PATH:-/root/rootfs.img}" \
-        CH_BIN="${CH_BIN:-/usr/bin/cloud-hypervisor}" \
+        CH_BIN="cloud-hypervisor" \
         BRIDGE="${BRIDGE:-br0}" \
         go test -v -count=1 ./...
 
@@ -49,4 +73,4 @@ env:
 
 agents:
   # Run on the agent with Cloud Hypervisor capabilities
-  queue: "cloud-hypervisor"
+  queue: "default"
