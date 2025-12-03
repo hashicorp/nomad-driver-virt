@@ -87,7 +87,7 @@ lint-tools: ## Install the tools used to run lint and vet
 .PHONY: test-tools
 test-tools: ## Install the tools used to run tests
 	@echo "==> Installing test tools..."
-	go install gotest.tools/gotestsum@v1.12.0
+	go install gotest.tools/gotestsum@v1.13.0
 	@echo "==> Done"
 
 .PHONY: test
