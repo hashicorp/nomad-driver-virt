@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 
 	"github.com/hashicorp/go-hclog"
@@ -83,5 +84,16 @@ func (q *QemuTools) CreateThinCopy(basePath string, destination string, sizeM in
 	}
 
 	q.logger.Debug("qemu-img create output", "stdout", stdoutBuf.String())
+	return nil
+}
+
+func (q *QemuTools) RemoveCopy(basePath string) error {
+	q.logger.Debug("removing thin copy", "base", basePath)
+
+	err := os.Remove(basePath)
+	if err != nil {
+		return fmt.Errorf("qemu-img: unable to remove disk %s: %w", basePath, err)
+	}
+
 	return nil
 }
