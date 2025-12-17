@@ -115,7 +115,7 @@ func (c *Controller) Init() error {
 // table; the "NOMAD_VT_FW" chain has a jump rule added to the "filter" table.
 func (c *Controller) ensureIPTables() error {
 
-	ipt, err := iptables.New()
+	ipt, err := c.iptablesInterfaceGetter()
 	if err != nil {
 		return fmt.Errorf("failed to create iptables handle: %w", err)
 	}
@@ -153,7 +153,7 @@ func (c *Controller) ensureIPTables() error {
 	return nil
 }
 
-func ensureIPTablesChain(ipt *iptables.IPTables, table, chain string) (bool, error) {
+func ensureIPTablesChain(ipt IPTables, table, chain string) (bool, error) {
 
 	// List and iterate the currently configured iptables chains, so we can
 	// identify whether the chain already exist.
@@ -398,7 +398,7 @@ func (c *Controller) configureIPTables(
 
 	var teardownRules [][]string
 
-	ipt, err := iptables.New()
+	ipt, err := c.iptablesInterfaceGetter()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create iptables handle: %w", err)
 	}
@@ -546,7 +546,7 @@ func (c *Controller) VMTerminatedTeardown(req *net.VMTerminatedTeardownRequest) 
 		return &net.VMTerminatedTeardownResponse{}, nil
 	}
 
-	ipt, err := iptables.New()
+	ipt, err := c.iptablesInterfaceGetter()
 	if err != nil {
 		return nil, fmt.Errorf("failed to create iptables handle: %w", err)
 	}

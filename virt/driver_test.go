@@ -216,10 +216,7 @@ func newTaskConfig(image string) TaskConfig {
 func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	ci.Parallel(t)
 
-	tempDir, err := os.MkdirTemp("", "exampledir-*")
-	must.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
+	tempDir := t.TempDir()
 	mockImage, err := os.CreateTemp(tempDir, "test-*.img")
 	must.NoError(t, err)
 	defer os.Remove(mockImage.Name())
@@ -344,10 +341,7 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 func TestVirtDriver_Start_Recover_Destroy(t *testing.T) {
 	ci.Parallel(t)
 
-	tempDir, err := os.MkdirTemp("", "exampledir-*")
-	must.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
+	tempDir := t.TempDir()
 	mockImage, err := os.CreateTemp(tempDir, "test-*.img")
 	must.NoError(t, err)
 	defer os.Remove(mockImage.Name())
@@ -406,11 +400,7 @@ func TestVirtDriver_Start_Recover_Destroy(t *testing.T) {
 }
 
 func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
-
-	tempDir, err := os.MkdirTemp("", "exampledir-*")
-	must.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
+	tempDir := t.TempDir()
 	mockImage, err := os.CreateTemp(tempDir, "test-*.img")
 	must.NoError(t, err)
 	defer os.Remove(mockImage.Name())
@@ -471,10 +461,7 @@ func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
 func TestVirtDriver_ImageOptions(t *testing.T) {
 	ci.Parallel(t)
 
-	tempDir, err := os.MkdirTemp("", "exampledir-*")
-	must.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
+	tempDir := t.TempDir()
 	mockImage, err := os.CreateTemp(tempDir, "test-*.img")
 	must.NoError(t, err)
 	defer os.Remove(mockImage.Name())
@@ -558,10 +545,7 @@ func (cim *cloudInitMock) Apply(ci *cloudinit.Config, path string) error {
 func TestVirtDriver_Start_Wait_Destroy_LibvirtIntegration(t *testing.T) {
 	ci.Parallel(t)
 
-	tempDir, err := os.MkdirTemp("", "exampledir-*")
-	must.NoError(t, err)
-	defer os.RemoveAll(tempDir)
-
+	tempDir := t.TempDir()
 	mockImage, err := os.CreateTemp(tempDir, "test-*.img")
 	must.NoError(t, err)
 	defer os.Remove(mockImage.Name())
