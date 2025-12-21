@@ -10,7 +10,7 @@ require (
 	github.com/coreos/go-iptables v0.8.0
 	github.com/diskfs/go-diskfs v1.7.0
 	github.com/docker/distribution v2.8.3+incompatible
-	github.com/gopacket/gopacket v1.4.0
+	github.com/gopacket/gopacket v1.5.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-set v0.1.14
