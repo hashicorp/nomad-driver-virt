@@ -100,7 +100,7 @@ type VirtDriverPlugin struct {
 	// function called. While the function should be idempotent, this helps
 	// avoid unnecessary calls and work.
 	networkInit  atomic.Bool
-	imageHandler ImageHandler
+	imageHandler image_tools.ImageHandler
 }
 
 // NewPlugin returns a new driver plugin
@@ -552,7 +552,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		copyPath := filepath.Join(d.dataDir, taskName+".img")
 		d.logger.Info("creating thin copy at", "path", copyPath) // TODO: Put back at info
 
-		if err := d.imageHandler.CreateThinCopy(diskImagePath, copyPath,
+		if err := d.imageHandler.CreateChainedCopy(diskImagePath, copyPath,
 			cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
 			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w",
 				taskName, err)
