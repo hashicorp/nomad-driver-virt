@@ -89,7 +89,7 @@ func TestConfig_Plugin(t *testing.T) {
   config {
 	data_dir = "/path/to/blah"
 	image_paths = ["/path/one", "/path/two"]
-	emulator {
+	provider "libvirt" {
 		uri = "qume:///user"
 		user = "test-user"
 		password = "test-password"
@@ -102,9 +102,9 @@ func TestConfig_Plugin(t *testing.T) {
 
 	must.SliceContainsAll(t, expectedImgPaths, cs.ImagePaths)
 	must.StrContains(t, expectedDataDir, cs.DataDir)
-	must.StrContains(t, expectedURI, cs.Emulator.URI)
-	must.StrContains(t, expectedUser, cs.Emulator.User)
-	must.StrContains(t, expectedPassword, cs.Emulator.Password)
+	must.StrContains(t, expectedURI, cs.Provider.Libvirt.URI)
+	must.StrContains(t, expectedUser, cs.Provider.Libvirt.User)
+	must.StrContains(t, expectedPassword, cs.Provider.Libvirt.Password)
 }
 
 func Test_taskConfigSpec(t *testing.T) {
