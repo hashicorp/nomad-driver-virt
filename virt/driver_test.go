@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
@@ -65,17 +65,25 @@ func (mh *mockImageHandler) CreateThinCopy(basePath string, destination string, 
 type mockTaskGetter struct {
 	lock sync.RWMutex
 
+	name  string
 	count int
-	info  *domain.Info
+	info  *vm.Info
 	err   error
 }
 
-func (mtg *mockTaskGetter) GetDomain(name string) (*domain.Info, error) {
+func (mtg *mockTaskGetter) GetVM(name string) (*vm.Info, error) {
 	mtg.lock.Lock()
 	defer mtg.lock.Unlock()
 
+	info := &vm.Info{}
+	if mtg.info != nil {
+		*info = *mtg.info
+	} else {
+		info = nil
+	}
+
 	mtg.count += 1
-	return mtg.info, mtg.err
+	return info, mtg.err
 }
 
 func (mtg *mockTaskGetter) getNumberOfCalls() int {
@@ -85,19 +93,21 @@ func (mtg *mockTaskGetter) getNumberOfCalls() int {
 	return mtg.count
 }
 
-type mockVirtualizar struct {
+type mockVirtualizer struct {
 	lock sync.RWMutex
 
-	config *domain.Config
+	*mockTaskGetter
+
+	config *vm.Config
 	count  int
 	err    error
 }
 
-func (mv *mockVirtualizar) Start(dataDir string) error {
+func (mv *mockVirtualizer) Start() error {
 	return nil
 }
 
-func (mv *mockVirtualizar) CreateDomain(config *domain.Config) error {
+func (mv *mockVirtualizer) CreateVM(config *vm.Config) error {
 	mv.lock.Lock()
 	defer mv.lock.Unlock()
 
@@ -107,25 +117,25 @@ func (mv *mockVirtualizar) CreateDomain(config *domain.Config) error {
 	return mv.err
 }
 
-func (mv *mockVirtualizar) getPassedConfig() *domain.Config {
+func (mv *mockVirtualizer) getPassedConfig() *vm.Config {
 	mv.lock.Lock()
 	defer mv.lock.Unlock()
 
 	return mv.config.Copy()
 }
 
-func (mv *mockVirtualizar) getNumberOfVMs() int {
+func (mv *mockVirtualizer) getNumberOfVMs() int {
 	mv.lock.Lock()
 	defer mv.lock.Unlock()
 
 	return mv.count
 }
 
-func (mv *mockVirtualizar) StopDomain(name string) error {
+func (mv *mockVirtualizer) StopVM(name string) error {
 	return nil
 }
 
-func (mv *mockVirtualizar) DestroyDomain(name string) error {
+func (mv *mockVirtualizer) DestroyVM(name string) error {
 	mv.lock.Lock()
 	defer mv.lock.Unlock()
 
@@ -133,12 +143,16 @@ func (mv *mockVirtualizar) DestroyDomain(name string) error {
 	return nil
 }
 
-func (mv *mockVirtualizar) GetInfo() (domain.VirtualizerInfo, error) {
-	return domain.VirtualizerInfo{}, nil
+func (mv *mockVirtualizer) GetInfo() (vm.VirtualizerInfo, error) {
+	return vm.VirtualizerInfo{}, nil
 }
 
-func (mv *mockVirtualizar) GetNetworkInterfaces(name string) ([]domain.NetworkInterface, error) {
-	return []domain.NetworkInterface{}, nil
+func (mv *mockVirtualizer) GetNetworkInterfaces(name string) ([]vm.NetworkInterface, error) {
+	return []vm.NetworkInterface{}, nil
+}
+
+func (mv *mockVirtualizer) UseCloudInit() bool {
+	return true
 }
 
 func createBasicResources() *drivers.Resources {
@@ -163,7 +177,7 @@ func createBasicResources() *drivers.Resources {
 
 // virtDriverHarness wires up everything needed to launch a task with a virt driver.
 // A driver plugin interface and cleanup function is returned
-func virtDriverHarness(t *testing.T, v Virtualizer, dg DomainGetter, ih ImageHandler,
+func virtDriverHarness(t *testing.T, v Virtualizer, dg VMGetter, ih ImageHandler,
 	dataDir string) *dtestutil.DriverHarness {
 	logger := testlog.HCLogger(t)
 	if testing.Verbose() {
@@ -233,10 +247,10 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 
 	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-	mockVirtualizer := &mockVirtualizar{}
+	mockVirtualizer := &mockVirtualizer{}
 
 	mockTaskGetter := &mockTaskGetter{
-		info: &domain.Info{
+		info: &vm.Info{
 			State: libvirt.DomainRunning,
 		},
 	}
@@ -267,19 +281,19 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	must.Eq(t, 2666, callConfig.PrimaryDiskSize)
 	must.StrContains(t, "nomad-task-name-0000000", callConfig.HostName)
 	must.Eq(t, 3, len(callConfig.Mounts))
-	must.Eq(t, domain.MountFileConfig{
+	must.Eq(t, vm.MountFileConfig{
 		Source:      task.AllocDir + "/alloc",
 		Destination: "/alloc",
 		ReadOnly:    true,
 		Tag:         "allocDir",
 	}, callConfig.Mounts[0])
-	must.Eq(t, domain.MountFileConfig{
+	must.Eq(t, vm.MountFileConfig{
 		Source:      task.AllocDir + "/local",
 		Destination: "/local",
 		ReadOnly:    true,
 		Tag:         "localDir",
 	}, callConfig.Mounts[1])
-	must.Eq(t, domain.MountFileConfig{
+	must.Eq(t, vm.MountFileConfig{
 		Source:      task.AllocDir + "/secrets",
 		Destination: "/secrets",
 		ReadOnly:    true,
@@ -358,10 +372,10 @@ func TestVirtDriver_Start_Recover_Destroy(t *testing.T) {
 
 	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-	mockVirtualizer := &mockVirtualizar{}
+	mockVirtualizer := &mockVirtualizer{}
 
 	mockTaskGetter := &mockTaskGetter{
-		info: &domain.Info{
+		info: &vm.Info{
 			State: libvirt.DomainRunning,
 		},
 	}
@@ -417,10 +431,10 @@ func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
 
 	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-	mockVirtualizer := &mockVirtualizar{}
+	mockVirtualizer := &mockVirtualizer{}
 
 	mockTaskGetter := &mockTaskGetter{
-		info: &domain.Info{
+		info: &vm.Info{
 			State: libvirt.DomainCrashed,
 		},
 	}
@@ -468,10 +482,10 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 
 	allocID := uuid.Generate()
 
-	mockVirtualizer := &mockVirtualizar{}
+	mockVirtualizer := &mockVirtualizer{}
 
 	mockTaskGetter := &mockTaskGetter{
-		info: &domain.Info{
+		info: &vm.Info{
 			State: libvirt.DomainRunning,
 		},
 	}

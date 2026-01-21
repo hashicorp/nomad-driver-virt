@@ -1,7 +1,7 @@
 // Copyright IBM Corp. 2024, 2025
 // SPDX-License-Identifier: MPL-2.0
 
-package domain
+package vm
 
 import (
 	"testing"
@@ -13,7 +13,7 @@ func TestConfig_Validate(t *testing.T) {
 	allowedPath := "/allowed/path/"
 
 	validConfig := Config{
-		Name:            "test-domain",
+		Name:            "test-vm",
 		CPUs:            2,
 		Memory:          600,
 		PrimaryDiskSize: 26000,
@@ -47,7 +47,7 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: multierror.Append(nil, ErrPathNotAllowed),
 		},
 		{
-			name: "Missing_domain_name",
+			name: "Missing_vm_name",
 			config: Config{
 				Memory:          validConfig.Memory,
 				PrimaryDiskSize: validConfig.PrimaryDiskSize,

@@ -6,40 +6,15 @@ package virt
 import (
 	"context"
 	"errors"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad/client/structs"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/shoenig/test/must"
 )
-
-type domainGetterMock struct {
-	lock sync.RWMutex
-	name string
-	info *domain.Info
-	err  error
-}
-
-func (dgm *domainGetterMock) GetDomain(name string) (*domain.Info, error) {
-	dgm.lock.Lock()
-	dgm.name = name
-
-	info := &domain.Info{}
-	if dgm.info != nil {
-		*info = *dgm.info
-	} else {
- 		info = nil
-	}
-
-	err := dgm.err
-	dgm.lock.Unlock()
-
-	return info, err
-}
 
 func Test_GetStats(t *testing.T) {
 	mockError := errors.New("oh no!")
@@ -48,12 +23,12 @@ func Test_GetStats(t *testing.T) {
 		name           string
 		expectedError  error
 		getterError    error
-		info           *domain.Info
+		info           *vm.Info
 		expectedResult *drivers.TaskResourceUsage
 	}{
 		{
 			name: "successful_stats_returned",
-			info: &domain.Info{
+			info: &vm.Info{
 				State:     "running",
 				Memory:    666,
 				CPUTime:   66,
@@ -80,13 +55,13 @@ func Test_GetStats(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dgm := &domainGetterMock{
+			dgm := &mockTaskGetter{
 				err:  tt.getterError,
 				info: tt.info,
 			}
 
 			th := &taskHandle{
-				name:       "test-domain",
+				name:       "test-vm",
 				taskGetter: dgm,
 			}
 
@@ -94,7 +69,7 @@ func Test_GetStats(t *testing.T) {
 			must.Eq(t, tt.expectedError, errors.Unwrap(err))
 			if err == nil {
 				dgm.lock.Lock()
-				must.StrContains(t, "test-domain", dgm.name)
+				must.StrContains(t, "test-vm", dgm.name)
 				dgm.lock.Unlock()
 
 				must.Eq(t, tt.expectedResult.ResourceUsage, stats.ResourceUsage)
@@ -104,15 +79,15 @@ func Test_GetStats(t *testing.T) {
 }
 
 func Test_Monitor(t *testing.T) {
-	dgm := &domainGetterMock{
-		info: &domain.Info{
+	dgm := &mockTaskGetter{
+		info: &vm.Info{
 			State: "running",
 		},
 	}
 
 	th := &taskHandle{
 		logger:     hclog.NewNullLogger(),
-		name:       "test-domain",
+		name:       "test-vm",
 		taskGetter: dgm,
 		procState:  drivers.TaskStateRunning,
 	}
@@ -120,7 +95,7 @@ func Test_Monitor(t *testing.T) {
 	exitChannel := make(chan *drivers.ExitResult, 1)
 	defer close(exitChannel)
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
 	go th.monitor(ctx, exitChannel)
@@ -133,7 +108,7 @@ func Test_Monitor(t *testing.T) {
 	must.Eq(t, drivers.TaskStateRunning, th.procState)
 	th.stateLock.Unlock()
 
-	// An error from the domain getter should cause the task to move
+	// An error from the vm getter should cause the task to move
 	// to an unknown state.
 	dgm.lock.Lock()
 	dgm.err = errors.New("oh no! an error!")
@@ -145,7 +120,7 @@ func Test_Monitor(t *testing.T) {
 	must.Eq(t, drivers.TaskStateUnknown, th.procState)
 	th.stateLock.Unlock()
 
-	// A domain reporting a crash should force the monitor to send an exit
+	// A vm reporting a crash should force the monitor to send an exit
 	// result and return.
 	dgm.lock.Lock()
 	dgm.err = nil

@@ -197,7 +197,7 @@ func (c *Controller) VMStartedBuild(req *net.VMStartedBuildRequest) (*net.VMStar
 	// Protect against VMs with no network interface. The log is useful for
 	// debugging which certainly caught me(jrasell) a few times in development.
 	if len(netConfig) == 0 {
-		c.logger.Debug("no network interface configured", "domain", req.DomainName)
+		c.logger.Debug("no network interface configured", "domain", req.VMName)
 		return &net.VMStartedBuildResponse{}, nil
 	}
 	netInterface := netConfig[0]

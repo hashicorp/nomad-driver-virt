@@ -42,7 +42,7 @@ func TestGetInfo(t *testing.T) {
 	// to use for testing.
 	ld := New(context.Background(), hclog.NewNullLogger(), WithConnectionURI("test:///default"))
 
-	err := ld.Start(t.TempDir())
+	err := ld.Start()
 
 	must.NoError(t, err)
 	i, err := ld.GetInfo()
@@ -186,8 +186,8 @@ func TestStartDomain(t *testing.T) {
 			// to use for testing.
 			ld := New(context.Background(), hclog.NewNullLogger(),
 				WithConnectionURI("test:///default"), WithCIController(cim))
-
-			err := ld.Start(t.TempDir())
+			ld.dataDir = t.TempDir()
+			err := ld.Start()
 			must.NoError(t, err)
 			defer ld.Close()
 
@@ -234,7 +234,7 @@ func TestStartDomain(t *testing.T) {
 				},
 			}
 
-			err = ld.CreateDomain(domConfig)
+			err = ld.CreateVM(domConfig)
 			must.Eq(t, tt.expectError, errors.Unwrap(err))
 			if err == nil {
 				i, err = ld.GetInfo()
@@ -256,8 +256,8 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	// to use for testing.
 	ld := New(context.Background(), hclog.NewNullLogger(),
 		WithConnectionURI("test:///default"), WithCIController(cim))
-
-	err := ld.Start(t.TempDir())
+	ld.dataDir = t.TempDir()
+	err := ld.Start()
 	must.NoError(t, err)
 	defer ld.Close()
 
@@ -273,7 +273,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	must.Len(t, 1, doms)
 
 	domainName := "test-nomad-domain"
-	err = ld.CreateDomain(&domain.Config{
+	err = ld.CreateVM(&domain.Config{
 		RemoveConfigFiles: true,
 		Name:              domainName,
 		Memory:            66600,
@@ -288,7 +288,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	// The initial test hypervisor has one plus the one that was just started.
 	must.Len(t, 2, doms)
 
-	err = ld.StopDomain(domainName)
+	err = ld.StopVM(domainName)
 	must.NoError(t, err)
 
 	info, err = ld.GetInfo()
@@ -308,7 +308,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	// The domain is still present, but inactive
 	must.One(t, info.InactiveDomains)
 
-	err = ld.DestroyDomain(domainName)
+	err = ld.DestroyVM(domainName)
 	must.NoError(t, err)
 
 	info, err = ld.GetInfo()
@@ -323,12 +323,13 @@ func Test_GetNetworkInterfaces(t *testing.T) {
 	// to use for testing.
 	ld := New(context.Background(), hclog.NewNullLogger(),
 		WithConnectionURI("test:///default"), WithCIController(&cloudInitMock{}))
-	err := ld.Start(t.TempDir())
+	ld.dataDir = t.TempDir()
+	err := ld.Start()
 	must.NoError(t, err)
 	defer ld.Close()
 
 	domainName := "test-nomad-domain"
-	err = ld.CreateDomain(&domain.Config{
+	err = ld.CreateVM(&domain.Config{
 		RemoveConfigFiles: true,
 		Name:              domainName,
 		Memory:            66600,
