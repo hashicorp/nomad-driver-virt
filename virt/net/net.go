@@ -26,11 +26,11 @@ const (
 // VMStartedBuildRequest is the request object used to ask the network
 // sub-system to perform its configuration, once a VM has been started.
 type VMStartedBuildRequest struct {
-	DomainName string
-	Hostname   string
-	NetConfig  *NetworkInterfacesConfig
-	Resources  *drivers.Resources
-	Hwaddrs    []string
+	VMName    string
+	Hostname  string
+	NetConfig *NetworkInterfacesConfig
+	Resources *drivers.Resources
+	Hwaddrs   []string
 }
 
 // VMStartedBuildResponse is the response sent object once the network
@@ -76,7 +76,7 @@ type TeardownSpec struct {
 	IPTablesRules [][]string
 
 	// DHCPReservation specifies the reservation string used for registering
-	// a DHCP address for a domain.
+	// a DHCP address for a virtual machine.
 	DHCPReservation string
 
 	// Network is the name of the network used and which provided the

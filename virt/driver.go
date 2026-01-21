@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
 	virtnet "github.com/hashicorp/nomad-driver-virt/libvirt/net"
 	"github.com/hashicorp/nomad-driver-virt/virt/image_tools"
@@ -83,63 +83,10 @@ type TaskState struct {
 	NetTeardown *net.TeardownSpec
 }
 
-// Net is the interface that defines the virtualization network sub-system. It
-// should be the only link from the main driver and compute functionality, into
-// the network. This helps encapsulate the logic making future development
-// easier, even allowing for this code to be moved into its own application if
-// desired.
-type Net interface {
-
-	// Fingerprint interrogates the host system and populates the attribute
-	// mapping with relevant network information. Any errors performing this
-	// should be logged by the implementor, but not considered terminal, which
-	// explains the lack of error response. Each entry should use
-	// FingerprintAttributeKeyPrefix as a base.
-	Fingerprint(map[string]*structs.Attribute)
-
-	// Init performs any initialization work needed by the network sub-system
-	// prior to being used by the driver. This will be called when the plugin
-	// is set up by Nomad and should be expected to run multiple times during
-	// a Nomad client's lifecycle. It should therefore be idempotent. Any error
-	// returned is considered fatal to the plugin.
-	Init() error
-
-	// VMStartedBuild performs any network configuration required once the
-	// driver has successfully started a VM. Any error returned will be
-	// considered terminal to the start of the VM and therefore halt any
-	// further progress and result in the task being restarted.
-	VMStartedBuild(*net.VMStartedBuildRequest) (*net.VMStartedBuildResponse, error)
-
-	// VMTerminatedTeardown performs all the network teardown required to clean
-	// the host and any systems of configuration specific to the task. If an
-	// error is encountered, Nomad will retry the stop/kill process, so all
-	// implementations must be able to support this and not enter death spirals
-	// when an error occurs.
-	VMTerminatedTeardown(*net.VMTerminatedTeardownRequest) (*net.VMTerminatedTeardownResponse, error)
-}
-
-type Virtualizer interface {
-	Start(string) error
-	CreateDomain(config *domain.Config) error
-	StopDomain(name string) error
-	DestroyDomain(name string) error
-	GetInfo() (domain.VirtualizerInfo, error)
-	GetNetworkInterfaces(name string) ([]domain.NetworkInterface, error)
-}
-
-type DomainGetter interface {
-	GetDomain(name string) (*domain.Info, error)
-}
-
-type ImageHandler interface {
-	GetImageFormat(basePath string) (string, error)
-	CreateThinCopy(basePath string, destination string, sizeM int64) error
-}
-
 type VirtDriverPlugin struct {
 	eventer        *eventer.Eventer
 	virtualizer    Virtualizer
-	taskGetter     DomainGetter
+	taskGetter     VMGetter
 	config         *Config
 	nomadConfig    *base.ClientDriverConfig
 	tasks          *taskStore
@@ -148,7 +95,7 @@ type VirtDriverPlugin struct {
 	dataDir        string
 	// networkController is the backend controller interface for the network
 	// subsystem.
-	networkController Net
+	networkController net.Net
 	// networkInit indicates whether the network subsystem has had its init
 	// function called. While the function should be idempotent, this helps
 	// avoid unnecessary calls and work.
@@ -218,7 +165,7 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 		return fmt.Errorf("virt: unable to create data dir: %w", err)
 	}
 
-	err = d.virtualizer.Start(d.dataDir)
+	err = d.virtualizer.Start()
 	if err != nil {
 		return err
 	}
@@ -338,7 +285,7 @@ func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal
 		return nil
 	}
 
-	err := d.virtualizer.StopDomain(domainNameFromTaskID(taskID))
+	err := d.virtualizer.StopVM(vmNameFromTaskID(taskID))
 	if err != nil {
 		return fmt.Errorf("virt: unable to stop task %s: %w", taskID, err)
 	}
@@ -357,12 +304,12 @@ func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
 		return nil
 	}
 
-	taskName := domainNameFromTaskID(taskID)
+	taskName := vmNameFromTaskID(taskID)
 	if handle.IsRunning() && !force {
 		return errors.New("cannot destroy a running task")
 	}
 
-	err := d.virtualizer.DestroyDomain(taskName)
+	err := d.virtualizer.DestroyVM(taskName)
 	if err != nil {
 		return fmt.Errorf("virt: unable to destroy task %s: %w", taskID, err)
 	}
@@ -445,12 +392,12 @@ func (d *VirtDriverPlugin) ExecTask(taskID string, cmd []string, timeout time.Du
 	return nil, errors.New("This driver does not support exec")
 }
 
-// domainNameFromTaskConfig creates a name to be used for the vms, using the
+// vmNameFromTaskConfig creates a name to be used for the vms, using the
 // last 8 chars of the taskName which should be unique per task and the task name
 // to help the operator identify the vms.
 //
 // The struct of the task ID is "allocID/taskName/UniqueID".
-func domainNameFromTaskID(taskID string) string {
+func vmNameFromTaskID(taskID string) string {
 	ids := strings.Split(taskID, "/")
 	return strings.Join(ids[1:], "-")
 }
@@ -464,8 +411,8 @@ func createDataDirectory(path string) error {
 	return nil
 }
 
-func createAllocFileMounts(task *drivers.TaskConfig) []domain.MountFileConfig {
-	mounts := []domain.MountFileConfig{
+func createAllocFileMounts(task *drivers.TaskConfig) []vm.MountFileConfig {
+	mounts := []vm.MountFileConfig{
 		{
 			Source:      task.TaskDir().SharedAllocDir,
 			Tag:         "allocDir",
@@ -491,14 +438,14 @@ func createAllocFileMounts(task *drivers.TaskConfig) []domain.MountFileConfig {
 
 // To create the alloc env vars, they are all writtent into a scripy in
 // /etc/profile.d/virt.sh where the OS will take care of executing it at start.
-func createEnvsFile(envs map[string]string) domain.File {
+func createEnvsFile(envs map[string]string) vm.File {
 	con := []string{}
 
 	for k, v := range envs {
 		con = append(con, fmt.Sprintf("export %s=%s", k, v))
 	}
 
-	return domain.File{
+	return vm.File{
 		Encoding:    "b64",
 		Path:        envVariblesFilePath,
 		Permissions: envVariblesFilePermissions,
@@ -514,7 +461,7 @@ func fileExists(path string) bool {
 	return !info.IsDir()
 }
 
-func addCMDsForMounts(mounts []domain.MountFileConfig) []string {
+func addCMDsForMounts(mounts []vm.MountFileConfig) []string {
 	cmds := []string{}
 	for _, m := range mounts {
 		c := []string{
@@ -556,7 +503,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	d.logger.Debug("starting task", "driver_cfg", hclog.Fmt("%+v\n", driverConfig))
 
-	taskName := domainNameFromTaskID(cfg.ID)
+	taskName := vmNameFromTaskID(cfg.ID)
 
 	d.logger.Info("starting task", "name", taskName)
 
@@ -567,9 +514,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	allocFSMounts := createAllocFileMounts(cfg)
 	bootCMDs := addCMDsForMounts(allocFSMounts)
 
-	var osVariant *domain.OSVariant
+	var osVariant *vm.OSVariant
 	if driverConfig.OS != nil {
-		osVariant = &domain.OSVariant{
+		osVariant = &vm.OSVariant{
 			Machine: driverConfig.OS.Machine,
 			Arch:    driverConfig.OS.Arch,
 		}
@@ -617,7 +564,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	cpuSet := idset.Parse[hw.CoreID](cfg.Resources.LinuxResources.CpusetCpus)
 
-	dc := &domain.Config{
+	dc := &vm.Config{
 		RemoveConfigFiles: true,
 		Name:              taskName,
 		Memory:            uint(cfg.Resources.NomadResources.Memory.MemoryMB),
@@ -634,7 +581,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		CIUserData:        driverConfig.UserData,
 		Password:          driverConfig.DefaultUserPassword,
 		SSHKey:            driverConfig.DefaultUserSSHKey,
-		Files:             []domain.File{createEnvsFile(cfg.Env)},
+		Files:             []vm.File{createEnvsFile(cfg.Env)},
 		NetworkInterfaces: driverConfig.NetworkInterfacesConfig,
 	}
 
@@ -642,7 +589,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
 	}
 
-	if err := d.virtualizer.CreateDomain(dc); err != nil {
+	if err := d.virtualizer.CreateVM(dc); err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
@@ -668,11 +615,11 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	// response will contain our teardown spec, which gets stored in the task
 	// handle, so we can easily perform deletions.
 	netBuildReq := net.VMStartedBuildRequest{
-		DomainName: taskName,
-		Hostname:   hostname,
-		NetConfig:  &driverConfig.NetworkInterfacesConfig,
-		Resources:  cfg.Resources,
-		Hwaddrs:    hwaddrs,
+		VMName:    taskName,
+		Hostname:  hostname,
+		NetConfig: &driverConfig.NetworkInterfacesConfig,
+		Resources: cfg.Resources,
+		Hwaddrs:   hwaddrs,
 	}
 
 	// Build out the network now that the VM has been started.
@@ -685,8 +632,8 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	// however, at least attempting it is a good start.
 	netBuildResp, err := d.networkController.VMStartedBuild(&netBuildReq)
 	if err != nil {
-		if destroyDomainErr := d.virtualizer.DestroyDomain(taskName); destroyDomainErr != nil {
-			d.logger.Error("virt: failed to destroy domain, manual cleanup needed",
+		if destroyDomainErr := d.virtualizer.DestroyVM(taskName); destroyDomainErr != nil {
+			d.logger.Error("virt: failed to destroy virtual machine, manual cleanup needed",
 				"task_name", taskName, "error", destroyDomainErr)
 		}
 		return nil, nil, fmt.Errorf("virt: failed to build task network: %w", err)
@@ -739,7 +686,7 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 	}
 
 	h := &taskHandle{
-		name:        domainNameFromTaskID(handle.Config.ID),
+		name:        vmNameFromTaskID(handle.Config.ID),
 		logger:      d.logger.Named("handle").With("alloc-id", handle.Config.AllocID),
 		taskConfig:  taskState.TaskConfig,
 		startedAt:   taskState.StartedAt,
@@ -747,7 +694,7 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 		netTeardown: taskState.NetTeardown,
 	}
 
-	vm, err := h.taskGetter.GetDomain(h.name)
+	vm, err := h.taskGetter.GetVM(h.name)
 	if err != nil {
 		d.logger.Warn("Recovery restart failed, unknown task state", "task", handle.Config.ID)
 		return fmt.Errorf("virt: failed to recover task %s: %v", handle.Config.ID, err)

@@ -196,7 +196,7 @@ func New(ctx context.Context, logger hclog.Logger, opt ...Option) *driver {
 // the dependencies, they are not initialized at creation because the NewPlugin
 // function does not return errors. It also starts or reataches a storage pool
 // to place the disks for the virtual machines.
-func (d *driver) Start(dataDir string) error {
+func (d *driver) Start() error {
 	for _, opt := range d.opts {
 		opt(d)
 	}
@@ -207,14 +207,6 @@ func (d *driver) Start(dataDir string) error {
 			return err
 		}
 		d.ci = ci
-	}
-
-	if dataDir != "" {
-		d.dataDir = dataDir
-	}
-
-	if err := createDataDirectory(d.dataDir); err != nil {
-		return fmt.Errorf("libvirt: unable to create data dir: %w", err)
 	}
 
 	conn, err := d.connection()
@@ -408,9 +400,9 @@ func (d *driver) getDomain(name string) (*libvirt.Domain, error) {
 	return dom, nil
 }
 
-// StopDomain will set a domain to shutoff, but it will still be present as
+// StopVM will set a domain to shutoff, but it will still be present as
 // inactive and can be restarted.
-func (d *driver) StopDomain(name string) error {
+func (d *driver) StopVM(name string) error {
 	d.logger.Warn("stopping domain", "name", name)
 
 	dom, err := d.getDomain(name)
@@ -430,9 +422,9 @@ func (d *driver) StopDomain(name string) error {
 	return nil
 }
 
-// DestroyDomian destroys and undefines a domain, meaning it will be completely
+// DestroyVM destroys and undefines a domain, meaning it will be completely
 // removes it.
-func (d *driver) DestroyDomain(name string) error {
+func (d *driver) DestroyVM(name string) error {
 	d.logger.Warn("destroying domain", "name", name)
 
 	dom, err := d.getDomain(name)
@@ -465,9 +457,9 @@ func (d *driver) DestroyDomain(name string) error {
 	return nil
 }
 
-// CreateDomain verifies if the domains exists already, if it does, it returns
+// CreateVM verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
-func (d *driver) CreateDomain(config *domain.Config) error {
+func (d *driver) CreateVM(config *domain.Config) error {
 	conn, err := d.connection()
 	if err != nil {
 		return err
@@ -531,9 +523,9 @@ func (d *driver) CreateDomain(config *domain.Config) error {
 	return nil
 }
 
-// GetDomain find a domain by name and returns basic functionality information
+// GetVM find a domain by name and returns basic functionality information
 // including current state, memory and CPU. If no domain is found nil is returned.
-func (d *driver) GetDomain(name string) (*domain.Info, error) {
+func (d *driver) GetVM(name string) (*domain.Info, error) {
 	dom, err := d.getDomain(name)
 	if err != nil {
 		return nil, fmt.Errorf("libvirt: unable to get domain %s: %w", name, err)
@@ -675,6 +667,11 @@ func (d *driver) GetAllDomains() ([]string, error) {
 	}
 
 	return dns, nil
+}
+
+// UseCloudInit informs that cloud-init is supported by this provider.
+func (d *driver) UseCloudInit() bool {
+	return true
 }
 
 func folderExists(path string) bool {

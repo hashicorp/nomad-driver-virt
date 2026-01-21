@@ -1,7 +1,7 @@
 // Copyright IBM Corp. 2024, 2025
 // SPDX-License-Identifier: MPL-2.0
 
-package domain
+package vm
 
 import (
 	"errors"
@@ -28,7 +28,7 @@ var (
 	// should be at most 63 characters according to the RFC
 	validLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
 
-	ErrEmptyName           = errors.New("domain name can not be empty")
+	ErrEmptyName           = errors.New("virtual machine name can not be empty")
 	ErrMissingImage        = errors.New("image path can not be empty")
 	ErrNotEnoughDisk       = errors.New("not enough disk space assigned to task")
 	ErrNoCPUS              = errors.New("no cpus configured, use resources.cores to assign cores in the job spec")
@@ -83,81 +83,81 @@ type Config struct {
 	NetworkInterfaces net.NetworkInterfacesConfig
 }
 
-func (dc *Config) Validate(allowedPaths []string) error {
+func (vm *Config) Validate(allowedPaths []string) error {
 	var mErr *multierror.Error
-	if dc.Name == "" {
+	if vm.Name == "" {
 		mErr = multierror.Append(mErr, ErrEmptyName)
 	}
 
-	if dc.BaseImage == "" {
+	if vm.BaseImage == "" {
 		mErr = multierror.Append(mErr, ErrMissingImage)
 	} else {
-		if !isAllowedImagePath(allowedPaths, dc.BaseImage) {
+		if !isAllowedImagePath(allowedPaths, vm.BaseImage) {
 			mErr = multierror.Append(mErr, ErrPathNotAllowed)
 		}
 	}
 
-	if dc.PrimaryDiskSize < minDiskMB {
+	if vm.PrimaryDiskSize < minDiskMB {
 		mErr = multierror.Append(mErr, ErrNotEnoughDisk)
 	}
 
-	if dc.Memory < minMemoryMB {
+	if vm.Memory < minMemoryMB {
 		mErr = multierror.Append(mErr, ErrNotEnoughMemory)
 	}
 
-	if dc.OsVariant != nil {
-		if dc.OsVariant.Arch == "" &&
-			dc.OsVariant.Machine == "" {
+	if vm.OsVariant != nil {
+		if vm.OsVariant.Arch == "" &&
+			vm.OsVariant.Machine == "" {
 			mErr = multierror.Append(mErr, ErrIncompleteOSVariant)
 		}
 	}
 
-	if dc.CPUs < 1 {
+	if vm.CPUs < 1 {
 		mErr = multierror.Append(mErr, ErrNoCPUS)
 	}
 
-	if dc.HostName != "" && !IsValidLabel(dc.HostName) {
+	if vm.HostName != "" && !IsValidLabel(vm.HostName) {
 		mErr = multierror.Append(mErr, ErrInvalidHostName)
 	}
 
-	if err := dc.NetworkInterfaces.Validate(); err != nil {
+	if err := vm.NetworkInterfaces.Validate(); err != nil {
 		mErr = multierror.Append(mErr, err)
 	}
 
 	return mErr.ErrorOrNil()
 }
 
-func (dc *Config) Copy() *Config {
+func (vm *Config) Copy() *Config {
 	copy := &Config{
-		RemoveConfigFiles: dc.RemoveConfigFiles,
-		XMLConfig:         dc.XMLConfig,
-		Name:              dc.Name,
-		Memory:            dc.Memory,
-		CPUset:            dc.CPUset,
-		CPUs:              dc.CPUs,
-		BaseImage:         dc.BaseImage,
-		DiskFmt:           dc.DiskFmt,
-		PrimaryDiskSize:   dc.PrimaryDiskSize,
-		NetworkInterfaces: slices.Clone(dc.NetworkInterfaces),
-		HostName:          dc.HostName,
-		Mounts:            slices.Clone(dc.Mounts),
-		Files:             slices.Clone(dc.Files),
-		SSHKey:            dc.SSHKey,
-		Password:          dc.Password,
-		CMDs:              slices.Clone(dc.CMDs),
-		BOOTCMDs:          slices.Clone(dc.BOOTCMDs),
-		CIUserData:        dc.CIUserData,
+		RemoveConfigFiles: vm.RemoveConfigFiles,
+		XMLConfig:         vm.XMLConfig,
+		Name:              vm.Name,
+		Memory:            vm.Memory,
+		CPUset:            vm.CPUset,
+		CPUs:              vm.CPUs,
+		BaseImage:         vm.BaseImage,
+		DiskFmt:           vm.DiskFmt,
+		PrimaryDiskSize:   vm.PrimaryDiskSize,
+		NetworkInterfaces: slices.Clone(vm.NetworkInterfaces),
+		HostName:          vm.HostName,
+		Mounts:            slices.Clone(vm.Mounts),
+		Files:             slices.Clone(vm.Files),
+		SSHKey:            vm.SSHKey,
+		Password:          vm.Password,
+		CMDs:              slices.Clone(vm.CMDs),
+		BOOTCMDs:          slices.Clone(vm.BOOTCMDs),
+		CIUserData:        vm.CIUserData,
 	}
 
-	if dc.OsVariant != nil {
+	if vm.OsVariant != nil {
 		copy.OsVariant = &OSVariant{
-			Arch:    dc.OsVariant.Arch,
-			Machine: dc.OsVariant.Machine,
+			Arch:    vm.OsVariant.Arch,
+			Machine: vm.OsVariant.Machine,
 		}
 	}
 
-	if dc.Timezone != nil {
-		*copy.Timezone = *dc.Timezone
+	if vm.Timezone != nil {
+		*copy.Timezone = *vm.Timezone
 	}
 
 	return copy

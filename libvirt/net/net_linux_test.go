@@ -269,9 +269,9 @@ func TestController_VMStartedBuild(t *testing.T) {
 
 		// Test a correct and full request.
 		fullReq := net.VMStartedBuildRequest{
-			DomainName: "nomad-0ea818bc",
-			Hostname:   "nomad-0ea818bc",
-			Hwaddrs:    []string{"52:54:00:1c:7c:14"},
+			VMName:   "nomad-0ea818bc",
+			Hostname: "nomad-0ea818bc",
+			Hwaddrs:  []string{"52:54:00:1c:7c:14"},
 			NetConfig: &net.NetworkInterfacesConfig{
 				{
 					Bridge: &net.NetworkInterfaceBridgeConfig{
@@ -394,9 +394,9 @@ func TestController_VMStartedBuild(t *testing.T) {
 
 		// Test a correct and full request.
 		fullReq := net.VMStartedBuildRequest{
-			DomainName: "nomad-0ea818bc",
-			Hostname:   "nomad-0ea818bc",
-			Hwaddrs:    []string{"52:54:00:1c:7c:14"},
+			VMName:   "nomad-0ea818bc",
+			Hostname: "nomad-0ea818bc",
+			Hwaddrs:  []string{"52:54:00:1c:7c:14"},
 			NetConfig: &net.NetworkInterfacesConfig{
 				{
 					Bridge: &net.NetworkInterfaceBridgeConfig{

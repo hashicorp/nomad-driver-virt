@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
@@ -38,7 +38,7 @@ type taskHandle struct {
 	name        string
 	exitResult  *drivers.ExitResult
 
-	taskGetter DomainGetter
+	taskGetter VMGetter
 
 	// netTeardown is the specification used to delete all the network
 	// configuration associated to a VM.
@@ -61,16 +61,16 @@ func (h *taskHandle) TaskStatus() *drivers.TaskStatus {
 }
 
 func (h *taskHandle) GetStats() (*drivers.TaskResourceUsage, error) {
-	domain, err := h.taskGetter.GetDomain(h.name)
+	virtvm, err := h.taskGetter.GetVM(h.name)
 	if err != nil {
 		return nil, fmt.Errorf("virt: unable to get task %s stats: %w", h.name, err)
 	}
 
-	if domain == nil {
+	if virtvm == nil {
 		return nil, fmt.Errorf("virt: task not found %s: %w", h.name, drivers.ErrTaskNotFound)
 	}
 
-	return fillStats(domain), nil
+	return fillStats(virtvm), nil
 }
 
 func (h *taskHandle) IsRunning() bool {
@@ -89,7 +89,7 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 	for {
 		select {
 		case <-ticker.C:
-			domain, err := h.taskGetter.GetDomain(h.name)
+			virtvm, err := h.taskGetter.GetVM(h.name)
 			if err != nil {
 				h.logger.Error("virt: unable to get task state", "task", h.name, "error", err)
 				h.stateLock.Lock()
@@ -99,8 +99,8 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 				continue
 			}
 
-			if domain == nil || domain.State != libvirt.DomainRunning {
-				er := fillExitResult(domain)
+			if virtvm == nil || virtvm.State != libvirt.DomainRunning {
+				er := fillExitResult(virtvm)
 
 				h.stateLock.Lock()
 				h.procState = drivers.TaskStateExited
@@ -118,7 +118,7 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 	}
 }
 
-func fillExitResult(info *domain.Info) *drivers.ExitResult {
+func fillExitResult(info *vm.Info) *drivers.ExitResult {
 	er := &drivers.ExitResult{}
 
 	if info == nil {
@@ -141,7 +141,7 @@ func fillExitResult(info *domain.Info) *drivers.ExitResult {
 	return er
 }
 
-func fillStats(info *domain.Info) *structs.TaskResourceUsage {
+func fillStats(info *vm.Info) *structs.TaskResourceUsage {
 	return &structs.TaskResourceUsage{
 		Timestamp: time.Now().UnixNano(),
 		ResourceUsage: &structs.ResourceUsage{
