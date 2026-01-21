@@ -43,9 +43,3 @@ type VMGetter interface {
 	// GetVM gets information about the named virtual machine.
 	GetVM(name string) (*vm.Info, error)
 }
-
-// ImageHandler is the interface handling image files directly.
-type ImageHandler interface {
-	GetImageFormat(basePath string) (string, error)
-	CreateThinCopy(basePath string, destination string, sizeM int64) error
-}
