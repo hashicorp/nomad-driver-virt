@@ -79,6 +79,24 @@ type driver struct {
 
 type Option func(*driver)
 
+func WithConfig(c *Config) Option {
+	return func(d *driver) {
+		if c == nil {
+			return
+		}
+
+		if c.URI != "" {
+			d.uri = c.URI
+		}
+		if c.User != "" {
+			d.user = c.User
+		}
+		if c.Password != "" {
+			d.password = c.Password
+		}
+	}
+}
+
 func WithConnectionURI(URI string) Option {
 	return func(d *driver) {
 		d.uri = URI

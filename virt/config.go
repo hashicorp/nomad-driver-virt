@@ -6,6 +6,7 @@ package virt
 import (
 	"time"
 
+	"github.com/hashicorp/nomad-driver-virt/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
@@ -14,15 +15,8 @@ import (
 
 var (
 	configSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-		"emulator": hclspec.NewBlock("emulator", false, hclspec.NewObject(map[string]*hclspec.Spec{
-			"uri": hclspec.NewDefault(
-				hclspec.NewAttr("uri", "string", false),
-				hclspec.NewLiteral(`"qemu:///system"`),
-			),
-			"user":     hclspec.NewAttr("user", "string", false),
-			"password": hclspec.NewAttr("password", "string", false),
-		})),
-		"data_dir":     hclspec.NewAttr("data_dir", "string", false),
+		"provider":    hclspec.NewBlock("provider", false, hclspec.NewObject(libvirt.ConfigSpec)),
+		"data_dir":    hclspec.NewAttr("data_dir", "string", false),
 		"image_paths": hclspec.NewAttr("image_paths", "list(string)", false),
 	})
 
@@ -96,16 +90,15 @@ type OS struct {
 	Machine string `codec:"machine"`
 }
 
-type Emulator struct {
-	URI      string `codec:"uri"`
-	User     string `codec:"user"`
-	Password string `codec:"password"`
-}
-
 // Config contains configuration information for the plugin
 type Config struct {
-	Emulator Emulator `codec:"emulator"`
+	Provider Provider `codec:"provider"`
 	DataDir  string   `codec:"data_dir"`
 	// ImagePaths is an allow-list of paths qemu is allowed to load an image from
 	ImagePaths []string `codec:"image_paths"`
+}
+
+// Provider contains provider specific configuration
+type Provider struct {
+	Libvirt *libvirt.Config `codec:"libvirt"`
 }
