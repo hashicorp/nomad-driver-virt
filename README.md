@@ -144,7 +144,7 @@ Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject
 
 ## Driver Configuration
 
-* **emulator block**
+* **provider libvirt block**
   * **uri** - Since libvirt supports many different kinds of virtualization (often referred to as "drivers" or "hypervisors"), it is necessary to use a `uri` to specify which one
   to use. It defaults to `"qemu:///system"`
   * **user** - User for the [connection authentication](https://libvirt.org/auth.html).
@@ -157,7 +157,7 @@ Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject
 ```hcl
 plugin "nomad-driver-virt" {
   config {
-    emulator {
+    provider "libvirt" {
       uri = "qemu:///default"
     }
     data_dir    = "/opt/ubuntu/virt_temp"
