@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/virt/image_tools"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
@@ -58,7 +59,11 @@ func (mh *mockImageHandler) GetImageFormat(basePath string) (string, error) {
 	return mh.imageFormat, mh.err
 }
 
-func (mh *mockImageHandler) CreateThinCopy(basePath string, destination string, sizeM int64) error {
+func (mh *mockImageHandler) CreateCopy(basePath string, destination string, sizeM int64) error {
+	return nil
+}
+
+func (mh *mockImageHandler) CreateChainedCopy(basePath string, destination string, sizeM int64) error {
 	return nil
 }
 
@@ -177,7 +182,7 @@ func createBasicResources() *drivers.Resources {
 
 // virtDriverHarness wires up everything needed to launch a task with a virt driver.
 // A driver plugin interface and cleanup function is returned
-func virtDriverHarness(t *testing.T, v Virtualizer, dg VMGetter, ih ImageHandler,
+func virtDriverHarness(t *testing.T, v Virtualizer, dg VMGetter, ih image_tools.ImageHandler,
 	dataDir string) *dtestutil.DriverHarness {
 	logger := testlog.HCLogger(t)
 	if testing.Verbose() {
