@@ -20,13 +20,13 @@ job "virt-example" {
         destination = "local/index.html"
       }
 
-      driver = "nomad-driver-virt"
+      driver = "virt"
 
       artifact {
         source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
         destination = "local/focal-server-cloudimg-amd64.img"
         mode        = "file"
-      } 
+      }
 
       config {
         image                           = "local/focal-server-cloudimg-amd64.img"

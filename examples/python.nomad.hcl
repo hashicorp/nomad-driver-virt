@@ -15,7 +15,7 @@ job "python-server" {
 
     task "virt-task" {
 
-      driver = "nomad-driver-virt"
+      driver = "virt"
 
       artifact {
         source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"

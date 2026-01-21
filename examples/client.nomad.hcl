@@ -18,7 +18,7 @@ plugin "nomad-driver-virt" {
 log_level = "DEBUG"
 
 # Setup data dir
-data_dir  = "/opt/nomad/client"
+data_dir = "/opt/nomad/client"
 
 # Set up the plugin dir
 plugin_dir = "/opt/nomad/plugins"
