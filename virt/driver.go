@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	pluginName = "nomad-driver-virt"
+	pluginName = "virt"
 
 	// pluginVersion allows the client to identify and use newer versions of
 	// an installed plugin

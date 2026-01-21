@@ -43,7 +43,7 @@ job "python-server" {
 
     task "virt-task" {
 
-      driver = "nomad-driver-virt"
+      driver = "virt"
 
       artifact {
         source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
@@ -183,7 +183,7 @@ Every core will be treated as a vcpu.
 Do not use `resources.cpus`, they will be ignored.
 
 ```sh
-driver = "nomad-driver-virt"
+driver = "virt"
 
 artifact {
   source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
@@ -229,7 +229,7 @@ group "virt-group" {
   }
 
   task "virt-task" {
-    driver = "nomad-driver-virt"
+    driver = "virt"
     config {
       network_interface {
         bridge {
