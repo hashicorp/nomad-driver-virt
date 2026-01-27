@@ -6,6 +6,7 @@ package net
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
@@ -19,10 +20,38 @@ import (
 // performing iteration.
 type NetworkInterfacesConfig []*NetworkInterfaceConfig
 
+// IsEqual returns if the given NetworkInterfacesConfig is equal.
+func (n NetworkInterfacesConfig) IsEqual(rhs NetworkInterfacesConfig) bool {
+	if len(n) != len(rhs) {
+		return false
+	}
+
+	for i, lhs := range n {
+		if !lhs.IsEqual(rhs[i]) {
+			return false
+		}
+	}
+
+	return true
+}
+
 // NetworkInterfaceConfig contains all the possible network interface options
 // that a VM currently supports via the Nomad driver.
 type NetworkInterfaceConfig struct {
 	Bridge *NetworkInterfaceBridgeConfig `codec:"bridge"`
+}
+
+// IsEqual returns if the given NetworkInterfaceConfig is equal.
+func (n *NetworkInterfaceConfig) IsEqual(rhs *NetworkInterfaceConfig) bool {
+	if n == nil || rhs == nil {
+		return false
+	}
+
+	if !n.Bridge.IsEqual(rhs.Bridge) {
+		return false
+	}
+
+	return true
 }
 
 // NetworkInterfaceBridgeConfig is the network object when a VM is attached to
@@ -37,6 +66,27 @@ type NetworkInterfaceBridgeConfig struct {
 	// via mapping to the network interface. These labels must exist within the
 	// job specification network block.
 	Ports []string `codec:"ports"`
+}
+
+// IsEqual returns if the given NetworkInterfaceBridgeConfig is equal.
+func (n *NetworkInterfaceBridgeConfig) IsEqual(rhs *NetworkInterfaceBridgeConfig) bool {
+	if n == nil && rhs == nil {
+		return true
+	}
+
+	if n == nil || rhs == nil {
+		return false
+	}
+
+	if n.Name != rhs.Name {
+		return false
+	}
+
+	if slices.Compare(n.Ports, rhs.Ports) != 0 {
+		return false
+	}
+
+	return true
 }
 
 // Validate ensures the NetworkInterfaces is a valid object supported by the

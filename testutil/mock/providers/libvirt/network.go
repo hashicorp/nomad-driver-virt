@@ -9,7 +9,7 @@ import (
 	"net/netip"
 	"time"
 
-	iface "github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/shoenig/test/must"
 	"libvirt.org/go/libvirt"
 )
@@ -255,4 +255,4 @@ func generateClientId(t must.T) (clientid string) {
 
 }
 
-var _ iface.ConnectNetworkShim = (*MockNetwork)(nil)
+var _ shims.ConnectNetwork = (*MockNetwork)(nil)

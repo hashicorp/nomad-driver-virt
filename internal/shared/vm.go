@@ -15,12 +15,17 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
 const (
 	minDiskMB     = 2000
 	minMemoryMB   = 500
 	maxNameLength = 63 // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
+
+	// FingerprintAttributeKeyPrefix is the key prefix to use when creating and
+	// adding attributes during the fingerprint process.
+	FingerprintAttributeKeyPrefix = "driver.virt"
 )
 
 var (
@@ -36,6 +41,31 @@ var (
 	ErrIncompleteOSVariant = errors.New("provided os information is incomplete: arch and machine are mandatory ")
 	ErrInvalidHostName     = fmt.Errorf("a resource name must consist of lower case alphanumeric characters or '-', must start and end with an alphanumeric character and be less than %d characters", maxNameLength+1)
 	ErrPathNotAllowed      = fmt.Errorf("base_image is not in the allowed paths")
+	ErrNotFound            = errors.New("not found")
+)
+
+type VMState string
+
+func (v VMState) ToTaskState() drivers.TaskState {
+	switch v {
+	case VMStateStarting, VMStateRunning:
+		return drivers.TaskStateRunning
+	case VMStateShutdown, VMStatePowerOff, VMStateError:
+		return drivers.TaskStateExited
+	default:
+		return drivers.TaskStateUnknown
+	}
+}
+
+const (
+	VMStateStarting  = VMState("starting")
+	VMStateRunning   = VMState("running")
+	VMStateShutdown  = VMState("shutdown")
+	VMStatePowerOff  = VMState("poweroff")
+	VMStateSuspended = VMState("suspended")
+	VMStatePaused    = VMState("paused")
+	VMStateError     = VMState("error")
+	VMStateUnknown   = VMState("unknown")
 )
 
 type File struct {
@@ -186,7 +216,8 @@ type VirtualizerInfo struct {
 }
 
 type Info struct {
-	State     string
+	RawState  string
+	State     VMState
 	Memory    uint64
 	CPUTime   uint64
 	MaxMemory uint64

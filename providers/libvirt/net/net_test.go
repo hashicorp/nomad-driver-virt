@@ -7,8 +7,13 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/shoenig/test/must"
+	"libvirt.org/go/libvirt"
 )
+
+// Ensure the network implements the connect network interface
+var _ shims.ConnectNetwork = &libvirt.Network{}
 
 func Test_NewController(t *testing.T) {
 	c := NewController(hclog.NewNullLogger(), nil)

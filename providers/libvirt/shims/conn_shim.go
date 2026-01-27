@@ -1,11 +1,11 @@
 // Copyright IBM Corp. 2024, 2025
 // SPDX-License-Identifier: MPL-2.0
 
-package libvirt
+package shims
 
 import "libvirt.org/go/libvirt"
 
-// ConnectShim is the shim interface that wraps libvirt connectivity. This
+// Connect is the shim interface that wraps libvirt connectivity. This
 // allows us to create a mock implementation for testing, as we cannot assume
 // we will always have expensive bare-metal hosts to run CI, especially on a
 // public repository. Functions should be added as required and match only
@@ -14,7 +14,7 @@ import "libvirt.org/go/libvirt"
 // Each implementation should be lightweight and not include any business
 // logic. This allows us to have more confidence in the mock behaving like the
 // libvirt backend and avoid bugs due to differences.
-type ConnectShim interface {
+type Connect interface {
 
 	// ListNetworks returns an array of network names.
 	//
@@ -28,15 +28,15 @@ type ConnectShim interface {
 	//
 	// Also see:
 	// https://libvirt.org/html/libvirt-libvirt-network.html#virNetworkLookupByName
-	LookupNetworkByName(name string) (ConnectNetworkShim, error)
+	LookupNetworkByName(name string) (ConnectNetwork, error)
 }
 
-// ConnectNetworkShim is the shim interface that wraps libvirt connectivity
+// ConnectNetwork is the shim interface that wraps libvirt connectivity
 // specific to a named network. This allows us to create a mock implementation
 // for testing, as we cannot assume we will always have expensive bare-metal
 // hosts to run CI, especially on a public repository. Functions should be
 // added as required and match only those provided by libvirt.Network.
-type ConnectNetworkShim interface {
+type ConnectNetwork interface {
 
 	// IsActive returns whether the named network is active.
 	//

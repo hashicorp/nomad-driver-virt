@@ -12,15 +12,13 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/shoenig/test/must"
-	"libvirt.org/go/libvirt"
 )
 
-var (
-	_ ConnectShim        = &driver{}
-	_ ConnectNetworkShim = &libvirt.Network{}
-)
+// validate the driver implements the connect interface
+var _ shims.Connect = (*driver)(nil)
 
 type cloudInitMock struct {
 	passedConfig *cloudinit.Config
@@ -42,7 +40,7 @@ func TestGetInfo(t *testing.T) {
 	// to use for testing.
 	ld := New(context.Background(), hclog.NewNullLogger(), WithConnectionURI("test:///default"))
 
-	err := ld.Start()
+	err := ld.Init()
 
 	must.NoError(t, err)
 	i, err := ld.GetInfo()
@@ -187,7 +185,7 @@ func TestStartDomain(t *testing.T) {
 			ld := New(context.Background(), hclog.NewNullLogger(),
 				WithConnectionURI("test:///default"), WithCIController(cim))
 			ld.dataDir = t.TempDir()
-			err := ld.Start()
+			err := ld.Init()
 			must.NoError(t, err)
 			defer ld.Close()
 
@@ -257,7 +255,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	ld := New(context.Background(), hclog.NewNullLogger(),
 		WithConnectionURI("test:///default"), WithCIController(cim))
 	ld.dataDir = t.TempDir()
-	err := ld.Start()
+	err := ld.Init()
 	must.NoError(t, err)
 	defer ld.Close()
 
@@ -324,7 +322,7 @@ func Test_GetNetworkInterfaces(t *testing.T) {
 	ld := New(context.Background(), hclog.NewNullLogger(),
 		WithConnectionURI("test:///default"), WithCIController(&cloudInitMock{}))
 	ld.dataDir = t.TempDir()
-	err := ld.Start()
+	err := ld.Init()
 	must.NoError(t, err)
 	defer ld.Close()
 

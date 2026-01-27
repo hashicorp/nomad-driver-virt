@@ -6,7 +6,7 @@ package libvirt
 import (
 	"testing"
 
-	iface "github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/testutil/mock"
 	"github.com/shoenig/test/must"
 )
@@ -51,7 +51,7 @@ func TestConnect_LookupNetworkByName(t *testing.T) {
 
 		net, err := connect.LookupNetworkByName("default")
 		must.NoError(t, err)
-		must.Eq(t, iface.ConnectNetworkShim(network), net)
+		must.Eq(t, shims.ConnectNetwork(network), net)
 	})
 
 	t.Run("error", func(t *testing.T) {

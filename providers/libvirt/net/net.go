@@ -5,10 +5,11 @@ package net
 
 import (
 	stdnet "net"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 )
 
 var (
@@ -26,10 +27,12 @@ var (
 // driver should interact with the network-subsystem.
 type Controller struct {
 	logger  hclog.Logger
-	netConn libvirt.ConnectShim
+	netConn shims.Connect
 
 	dhcpLeaseDiscoveryInterval time.Duration
 	dhcpLeaseDiscoveryTimeout  time.Duration
+
+	init sync.Once
 
 	// interfaceByIPGetter is the function that queries the host using the
 	// passed IP address and identifies the interface it is assigned to. It is
@@ -48,7 +51,7 @@ type Controller struct {
 // NewController returns a Controller which implements the net.Net interface
 // and has a named logger, to ensure log messages can be easily tied to the
 // network system.
-func NewController(logger hclog.Logger, conn libvirt.ConnectShim) *Controller {
+func NewController(logger hclog.Logger, conn shims.Connect) *Controller {
 	return &Controller{
 		dhcpLeaseDiscoveryInterval: defaultDHCPLeaseDiscoveryInterval,
 		dhcpLeaseDiscoveryTimeout:  defaultDHCPLeaseDiscoveryTimeout,

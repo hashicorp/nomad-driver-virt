@@ -4,7 +4,7 @@
 package main
 
 import (
-	"github.com/hashicorp/nomad-driver-virt/virt"
+	"github.com/hashicorp/nomad-driver-virt/plugin"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad/plugins"
@@ -18,5 +18,5 @@ func main() {
 
 // factory returns a new instance of a nomad driver plugin
 func factory(log hclog.Logger) interface{} {
-	return virt.NewPlugin(log)
+	return plugin.NewPlugin(log)
 }
