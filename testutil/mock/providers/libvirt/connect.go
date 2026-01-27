@@ -6,7 +6,7 @@ package libvirt
 import (
 	"fmt"
 
-	iface "github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/shoenig/test/must"
 )
 
@@ -17,7 +17,7 @@ type ListNetworks struct {
 
 type LookupNetworkByName struct {
 	Name   string
-	Result iface.ConnectNetworkShim
+	Result shims.ConnectNetwork
 	Err    error
 }
 
@@ -27,7 +27,7 @@ type MockConnect struct {
 	t                    must.T
 }
 
-// NewConnect returns a new mock compatible with libvirt.ConnectShim
+// NewConnect returns a new mock compatible with shims.Connect
 func NewConnect(t must.T) *MockConnect {
 	return &MockConnect{t: t}
 }
@@ -71,7 +71,7 @@ func (m *MockConnect) ListNetworks() ([]string, error) {
 	return call.Result, call.Err
 }
 
-func (m *MockConnect) LookupNetworkByName(name string) (iface.ConnectNetworkShim, error) {
+func (m *MockConnect) LookupNetworkByName(name string) (shims.ConnectNetwork, error) {
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.lookupNetworkByNames,
@@ -96,4 +96,4 @@ func (m *MockConnect) AssertExpectations() {
 		must.Sprintf("LookupNetworkByName expecting %d more invocations", len(m.lookupNetworkByNames)))
 }
 
-var _ iface.ConnectShim = (*MockConnect)(nil)
+var _ shims.Connect = (*MockConnect)(nil)

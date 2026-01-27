@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	iface "github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"libvirt.org/go/libvirt"
 )
 
@@ -19,7 +19,7 @@ func (cm *StaticConnect) ListNetworks() ([]string, error) {
 	return []string{"default", "routed"}, nil
 }
 
-func (cm *StaticConnect) LookupNetworkByName(name string) (iface.ConnectNetworkShim, error) {
+func (cm *StaticConnect) LookupNetworkByName(name string) (shims.ConnectNetwork, error) {
 	switch name {
 	case "default":
 		return &StaticNetwork{
@@ -116,7 +116,7 @@ func (cme *ConnectEmpty) ListNetworks() ([]string, error) {
 	return []string{}, nil
 }
 
-func (cme *ConnectEmpty) LookupNetworkByName(name string) (iface.ConnectNetworkShim, error) {
+func (cme *ConnectEmpty) LookupNetworkByName(name string) (shims.ConnectNetwork, error) {
 	return nil, fmt.Errorf("unknown network: %q", name)
 }
 
@@ -145,4 +145,4 @@ func (cnm *StaticNetwork) Update(cmd libvirt.NetworkUpdateCommand, section libvi
 	return nil
 }
 
-var _ iface.ConnectNetworkShim = (*StaticNetwork)(nil)
+var _ shims.ConnectNetwork = (*StaticNetwork)(nil)

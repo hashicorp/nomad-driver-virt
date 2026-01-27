@@ -5,14 +5,16 @@ package virt
 
 import (
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/hashicorp/nomad/plugins/shared/structs"
 )
 
-// Virtualizer is the interface that defins the virtualization system.
+// Provider is the interface that defins the virtualization system.
 type Virtualizer interface {
-	// Start is responsible for initialzing the virtualization
+	// Init is responsible for initialzing the virtualization
 	// provider. This is handled with a dedicated function to
 	// allow errors to be properly returned.
-	Start() error
+	Init() error
 
 	// CreateVM creates new virtual machine using the provided
 	// configuration.
@@ -36,6 +38,14 @@ type Virtualizer interface {
 
 	// UseCloudInit informs if the provider supports cloud-init.
 	UseCloudInit() bool
+
+	// Networking returns the interface to the networking subsystem
+	Networking() (net.Net, error)
+
+	// Fingerprint returns fingerprint attributes for the provider
+	Fingerprint() (map[string]*structs.Attribute, error)
+
+	VMGetter
 }
 
 // VMGetter is a slim interface for retrieving information about virtual machines.

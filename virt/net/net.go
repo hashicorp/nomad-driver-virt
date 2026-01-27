@@ -4,6 +4,8 @@
 package net
 
 import (
+	"slices"
+
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
@@ -28,9 +30,31 @@ const (
 type VMStartedBuildRequest struct {
 	VMName    string
 	Hostname  string
-	NetConfig *NetworkInterfacesConfig
+	NetConfig NetworkInterfacesConfig
 	Resources *drivers.Resources
 	Hwaddrs   []string
+}
+
+// IsEqual returns if the given VMStartBuildRequest is equal.
+// NOTE: ignores Resources value
+func (v *VMStartedBuildRequest) IsEqual(rhs *VMStartedBuildRequest) bool {
+	if v == nil || rhs == nil {
+		return false
+	}
+
+	if v.Hostname != rhs.Hostname {
+		return false
+	}
+
+	if slices.Compare(v.Hwaddrs, rhs.Hwaddrs) != 0 {
+		return false
+	}
+
+	if !v.NetConfig.IsEqual(rhs.NetConfig) {
+		return false
+	}
+
+	return true
 }
 
 // VMStartedBuildResponse is the response sent object once the network
@@ -54,6 +78,19 @@ type VMStartedBuildResponse struct {
 // sub-system to perform its teardown of a VMs network configuration.
 type VMTerminatedTeardownRequest struct {
 	TeardownSpec *TeardownSpec
+}
+
+// IsEqual returns if the given VMTerminatedTeardownRequest is equal.
+func (v *VMTerminatedTeardownRequest) IsEqual(rhs *VMTerminatedTeardownRequest) bool {
+	if v == nil || rhs == nil {
+		return false
+	}
+
+	if !v.TeardownSpec.IsEqual(rhs.TeardownSpec) {
+		return false
+	}
+
+	return true
 }
 
 // VMTerminatedTeardownResponse is the response object returned when the
@@ -82,6 +119,37 @@ type TeardownSpec struct {
 	// Network is the name of the network used and which provided the
 	// DHCP lease.
 	Network string
+}
+
+// IsEqual returns if the given TeardownSpec is equal.
+func (t *TeardownSpec) IsEqual(rhs *TeardownSpec) bool {
+	if t == nil && rhs == nil {
+		return true
+	}
+
+	if t.DHCPReservation != rhs.DHCPReservation {
+		return false
+	}
+
+	if t.Network != rhs.Network {
+		return false
+	}
+
+	if len(t.IPTablesRules) != len(rhs.IPTablesRules) {
+		return false
+	}
+
+	for i, lhs := range t.IPTablesRules {
+		if slices.Compare(lhs, rhs.IPTablesRules[i]) != 0 {
+			return false
+		}
+	}
+
+	if t == nil || rhs == nil {
+		return false
+	}
+
+	return true
 }
 
 // IsActiveString converts the boolean response from the IsActive call of
