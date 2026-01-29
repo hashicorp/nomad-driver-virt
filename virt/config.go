@@ -6,9 +6,8 @@ package virt
 import (
 	"time"
 
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
-	"github.com/hashicorp/nomad/plugins/drivers"
-	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 )
 
@@ -22,7 +21,10 @@ var (
 			"user":     hclspec.NewAttr("user", "string", false),
 			"password": hclspec.NewAttr("password", "string", false),
 		})),
-		"data_dir":     hclspec.NewAttr("data_dir", "string", false),
+		"provider": hclspec.NewBlock("provider", false, hclspec.NewObject(map[string]*hclspec.Spec{
+			"libvirt": libvirt.ConfigSpec(),
+		})),
+		"data_dir":    hclspec.NewAttr("data_dir", "string", false),
 		"image_paths": hclspec.NewAttr("image_paths", "list(string)", false),
 	})
 
@@ -45,34 +47,15 @@ var (
 			"machine": hclspec.NewAttr("machine", "string", false),
 		})),
 	})
-
-	// capabilities indicates what optional features this driver supports
-	// this should be set according to the target run time.
-	capabilities = &drivers.Capabilities{
-		// The plugin's capabilities signal Nomad which extra functionalities
-		// are supported. For a list of available options check the docs page:
-		// https://godoc.org/github.com/hashicorp/nomad/plugins/drivers#Capabilities
-		SendSignals:          false,
-		Exec:                 false,
-		DisableLogCollection: true,
-		FSIsolation:          fsisolation.Image,
-
-		// NetIsolationModes details that this driver only supports the network
-		// isolation of host.
-		NetIsolationModes: []drivers.NetIsolationMode{
-			drivers.NetIsolationModeHost,
-		},
-
-		// MustInitiateNetwork is set to false, indicating the driver does not
-		// implement and thus satisfy the Nomad drivers.DriverNetworkManager
-		// interface.
-		MustInitiateNetwork: false,
-
-		// MountConfigs is currently not supported, although the plumbing is
-		// ready to handle this.
-		MountConfigs: drivers.MountConfigSupportNone,
-	}
 )
+
+func ConfigSpec() *hclspec.Spec {
+	return configSpec
+}
+
+func TaskConfigSpec() *hclspec.Spec {
+	return taskConfigSpec
+}
 
 // TaskConfig contains configuration information for a task that runs within
 // this plugin.
@@ -104,8 +87,40 @@ type Emulator struct {
 
 // Config contains configuration information for the plugin
 type Config struct {
-	Emulator Emulator `codec:"emulator"`
-	DataDir  string   `codec:"data_dir"`
+	Emulator *Emulator `codec:"emulator"`
+	Provider *Provider `codec:"provider"`
+	DataDir  string    `codec:"data_dir"`
 	// ImagePaths is an allow-list of paths qemu is allowed to load an image from
 	ImagePaths []string `codec:"image_paths"`
+}
+
+func (c *Config) Compat() {
+	if c.Emulator == nil {
+		return
+	}
+
+	if c.Provider == nil {
+		c.Provider = &Provider{Libvirt: &libvirt.Config{}}
+	}
+
+	if c.Provider.Libvirt == nil {
+		c.Provider.Libvirt = &libvirt.Config{}
+	}
+
+	if c.Provider.Libvirt.URI == "" {
+		c.Provider.Libvirt.URI = c.Emulator.URI
+	}
+
+	if c.Provider.Libvirt.User == "" {
+		c.Provider.Libvirt.User = c.Emulator.User
+	}
+
+	if c.Provider.Libvirt.Password == "" {
+		c.Provider.Libvirt.Password = c.Emulator.Password
+	}
+}
+
+// Provider contains provider specific configuration
+type Provider struct {
+	Libvirt *libvirt.Config `codec:"libvirt"`
 }

@@ -13,9 +13,13 @@ import (
 	"sync"
 
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	libvirtnet "github.com/hashicorp/nomad-driver-virt/providers/libvirt/net"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
+	virtnet "github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad/plugins/shared/structs"
 	"libvirt.org/go/libvirt"
 	"libvirt.org/go/libvirtxml"
 )
@@ -32,6 +36,10 @@ const (
 	dataDirPermissions = 777
 	storagePoolName    = "virt-sp"
 
+	// URI for running in test mode
+	TestURI = "test:///default"
+
+	// Known domain states
 	DomainRunning     = "running"
 	DomainNoState     = "unknown"
 	DomainBlocked     = "blocked"
@@ -43,9 +51,11 @@ const (
 )
 
 var (
-	ErrDomainExists   = errors.New("the domain exists already")
-	ErrDomainNotFound = errors.New("the domain does not exist")
+	ErrConnectionClosed = errors.New("libvirt connection is closed")
+	ErrDomainExists     = errors.New("the domain exists already")
+	ErrDomainNotFound   = errors.New("the domain does not exist")
 
+	// nomadDomainStates is a mapping of the libvirt domain state to local string constant
 	nomadDomainStates = map[libvirt.DomainState]string{
 		libvirt.DOMAIN_RUNNING:     DomainRunning,
 		libvirt.DOMAIN_NOSTATE:     DomainNoState,
@@ -56,6 +66,18 @@ var (
 		libvirt.DOMAIN_PMSUSPENDED: DomainPMSuspended,
 		libvirt.DOMAIN_SHUTOFF:     DomainShutOff,
 	}
+
+	// vmDomainStates is a mapping of the libvirt domain state to common vm state
+	vmDomainStates = map[libvirt.DomainState]vm.VMState{
+		libvirt.DOMAIN_RUNNING:     vm.VMStateRunning,
+		libvirt.DOMAIN_NOSTATE:     vm.VMStateUnknown,
+		libvirt.DOMAIN_BLOCKED:     vm.VMStateError,
+		libvirt.DOMAIN_PAUSED:      vm.VMStatePaused,
+		libvirt.DOMAIN_SHUTDOWN:    vm.VMStateShutdown,
+		libvirt.DOMAIN_CRASHED:     vm.VMStateError,
+		libvirt.DOMAIN_PMSUSPENDED: vm.VMStateSuspended,
+		libvirt.DOMAIN_SHUTOFF:     vm.VMStatePowerOff,
+	}
 )
 
 // TODO: Add function to test for correct cloudinit userdata syntax, and dont
@@ -65,6 +87,7 @@ type CloudInit interface {
 }
 
 type driver struct {
+	ctx      context.Context
 	uri      string
 	conn     *libvirt.Connect
 	logger   hclog.Logger
@@ -74,10 +97,56 @@ type driver struct {
 	dataDir  string
 	sp       *libvirt.StoragePool
 	opts     []Option
+	closed   bool
 	m        sync.Mutex
 }
 
+// Copy creates a copy of this driver.
+func (d *driver) Copy() *driver {
+	d.m.Lock()
+	defer d.m.Unlock()
+
+	dCopy := &driver{
+		ctx:      d.ctx,
+		closed:   d.closed,
+		uri:      d.uri,
+		logger:   d.logger,
+		user:     d.user,
+		password: d.password,
+		ci:       d.ci,
+		dataDir:  d.dataDir,
+		sp:       d.sp,
+	}
+	go dCopy.monitorCtx()
+
+	return dCopy
+}
+
 type Option func(*driver)
+
+func WithDataDir(dir string) Option {
+	return func(d *driver) {
+		d.dataDir = dir
+	}
+}
+
+func WithConfig(c *Config) Option {
+	return func(d *driver) {
+		if c == nil {
+			return
+		}
+
+		if c.URI != "" {
+			d.uri = c.URI
+		}
+		if c.User != "" {
+			d.user = c.User
+		}
+		if c.Password != "" {
+			d.password = c.Password
+		}
+	}
+}
 
 func WithConnectionURI(URI string) Option {
 	return func(d *driver) {
@@ -129,6 +198,12 @@ func newConnection(uri string, user string, pass string) (*libvirt.Connect, erro
 func (d *driver) connection() (*libvirt.Connect, error) {
 	d.m.Lock()
 	defer d.m.Unlock()
+
+	// if marked as closed, no new connections should established
+	if d.closed {
+		return nil, ErrConnectionClosed
+	}
+
 	if d.conn != nil {
 		alive, err := d.conn.IsAlive()
 		if alive {
@@ -149,9 +224,13 @@ func (d *driver) connection() (*libvirt.Connect, error) {
 	return d.conn, nil
 }
 
-func (d *driver) monitorCtx(ctx context.Context) {
+func (d *driver) monitorCtx() {
 	select {
-	case <-ctx.Done():
+	case <-d.ctx.Done():
+		d.m.Lock()
+		defer d.m.Unlock()
+
+		d.closed = true
 		if d.conn != nil {
 			d.conn.Close()
 		}
@@ -181,13 +260,18 @@ func (d *driver) lookForExistingStoragePool(name string) (*libvirt.StoragePool, 
 
 func New(ctx context.Context, logger hclog.Logger, opt ...Option) *driver {
 	d := &driver{
+		ctx:     ctx,
 		logger:  logger.Named("nomad-virt-plugin"),
 		uri:     defaultURI,
 		opts:    opt,
 		dataDir: defaultDataDir,
 	}
 
-	go d.monitorCtx(ctx)
+	for _, opt := range d.opts {
+		opt(d)
+	}
+
+	go d.monitorCtx()
 
 	return d
 }
@@ -196,11 +280,7 @@ func New(ctx context.Context, logger hclog.Logger, opt ...Option) *driver {
 // the dependencies, they are not initialized at creation because the NewPlugin
 // function does not return errors. It also starts or reataches a storage pool
 // to place the disks for the virtual machines.
-func (d *driver) Start() error {
-	for _, opt := range d.opts {
-		opt(d)
-	}
-
+func (d *driver) Init() error {
 	if d.ci == nil {
 		ci, err := cloudinit.NewController(d.logger.Named("cloud-init"))
 		if err != nil {
@@ -208,7 +288,6 @@ func (d *driver) Start() error {
 		}
 		d.ci = ci
 	}
-
 	conn, err := d.connection()
 	if err != nil {
 		return err
@@ -259,7 +338,7 @@ func (d *driver) ListNetworks() ([]string, error) {
 	return conn.ListNetworks()
 }
 
-func (d *driver) LookupNetworkByName(name string) (ConnectNetworkShim, error) {
+func (d *driver) LookupNetworkByName(name string) (shims.ConnectNetwork, error) {
 	conn, err := d.connection()
 	if err != nil {
 		return nil, err
@@ -268,8 +347,8 @@ func (d *driver) LookupNetworkByName(name string) (ConnectNetworkShim, error) {
 	return conn.LookupNetworkByName(name)
 }
 
-func (d *driver) GetInfo() (domain.VirtualizerInfo, error) {
-	li := domain.VirtualizerInfo{}
+func (d *driver) GetInfo() (vm.VirtualizerInfo, error) {
+	li := vm.VirtualizerInfo{}
 
 	conn, err := d.connection()
 	if err != nil {
@@ -336,7 +415,7 @@ func (d *driver) Close() (int, error) {
 	return d.conn.Close()
 }
 
-func createCloudInitConfig(config *domain.Config) *cloudinit.Config {
+func createCloudInitConfig(config *vm.Config) *cloudinit.Config {
 
 	ms := []cloudinit.MountFileConfig{}
 	for _, m := range config.Mounts {
@@ -459,7 +538,7 @@ func (d *driver) DestroyVM(name string) error {
 
 // CreateVM verifies if the domains exists already, if it does, it returns
 // an error, otherwise it creates a new domain with the provided configuration.
-func (d *driver) CreateVM(config *domain.Config) error {
+func (d *driver) CreateVM(config *vm.Config) error {
 	conn, err := d.connection()
 	if err != nil {
 		return err
@@ -491,7 +570,6 @@ func (d *driver) CreateVM(config *domain.Config) error {
 			if err != nil {
 				d.logger.Warn("libvirt: unable to remove cloudinit configFile", "error", err)
 			}
-
 		}()
 	}
 
@@ -525,14 +603,14 @@ func (d *driver) CreateVM(config *domain.Config) error {
 
 // GetVM find a domain by name and returns basic functionality information
 // including current state, memory and CPU. If no domain is found nil is returned.
-func (d *driver) GetVM(name string) (*domain.Info, error) {
+func (d *driver) GetVM(name string) (*vm.Info, error) {
 	dom, err := d.getDomain(name)
 	if err != nil {
 		return nil, fmt.Errorf("libvirt: unable to get domain %s: %w", name, err)
 	}
 
 	if dom == nil {
-		return nil, nil
+		return nil, fmt.Errorf("libvirt: domain %s %w", name, vm.ErrNotFound)
 	}
 
 	info, err := dom.GetInfo()
@@ -540,8 +618,9 @@ func (d *driver) GetVM(name string) (*domain.Info, error) {
 		return nil, fmt.Errorf("libvirt: unable to get domain %s: %w", name, err)
 	}
 
-	return &domain.Info{
-		State:     nomadDomainStates[info.State],
+	return &vm.Info{
+		RawState:  nomadDomainStates[info.State],
+		State:     vmDomainStates[info.State],
 		Memory:    info.Memory,
 		MaxMemory: info.MaxMem,
 		CPUTime:   info.CpuTime,
@@ -550,9 +629,9 @@ func (d *driver) GetVM(name string) (*domain.Info, error) {
 }
 
 // GetNetworkInterfaces retrieves the network interfaces defined for the given
-// domain. Interfaces information population is best effort, as not all information
-// will be available depending on the state of the domain.
-func (d *driver) GetNetworkInterfaces(name string) ([]domain.NetworkInterface, error) {
+// vm. Interfaces information population is best effort, as not all information
+// will be available depending on the state of the vm.
+func (d *driver) GetNetworkInterfaces(name string) ([]vm.NetworkInterface, error) {
 	dom, err := d.getDomain(name)
 	if err != nil {
 		d.logger.Error("cannot get domain", "domain", name, "error", err)
@@ -570,7 +649,7 @@ func (d *driver) GetNetworkInterfaces(name string) ([]domain.NetworkInterface, e
 		return nil, fmt.Errorf("libvirt: unable to parse domain XML %s: %w", name, err)
 	}
 
-	interfaces := make([]domain.NetworkInterface, len(dxml.Devices.Interfaces))
+	interfaces := make([]vm.NetworkInterface, len(dxml.Devices.Interfaces))
 
 	allNetworks, err := d.conn.ListAllNetworks(libvirt.CONNECT_LIST_NETWORKS_ACTIVE)
 	if err != nil {
@@ -596,7 +675,7 @@ func (d *driver) GetNetworkInterfaces(name string) ([]domain.NetworkInterface, e
 	}
 
 	for i, iface := range dxml.Devices.Interfaces {
-		interfaces[i] = domain.NetworkInterface{}
+		interfaces[i] = vm.NetworkInterface{}
 
 		if iface.Source != nil && iface.Source.Bridge != nil {
 			if netName, ok := bridgeNetworks[iface.Source.Bridge.Bridge]; ok {
@@ -672,6 +751,69 @@ func (d *driver) GetAllDomains() ([]string, error) {
 // UseCloudInit informs that cloud-init is supported by this provider.
 func (d *driver) UseCloudInit() bool {
 	return true
+}
+
+// Networking returns the virtualization network sub-system
+func (d *driver) Networking() (virtnet.Net, error) {
+	return libvirtnet.NewController(d.logger, d), nil
+}
+
+// Fingerprint generates the fingerprint attributes for this provider.
+func (d *driver) Fingerprint() (map[string]*structs.Attribute, error) {
+	conn, err := d.connection()
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect all the information required
+	driver, err := conn.GetType()
+	if err != nil {
+		return nil, err
+	}
+
+	driverVersion, err := conn.GetVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	libvirtVersion, err := conn.GetLibVersion()
+	if err != nil {
+		return nil, err
+	}
+
+	n, err := d.Networking()
+	if err != nil {
+		return nil, err
+	}
+
+	attrs := map[string]*structs.Attribute{
+		"version":                 structs.NewIntAttribute(int64(libvirtVersion), ""),
+		"version.readable":        structs.NewStringAttribute(computeVersion(libvirtVersion)),
+		"driver":                  structs.NewStringAttribute(driver),
+		"driver.version":          structs.NewIntAttribute(int64(driverVersion), ""),
+		"driver.version.readable": structs.NewStringAttribute(computeVersion(driverVersion)),
+	}
+
+	// Add any fingerprint information from the networking subsystem
+	n.Fingerprint(attrs)
+
+	return attrs, nil
+}
+
+const (
+	majorDivisor = 1_000_000
+	minorDivisor = 1_000
+)
+
+// computeVersion will compute the version string from the
+// integer value provided by libvirt.
+func computeVersion(version uint32) string {
+	major := version / majorDivisor
+	version -= version % majorDivisor
+	minor := version / minorDivisor
+	version -= version % minorDivisor
+
+	return fmt.Sprintf("%d.%d.%d", major, minor, version)
 }
 
 func folderExists(path string) bool {

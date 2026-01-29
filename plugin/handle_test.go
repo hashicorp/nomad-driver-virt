@@ -1,7 +1,7 @@
 // Copyright IBM Corp. 2024, 2025
 // SPDX-License-Identifier: MPL-2.0
 
-package virt
+package plugin
 
 import (
 	"context"
@@ -29,7 +29,7 @@ func Test_GetStats(t *testing.T) {
 		{
 			name: "successful_stats_returned",
 			info: &vm.Info{
-				State:     "running",
+				State:     vm.VMStateRunning,
 				Memory:    666,
 				CPUTime:   66,
 				MaxMemory: 6666,
@@ -81,7 +81,7 @@ func Test_GetStats(t *testing.T) {
 func Test_Monitor(t *testing.T) {
 	dgm := &mockTaskGetter{
 		info: &vm.Info{
-			State: "running",
+			State: vm.VMStateRunning,
 		},
 	}
 
@@ -124,7 +124,7 @@ func Test_Monitor(t *testing.T) {
 	// result and return.
 	dgm.lock.Lock()
 	dgm.err = nil
-	dgm.info.State = "crashed"
+	dgm.info.State = vm.VMStateError
 	dgm.lock.Unlock()
 
 	time.Sleep(2 * time.Second)

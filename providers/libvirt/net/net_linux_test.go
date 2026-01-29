@@ -17,7 +17,7 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad-driver-virt/testutil"
 	iptables_mock "github.com/hashicorp/nomad-driver-virt/testutil/mock/iptables"
-	libvirt_mock "github.com/hashicorp/nomad-driver-virt/testutil/mock/libvirt"
+	libvirt_mock "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	nomadstructs "github.com/hashicorp/nomad/nomad/structs"
 	"github.com/hashicorp/nomad/plugins/drivers"
@@ -260,7 +260,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 		// Pass a request that doesn't contain any configured networks to ensure we
 		// correctly handle that.
 		emptyNetworkRequestResp, err := controller.VMStartedBuild(&net.VMStartedBuildRequest{
-			NetConfig: &net.NetworkInterfacesConfig{},
+			NetConfig: net.NetworkInterfacesConfig{},
 			Resources: &drivers.Resources{},
 		})
 		must.NoError(t, err)
@@ -272,7 +272,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 			VMName:   "nomad-0ea818bc",
 			Hostname: "nomad-0ea818bc",
 			Hwaddrs:  []string{"52:54:00:1c:7c:14"},
-			NetConfig: &net.NetworkInterfacesConfig{
+			NetConfig: net.NetworkInterfacesConfig{
 				{
 					Bridge: &net.NetworkInterfaceBridgeConfig{
 						Name:  "virbr0",
@@ -385,7 +385,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 		// Pass a request that doesn't contain any configured networks to ensure we
 		// correctly handle that.
 		emptyNetworkRequestResp, err := controller.VMStartedBuild(&net.VMStartedBuildRequest{
-			NetConfig: &net.NetworkInterfacesConfig{},
+			NetConfig: net.NetworkInterfacesConfig{},
 			Resources: &drivers.Resources{},
 		})
 		must.NoError(t, err)
@@ -397,7 +397,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 			VMName:   "nomad-0ea818bc",
 			Hostname: "nomad-0ea818bc",
 			Hwaddrs:  []string{"52:54:00:1c:7c:14"},
-			NetConfig: &net.NetworkInterfacesConfig{
+			NetConfig: net.NetworkInterfacesConfig{
 				{
 					Bridge: &net.NetworkInterfaceBridgeConfig{
 						Name:  "virbr0",

@@ -8,25 +8,8 @@ import (
 
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
-	"github.com/hashicorp/nomad/plugins/drivers"
-	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	"github.com/shoenig/test/must"
 )
-
-func Test_capabilities(t *testing.T) {
-	t.Parallel()
-
-	expectedCapabilities := drivers.Capabilities{
-		SendSignals:          false,
-		Exec:                 false,
-		DisableLogCollection: true,
-		FSIsolation:          fsisolation.Image,
-		NetIsolationModes:    []drivers.NetIsolationMode{drivers.NetIsolationModeHost},
-		MustInitiateNetwork:  false,
-		MountConfigs:         drivers.MountConfigSupportNone,
-	}
-	must.Eq(t, &expectedCapabilities, capabilities)
-}
 
 func TestConfig_Task(t *testing.T) {
 	t.Parallel()
@@ -89,7 +72,7 @@ func TestConfig_Plugin(t *testing.T) {
   config {
 	data_dir = "/path/to/blah"
 	image_paths = ["/path/one", "/path/two"]
-	emulator {
+	provider "libvirt" {
 		uri = "qume:///user"
 		user = "test-user"
 		password = "test-password"
@@ -102,9 +85,45 @@ func TestConfig_Plugin(t *testing.T) {
 
 	must.SliceContainsAll(t, expectedImgPaths, cs.ImagePaths)
 	must.StrContains(t, expectedDataDir, cs.DataDir)
-	must.StrContains(t, expectedURI, cs.Emulator.URI)
-	must.StrContains(t, expectedUser, cs.Emulator.User)
-	must.StrContains(t, expectedPassword, cs.Emulator.Password)
+	must.StrContains(t, expectedURI, cs.Provider.Libvirt.URI)
+	must.StrContains(t, expectedUser, cs.Provider.Libvirt.User)
+	must.StrContains(t, expectedPassword, cs.Provider.Libvirt.Password)
+}
+
+func TestConfigCompat_Plugin(t *testing.T) {
+	t.Parallel()
+
+	parser := hclutils.NewConfigParser(configSpec)
+
+	expectedDataDir := "/path/to/blah"
+	expectedImgPaths := []string{"/path/one", "/path/two"}
+	expectedURI := "qume:///user"
+	expectedUser := "test-user"
+	expectedPassword := "test-password"
+
+	validHCL := `
+  config {
+	data_dir = "/path/to/blah"
+	image_paths = ["/path/one", "/path/two"]
+    emulator {
+		uri = "qume:///user"
+		user = "test-user"
+		password = "test-password"
+    
+    }
+  }
+`
+
+	var cs *Config
+	parser.ParseHCL(t, validHCL, &cs)
+
+	cs.Compat()
+
+	must.SliceContainsAll(t, expectedImgPaths, cs.ImagePaths)
+	must.StrContains(t, expectedDataDir, cs.DataDir)
+	must.StrContains(t, expectedURI, cs.Provider.Libvirt.URI)
+	must.StrContains(t, expectedUser, cs.Provider.Libvirt.User)
+	must.StrContains(t, expectedPassword, cs.Provider.Libvirt.Password)
 }
 
 func Test_taskConfigSpec(t *testing.T) {

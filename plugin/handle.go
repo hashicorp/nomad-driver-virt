@@ -1,7 +1,7 @@
 // Copyright IBM Corp. 2024, 2025
 // SPDX-License-Identifier: MPL-2.0
 
-package virt
+package plugin
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"time"
 
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/virt"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
@@ -38,7 +38,7 @@ type taskHandle struct {
 	name        string
 	exitResult  *drivers.ExitResult
 
-	taskGetter VMGetter
+	taskGetter virt.VMGetter
 
 	// netTeardown is the specification used to delete all the network
 	// configuration associated to a VM.
@@ -99,7 +99,7 @@ func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitRes
 				continue
 			}
 
-			if virtvm == nil || virtvm.State != libvirt.DomainRunning {
+			if virtvm == nil || virtvm.State != vm.VMStateRunning {
 				er := fillExitResult(virtvm)
 
 				h.stateLock.Lock()
@@ -128,14 +128,14 @@ func fillExitResult(info *vm.Info) *drivers.ExitResult {
 	}
 
 	switch info.State {
-	case libvirt.DomainCrashed:
+	case vm.VMStateError:
 		er.ExitCode = 1
 		er.Err = ErrTaskCrashed
-	case libvirt.DomainShutdown, libvirt.DomainShutOff:
+	case vm.VMStateShutdown, vm.VMStatePowerOff:
 		er.ExitCode = 0
 	default:
 		er.ExitCode = 1
-		er.Err = fmt.Errorf("unexpected state: %s", info.State)
+		er.Err = fmt.Errorf("unexpected state: %s (%s)", info.State, info.RawState)
 	}
 
 	return er

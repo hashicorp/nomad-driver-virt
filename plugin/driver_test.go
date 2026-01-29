@@ -1,7 +1,7 @@
 // Copyright IBM Corp. 2024, 2025
 // SPDX-License-Identifier: MPL-2.0
 
-package virt
+package plugin
 
 import (
 	"context"
@@ -13,7 +13,11 @@ import (
 
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/providers"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
+	mock_providers "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers"
+	"github.com/hashicorp/nomad-driver-virt/virt"
+	"github.com/hashicorp/nomad-driver-virt/virt/image_tools"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
@@ -23,6 +27,7 @@ import (
 	"github.com/hashicorp/nomad/nomad/structs"
 	"github.com/hashicorp/nomad/plugins/base"
 	"github.com/hashicorp/nomad/plugins/drivers"
+	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	dtestutil "github.com/hashicorp/nomad/plugins/drivers/testutils"
 	plugins "github.com/hashicorp/nomad/plugins/shared/structs"
 	"github.com/shoenig/test/must"
@@ -58,7 +63,11 @@ func (mh *mockImageHandler) GetImageFormat(basePath string) (string, error) {
 	return mh.imageFormat, mh.err
 }
 
-func (mh *mockImageHandler) CreateThinCopy(basePath string, destination string, sizeM int64) error {
+func (mh *mockImageHandler) CreateCopy(basePath string, destination string, sizeM int64) error {
+	return nil
+}
+
+func (mh *mockImageHandler) CreateChainedCopy(basePath string, destination string, sizeM int64) error {
 	return nil
 }
 
@@ -103,8 +112,12 @@ type mockVirtualizer struct {
 	err    error
 }
 
-func (mv *mockVirtualizer) Start() error {
+func (mv *mockVirtualizer) Init() error {
 	return nil
+}
+
+func (mv *mockVirtualizer) Networking() (net.Net, error) {
+	return &mockNet{}, nil
 }
 
 func (mv *mockVirtualizer) CreateVM(config *vm.Config) error {
@@ -155,6 +168,10 @@ func (mv *mockVirtualizer) UseCloudInit() bool {
 	return true
 }
 
+func (mv *mockVirtualizer) Fingerprint() (map[string]*plugins.Attribute, error) {
+	return make(map[string]*plugins.Attribute), nil
+}
+
 func createBasicResources() *drivers.Resources {
 	res := drivers.Resources{
 		NomadResources: &structs.AllocatedTaskResources{
@@ -177,7 +194,7 @@ func createBasicResources() *drivers.Resources {
 
 // virtDriverHarness wires up everything needed to launch a task with a virt driver.
 // A driver plugin interface and cleanup function is returned
-func virtDriverHarness(t *testing.T, v Virtualizer, dg VMGetter, ih ImageHandler,
+func virtDriverHarness(t *testing.T, p providers.Providers, ih image_tools.ImageHandler,
 	dataDir string) *dtestutil.DriverHarness {
 	logger := testlog.HCLogger(t)
 	if testing.Verbose() {
@@ -187,7 +204,7 @@ func virtDriverHarness(t *testing.T, v Virtualizer, dg VMGetter, ih ImageHandler
 	}
 
 	baseConfig := &base.Config{}
-	config := &Config{
+	config := &virt.Config{
 		DataDir: dataDir,
 	}
 
@@ -196,23 +213,18 @@ func virtDriverHarness(t *testing.T, v Virtualizer, dg VMGetter, ih ImageHandler
 	}
 
 	d := NewPlugin(logger).(*VirtDriverPlugin)
-	if v != nil {
-		d.virtualizer = v
-		d.networkController = &mockNet{}
-		d.networkInit.Store(true)
-	}
+	d.providers = p
 
 	must.NoError(t, d.SetConfig(baseConfig))
 	d.imageHandler = ih
-	d.taskGetter = dg
 
 	harness := dtestutil.NewDriverHarness(t, d)
 
 	return harness
 }
 
-func newTaskConfig(image string) TaskConfig {
-	return TaskConfig{
+func newTaskConfig(image string) virt.TaskConfig {
+	return virt.TaskConfig{
 		ImagePath:           image,
 		UserData:            "/path/to/user/data",
 		CMDs:                []string{"cmd arg arg", "cmd arg arg"},
@@ -220,11 +232,26 @@ func newTaskConfig(image string) TaskConfig {
 		DefaultUserPassword: "password",
 		UseThinCopy:         false,
 		PrimaryDiskSize:     2666,
-		OS: &OS{
+		OS: &virt.OS{
 			Arch:    "arch",
 			Machine: "machine",
 		},
 	}
+}
+
+func Test_capabilities(t *testing.T) {
+	t.Parallel()
+
+	expectedCapabilities := drivers.Capabilities{
+		SendSignals:          false,
+		Exec:                 false,
+		DisableLogCollection: true,
+		FSIsolation:          fsisolation.Image,
+		NetIsolationModes:    []drivers.NetIsolationMode{drivers.NetIsolationModeHost},
+		MustInitiateNetwork:  false,
+		MountConfigs:         drivers.MountConfigSupportNone,
+	}
+	must.Eq(t, &expectedCapabilities, capabilities)
 }
 
 func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
@@ -247,19 +274,19 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 
 	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-	mockVirtualizer := &mockVirtualizer{}
-
 	mockTaskGetter := &mockTaskGetter{
 		info: &vm.Info{
-			State: libvirt.DomainRunning,
+			State: vm.VMStateRunning,
 		},
 	}
+
+	mockVirtualizer := &mockVirtualizer{mockTaskGetter: mockTaskGetter}
 
 	mockImageHandler := &mockImageHandler{
 		imageFormat: "tif",
 	}
 
-	d := virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
+	d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), mockImageHandler, tempDir)
 	cleanup := d.MkAllocDir(task, true)
 	defer cleanup()
 
@@ -372,19 +399,21 @@ func TestVirtDriver_Start_Recover_Destroy(t *testing.T) {
 
 	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-	mockVirtualizer := &mockVirtualizer{}
-
 	mockTaskGetter := &mockTaskGetter{
 		info: &vm.Info{
-			State: libvirt.DomainRunning,
+			State: vm.VMStateRunning,
 		},
+	}
+
+	mockVirtualizer := &mockVirtualizer{
+		mockTaskGetter: mockTaskGetter,
 	}
 
 	mockImageHandler := &mockImageHandler{
 		imageFormat: "tif",
 	}
 
-	d := virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
+	d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), mockImageHandler, tempDir)
 	cleanup := d.MkAllocDir(task, true)
 	defer cleanup()
 
@@ -403,7 +432,7 @@ func TestVirtDriver_Start_Recover_Destroy(t *testing.T) {
 	must.Eq(t, drivers.TaskStateRunning, ts.State)
 	must.StrContains(t, task.ID, ts.ID)
 
-	d = virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
+	d = virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), mockImageHandler, tempDir)
 
 	err = d.RecoverTask(dth)
 	must.NoError(t, err)
@@ -431,19 +460,19 @@ func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
 
 	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-	mockVirtualizer := &mockVirtualizer{}
-
 	mockTaskGetter := &mockTaskGetter{
 		info: &vm.Info{
-			State: libvirt.DomainCrashed,
+			State: vm.VMStateError,
 		},
 	}
+
+	mockVirtualizer := &mockVirtualizer{mockTaskGetter: mockTaskGetter}
 
 	mockImageHandler := &mockImageHandler{
 		imageFormat: "tif",
 	}
 
-	d := virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
+	d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), mockImageHandler, tempDir)
 	cleanup := d.MkAllocDir(task, true)
 	defer cleanup()
 
@@ -482,13 +511,13 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 
 	allocID := uuid.Generate()
 
-	mockVirtualizer := &mockVirtualizer{}
-
 	mockTaskGetter := &mockTaskGetter{
 		info: &vm.Info{
-			State: libvirt.DomainRunning,
+			State: vm.VMStateRunning,
 		},
 	}
+
+	mockVirtualizer := &mockVirtualizer{mockTaskGetter: mockTaskGetter}
 
 	mockImageHandler := &mockImageHandler{
 		imageFormat: "tif",
@@ -527,7 +556,7 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 			}
 			must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-			d := virtDriverHarness(t, mockVirtualizer, mockTaskGetter, mockImageHandler, tempDir)
+			d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), mockImageHandler, tempDir)
 			cleanup := d.MkAllocDir(task, true)
 			defer cleanup()
 
@@ -567,7 +596,7 @@ func TestVirtDriver_Start_Wait_Destroy_LibvirtIntegration(t *testing.T) {
 	allocID := uuid.Generate()
 	taskCfg := newTaskConfig(mockImage.Name())
 	taskCfg.UserData = ""
-	taskCfg.OS = &OS{
+	taskCfg.OS = &virt.OS{
 		Arch:    "x86_64",
 		Machine: "pc-i440fx-jammy",
 	}
@@ -590,8 +619,9 @@ func TestVirtDriver_Start_Wait_Destroy_LibvirtIntegration(t *testing.T) {
 	v := libvirt.New(context.Background(), hclog.NewNullLogger(),
 		libvirt.WithConnectionURI("test:///default"),
 		libvirt.WithCIController(&cloudInitMock))
+	must.NoError(t, v.Init())
 
-	d := virtDriverHarness(t, v, v, mockImageHandler, tempDir)
+	d := virtDriverHarness(t, mock_providers.NewStatic(v), mockImageHandler, tempDir)
 	cleanup := d.MkAllocDir(task, true)
 	defer cleanup()
 

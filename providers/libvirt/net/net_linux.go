@@ -11,6 +11,7 @@ import (
 	stdnet "net"
 	"slices"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,7 +20,7 @@ import (
 	"github.com/gopacket/gopacket/layers"
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/go-set"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
@@ -51,6 +52,9 @@ const (
 	// dhcpServerPort is the port the DHCP server is listening on.
 	dhcpServerPort = "67"
 )
+
+// initLock is used to prevent multiple controller.Init's running at once
+var initLock sync.Mutex
 
 func (c *Controller) Fingerprint(attr map[string]*structs.Attribute) {
 
@@ -102,9 +106,13 @@ func (c *Controller) Fingerprint(attr map[string]*structs.Attribute) {
 }
 
 func (c *Controller) Init() error {
-	// The function currently only calls another single function, but is
-	// intended to be easy and obvious to expand in the future if needed.
-	return c.ensureIPTables()
+	var err error
+	initLock.Lock()
+	defer initLock.Unlock()
+
+	err = c.ensureIPTables()
+
+	return err
 }
 
 // ensureIPTables is responsible for ensuring the local host machine iptables
@@ -192,7 +200,7 @@ func (c *Controller) VMStartedBuild(req *net.VMStartedBuildRequest) (*net.VMStar
 	// Dereference the network config and pull out the interface detail. The
 	// driver only supports a single interface currently, so this is safe to
 	// do, but when multi-interface support is added, this will need to change.
-	netConfig := *req.NetConfig
+	netConfig := req.NetConfig
 
 	// Protect against VMs with no network interface. The log is useful for
 	// debugging which certainly caught me(jrasell) a few times in development.
@@ -243,7 +251,7 @@ func (c *Controller) VMStartedBuild(req *net.VMStartedBuildRequest) (*net.VMStar
 
 // reserveIP reserves an IP address with the DHCP server for a specific domain
 // based on MAC address and hostname.
-func (c *Controller) reserveIP(network libvirt.ConnectNetworkShim, ipAddr, hostname, mac string) (string, error) {
+func (c *Controller) reserveIP(network shims.ConnectNetwork, ipAddr, hostname, mac string) (string, error) {
 	reservation := libvirtxml.NetworkDHCPHost{
 		IP:   ipAddr,
 		MAC:  mac,
@@ -301,7 +309,7 @@ func (c *Controller) networkNameFromBridgeName(name string) (string, error) {
 // network. The function includes a ticker in order to poll for the information
 // as this can take several seconds to become available.
 func (c *Controller) discoverDHCPLeaseIP(
-	network libvirt.ConnectNetworkShim, hostname, netName string, hwaddrs []string) (ipAddr string, macAddr string, err error) {
+	network shims.ConnectNetwork, hostname, netName string, hwaddrs []string) (ipAddr string, macAddr string, err error) {
 
 	ticker := time.NewTicker(c.dhcpLeaseDiscoveryInterval)
 	defer ticker.Stop()
@@ -618,7 +626,7 @@ func (c *Controller) removeIPReservation(networkName, reservation string) error 
 }
 
 // ipReservationExists checks if the DHCP reservation currently exists.
-func (c *Controller) ipReservationExists(network libvirt.ConnectNetworkShim, reservation string) (bool, error) {
+func (c *Controller) ipReservationExists(network shims.ConnectNetwork, reservation string) (bool, error) {
 	res := &libvirtxml.NetworkDHCPHost{}
 	if err := res.Unmarshal(reservation); err != nil {
 		return false, fmt.Errorf("could not parse IP reservation: %w", err)

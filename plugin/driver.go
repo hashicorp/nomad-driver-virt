@@ -1,7 +1,7 @@
 // Copyright IBM Corp. 2024, 2025
 // SPDX-License-Identifier: MPL-2.0
 
-package virt
+package plugin
 
 import (
 	"context"
@@ -11,12 +11,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"time"
 
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
-	"github.com/hashicorp/nomad-driver-virt/libvirt"
-	virtnet "github.com/hashicorp/nomad-driver-virt/libvirt/net"
+	"github.com/hashicorp/nomad-driver-virt/providers"
+	"github.com/hashicorp/nomad-driver-virt/virt"
 	"github.com/hashicorp/nomad-driver-virt/virt/image_tools"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/client/lib/idset"
@@ -27,6 +26,7 @@ import (
 	"github.com/hashicorp/nomad/drivers/shared/eventer"
 	"github.com/hashicorp/nomad/plugins/base"
 	"github.com/hashicorp/nomad/plugins/drivers"
+	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
 )
@@ -64,7 +64,34 @@ var (
 		Name:              pluginName,
 	}
 
-	ErrExistingTaks    = errors.New("task is already running")
+	// capabilities indicates what optional features this driver supports
+	// this should be set according to the target run time.
+	capabilities = &drivers.Capabilities{
+		// The plugin's capabilities signal Nomad which extra functionalities
+		// are supported. For a list of available options check the docs page:
+		// https://godoc.org/github.com/hashicorp/nomad/plugins/drivers#Capabilities
+		SendSignals:          false,
+		Exec:                 false,
+		DisableLogCollection: true,
+		FSIsolation:          fsisolation.Image,
+
+		// NetIsolationModes details that this driver only supports the network
+		// isolation of host.
+		NetIsolationModes: []drivers.NetIsolationMode{
+			drivers.NetIsolationModeHost,
+		},
+
+		// MustInitiateNetwork is set to false, indicating the driver does not
+		// implement and thus satisfy the Nomad drivers.DriverNetworkManager
+		// interface.
+		MustInitiateNetwork: false,
+
+		// MountConfigs is currently not supported, although the plumbing is
+		// ready to handle this.
+		MountConfigs: drivers.MountConfigSupportNone,
+	}
+
+	ErrExistingTask    = errors.New("task is already running")
 	ErrStartingLibvirt = errors.New("unable to start libvirt")
 	ErrImageNotFound   = errors.New("disk image not found at path")
 	ErrTaskCrashed     = errors.New("task has crashed")
@@ -85,22 +112,14 @@ type TaskState struct {
 
 type VirtDriverPlugin struct {
 	eventer        *eventer.Eventer
-	virtualizer    Virtualizer
-	taskGetter     VMGetter
-	config         *Config
+	providers      providers.Providers
+	config         *virt.Config
 	nomadConfig    *base.ClientDriverConfig
 	tasks          *taskStore
 	signalShutdown context.CancelFunc
 	logger         hclog.Logger
 	dataDir        string
-	// networkController is the backend controller interface for the network
-	// subsystem.
-	networkController net.Net
-	// networkInit indicates whether the network subsystem has had its init
-	// function called. While the function should be idempotent, this helps
-	// avoid unnecessary calls and work.
-	networkInit  atomic.Bool
-	imageHandler ImageHandler
+	imageHandler   image_tools.ImageHandler
 }
 
 // NewPlugin returns a new driver plugin
@@ -108,22 +127,17 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 	ctx, cancel := context.WithCancel(context.Background())
 	logger = logger.Named(pluginName)
 
-	v := libvirt.New(ctx, logger)
-
 	// Should we check if extentions and kernel modules are there?
 	// grep -E 'svm|vmx' /proc/cpuinfo
 	// lsmod | grep kvm -> kvm_intel, kvm_amd, nvme-tcp
 	return &VirtDriverPlugin{
-		eventer:           eventer.NewEventer(ctx, logger),
-		config:            &Config{},
-		tasks:             newTaskStore(),
-		signalShutdown:    cancel,
-		logger:            logger,
-		networkInit:       atomic.Bool{},
-		imageHandler:      image_tools.NewHandler(logger),
-		virtualizer:       v,
-		taskGetter:        v,
-		networkController: virtnet.NewController(logger, v),
+		providers:      providers.New(ctx, logger),
+		eventer:        eventer.NewEventer(ctx, logger),
+		config:         &virt.Config{},
+		tasks:          newTaskStore(),
+		signalShutdown: cancel,
+		logger:         logger,
+		imageHandler:   image_tools.NewHandler(logger),
 	}
 }
 
@@ -134,17 +148,20 @@ func (d *VirtDriverPlugin) PluginInfo() (*base.PluginInfoResponse, error) {
 
 // ConfigSchema returns the plugin configuration schema.
 func (d *VirtDriverPlugin) ConfigSchema() (*hclspec.Spec, error) {
-	return configSpec, nil
+	return virt.ConfigSpec(), nil
 }
 
 // SetConfig is called by the client to pass the configuration for the plugin.
 func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
-	var config Config
+	var config virt.Config
 	if len(cfg.PluginConfig) != 0 {
 		if err := base.MsgPackDecode(cfg.PluginConfig, &config); err != nil {
 			return err
 		}
 	}
+
+	// Apply any required configuration updates
+	d.config.Compat()
 
 	// Save the configuration to the plugin
 	d.config = &config
@@ -165,17 +182,8 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 		return fmt.Errorf("virt: unable to create data dir: %w", err)
 	}
 
-	err = d.virtualizer.Start()
-	if err != nil {
-		return err
-	}
-
-	if !d.networkInit.Load() {
-		if err := d.networkController.Init(); err != nil {
-			return fmt.Errorf("virt: failed to init network controller: %w", err)
-		} else {
-			d.networkInit.Store(true)
-		}
+	if err := d.providers.Setup(d.config); err != nil {
+		return fmt.Errorf("virt: failed to setup providers: %w", err)
 	}
 
 	return nil
@@ -183,7 +191,7 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 
 // TaskConfigSchema returns the HCL schema for the configuration of a task.
 func (d *VirtDriverPlugin) TaskConfigSchema() (*hclspec.Spec, error) {
-	return taskConfigSpec, nil
+	return virt.TaskConfigSpec(), nil
 }
 
 // Capabilities returns the features supported by the driver.
@@ -223,26 +231,14 @@ func (d *VirtDriverPlugin) handleFingerprint(ctx context.Context, ch chan<- *dri
 
 // buildFingerprint returns the driver's fingerprint data
 func (d *VirtDriverPlugin) buildFingerprint() *drivers.Fingerprint {
-	virtInfo, err := d.virtualizer.GetInfo()
+	fp, err := d.providers.Fingerprint()
 	if err != nil {
+		d.logger.Error("failed to generate fingerprint", "error", err)
 		return &drivers.Fingerprint{
 			Attributes:        map[string]*structs.Attribute{},
 			Health:            drivers.HealthStateUndetected,
 			HealthDescription: "",
 		}
-	}
-	attrs := map[string]*structs.Attribute{}
-
-	attrs["driver.virt"] = structs.NewBoolAttribute(true)
-	attrs["driver.virt.libvirt.version"] = structs.NewIntAttribute(int64(virtInfo.LibvirtVersion), "")
-	attrs["driver.virt.emulator.version"] = structs.NewIntAttribute(int64(virtInfo.EmulatorVersion), "")
-
-	d.networkController.Fingerprint(attrs)
-
-	fp := &drivers.Fingerprint{
-		Attributes:        attrs,
-		Health:            drivers.HealthStateHealthy,
-		HealthDescription: drivers.DriverHealthy,
 	}
 
 	return fp
@@ -285,8 +281,13 @@ func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal
 		return nil
 	}
 
-	err := d.virtualizer.StopVM(vmNameFromTaskID(taskID))
+	vmname := vmNameFromTaskID(taskID)
+	virtualizer, err := d.providers.GetProviderForVM(vmname)
 	if err != nil {
+		return fmt.Errorf("virt: unable to stop task %s: %w", taskID, err)
+	}
+
+	if err := virtualizer.StopVM(vmname); err != nil {
 		return fmt.Errorf("virt: unable to stop task %s: %w", taskID, err)
 	}
 
@@ -304,13 +305,21 @@ func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
 		return nil
 	}
 
-	taskName := vmNameFromTaskID(taskID)
 	if handle.IsRunning() && !force {
-		return errors.New("cannot destroy a running task")
+		return fmt.Errorf("virt: cannot destroy running task %s", taskID)
 	}
 
-	err := d.virtualizer.DestroyVM(taskName)
+	vmname := vmNameFromTaskID(taskID)
+	virtualizer, err := d.providers.GetProviderForVM(vmname)
 	if err != nil {
+		return fmt.Errorf("virt: unable to destroy task %s: %w", taskID, err)
+	}
+	network, err := virtualizer.Networking()
+	if err != nil {
+		return fmt.Errorf("virt: unable to destroy task %s: %w", taskID, err)
+	}
+
+	if err := virtualizer.DestroyVM(vmname); err != nil {
 		return fmt.Errorf("virt: unable to destroy task %s: %w", taskID, err)
 	}
 
@@ -318,11 +327,11 @@ func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
 	netTeardownReq := net.VMTerminatedTeardownRequest{
 		TeardownSpec: handle.netTeardown,
 	}
-	if _, err := d.networkController.VMTerminatedTeardown(&netTeardownReq); err != nil {
+	if _, err := network.VMTerminatedTeardown(&netTeardownReq); err != nil {
 		return fmt.Errorf("virt: failed to destroy task network: %w", err)
 	}
 
-	d.tasks.Delete(taskName)
+	d.tasks.Delete(vmname)
 
 	return nil
 }
@@ -475,17 +484,6 @@ func addCMDsForMounts(mounts []vm.MountFileConfig) []string {
 	return cmds
 }
 
-func setUpTaskState(vmState string) drivers.TaskState {
-	switch vmState {
-	case libvirt.DomainRunning:
-		return drivers.TaskStateRunning
-	case libvirt.DomainShutdown, libvirt.DomainShutOff, libvirt.DomainCrashed:
-		return drivers.TaskStateExited
-	default:
-		return drivers.TaskStateUnknown
-	}
-}
-
 func buildHostname(taskName string) string {
 	return fmt.Sprintf("nomad-%s", taskName)
 }
@@ -496,7 +494,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		return nil, nil, fmt.Errorf("task with ID %q already started", cfg.ID)
 	}
 
-	var driverConfig TaskConfig
+	var driverConfig virt.TaskConfig
 	if err := cfg.DecodeDriverConfig(&driverConfig); err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to decode driver config: %v", err)
 	}
@@ -552,7 +550,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		copyPath := filepath.Join(d.dataDir, taskName+".img")
 		d.logger.Info("creating thin copy at", "path", copyPath) // TODO: Put back at info
 
-		if err := d.imageHandler.CreateThinCopy(diskImagePath, copyPath,
+		if err := d.imageHandler.CreateChainedCopy(diskImagePath, copyPath,
 			cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
 			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w",
 				taskName, err)
@@ -589,11 +587,20 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
 	}
 
-	if err := d.virtualizer.CreateVM(dc); err != nil {
+	virtualizer, err := d.providers.Default()
+	if err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
+	}
+	networking, err := virtualizer.Networking()
+	if err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
-	ifaces, err := d.virtualizer.GetNetworkInterfaces(dc.Name)
+	if err := virtualizer.CreateVM(dc); err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
+	}
+
+	ifaces, err := virtualizer.GetNetworkInterfaces(dc.Name)
 	if err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to retrieve guest interfaces %s: %w", cfg.AllocID, err)
 	}
@@ -607,7 +614,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		procState:  drivers.TaskStateRunning,
 		startedAt:  time.Now().Round(time.Millisecond),
 		logger:     d.logger.Named("handle").With("alloc-id", cfg.AllocID),
-		taskGetter: d.taskGetter,
+		taskGetter: d.providers,
 		name:       taskName,
 	}
 
@@ -617,7 +624,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	netBuildReq := net.VMStartedBuildRequest{
 		VMName:    taskName,
 		Hostname:  hostname,
-		NetConfig: &driverConfig.NetworkInterfacesConfig,
+		NetConfig: driverConfig.NetworkInterfacesConfig,
 		Resources: cfg.Resources,
 		Hwaddrs:   hwaddrs,
 	}
@@ -630,9 +637,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	//
 	// In the future, we may want to add some retry logic when destroying a VM,
 	// however, at least attempting it is a good start.
-	netBuildResp, err := d.networkController.VMStartedBuild(&netBuildReq)
+	netBuildResp, err := networking.VMStartedBuild(&netBuildReq)
 	if err != nil {
-		if destroyDomainErr := d.virtualizer.DestroyVM(taskName); destroyDomainErr != nil {
+		if destroyDomainErr := virtualizer.DestroyVM(taskName); destroyDomainErr != nil {
 			d.logger.Error("virt: failed to destroy virtual machine, manual cleanup needed",
 				"task_name", taskName, "error", destroyDomainErr)
 		}
@@ -690,21 +697,21 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 		logger:      d.logger.Named("handle").With("alloc-id", handle.Config.AllocID),
 		taskConfig:  taskState.TaskConfig,
 		startedAt:   taskState.StartedAt,
-		taskGetter:  d.taskGetter,
+		taskGetter:  d.providers,
 		netTeardown: taskState.NetTeardown,
 	}
 
-	vm, err := h.taskGetter.GetVM(h.name)
+	taskVm, err := h.taskGetter.GetVM(h.name)
 	if err != nil {
+		if errors.Is(err, vm.ErrNotFound) {
+			return drivers.ErrTaskNotFound
+		}
+
 		d.logger.Warn("Recovery restart failed, unknown task state", "task", handle.Config.ID)
 		return fmt.Errorf("virt: failed to recover task %s: %v", handle.Config.ID, err)
 	}
 
-	if vm == nil {
-		return drivers.ErrTaskNotFound
-	}
-
-	h.procState = setUpTaskState(vm.State)
+	h.procState = taskVm.State.ToTaskState()
 
 	d.tasks.Set(handle.Config.ID, h)
 
