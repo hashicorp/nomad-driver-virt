@@ -285,3 +285,30 @@ func (m *MockVirt) Fingerprint() (map[string]*structs.Attribute, error) {
 
 	return call.Result, call.Err
 }
+
+// AssertExpectations verifies that all expected invocations
+// have been called.
+func (m *MockVirt) AssertExpectations() {
+	m.t.Helper()
+
+	must.SliceEmpty(m.t, m.init,
+		must.Sprintf("Init expecting %d more invocations", len(m.init)))
+	must.SliceEmpty(m.t, m.createVm,
+		must.Sprintf("CreateVM expecting %d more invocations", len(m.createVm)))
+	must.SliceEmpty(m.t, m.stopVm,
+		must.Sprintf("StopVM expecting %d more invocations", len(m.stopVm)))
+	must.SliceEmpty(m.t, m.destroyVm,
+		must.Sprintf("DestroyVM expecting %d more invocations", len(m.destroyVm)))
+	must.SliceEmpty(m.t, m.getVm,
+		must.Sprintf("GetVM expecting %d more invocations", len(m.getVm)))
+	must.SliceEmpty(m.t, m.getInfo,
+		must.Sprintf("GetInfo expecting %d more invocations", len(m.getInfo)))
+	must.SliceEmpty(m.t, m.getNetworkInterfaces,
+		must.Sprintf("GetNetworkInterfaces expecting %d more invocations", len(m.getNetworkInterfaces)))
+	must.SliceEmpty(m.t, m.useCloudInit,
+		must.Sprintf("UseCloudInit expecting %d more invocations", len(m.useCloudInit)))
+	must.SliceEmpty(m.t, m.networking,
+		must.Sprintf("Networking expecting %d more invocations", len(m.networking)))
+	must.SliceEmpty(m.t, m.fingerprint,
+		must.Sprintf("Fingerprint expecting %d more invocations", len(m.fingerprint)))
+}

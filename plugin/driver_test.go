@@ -15,9 +15,9 @@ import (
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/storage/image_tools"
 	mock_providers "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers"
 	"github.com/hashicorp/nomad-driver-virt/virt"
-	"github.com/hashicorp/nomad-driver-virt/virt/image_tools"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
