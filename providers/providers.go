@@ -75,7 +75,7 @@ func (p *providers) Setup(config *virt.Config) error {
 
 	if config.Provider.Libvirt != nil {
 		// Create an instance and perform initialization
-		lv := libvirt.New(p.ctx, p.logger, libvirt.WithDataDir(config.DataDir),
+		lv := libvirt.New(p.ctx, p.logger,
 			libvirt.WithConfig(config.Provider.Libvirt))
 		if err := lv.Init(); err != nil {
 			return err
@@ -87,6 +87,11 @@ func (p *providers) Setup(config *virt.Config) error {
 			return err
 		}
 		if err := lvnet.Init(); err != nil {
+			return err
+		}
+
+		// Setup the storage
+		if err := lv.SetupStorage(config.StoragePools); err != nil {
 			return err
 		}
 

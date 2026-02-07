@@ -79,11 +79,12 @@ func TestDisk(t *testing.T) {
 			must.Eq(t, "4", d[0].Size)
 		})
 
-		t.Run("does nothing if nil", func(t *testing.T) {
+		t.Run("creates disks and adds", func(t *testing.T) {
 			d := NewDisks()
 			d = nil
 			d = d.ApplyCloudInit("/dev/null/img.iso")
-			must.Nil(t, d)
+			must.NotNil(t, d)
+			must.Len(t, 1, d)
 		})
 	})
 
@@ -97,11 +98,12 @@ func TestDisk(t *testing.T) {
 			must.Eq(t, "25MiB", d[0].Size)
 		})
 
-		t.Run("does nothing if nil", func(t *testing.T) {
+		t.Run("creates disks and adds", func(t *testing.T) {
 			d := NewDisks()
 			d = nil
 			d = d.CompatAddImage("/dev/null/img.iso", 25, false)
-			must.Nil(t, d)
+			must.NotNil(t, d)
+			must.Len(t, 1, d)
 		})
 	})
 
@@ -157,7 +159,6 @@ func TestDisk(t *testing.T) {
 				Kind:    DiskKindCdrom,
 				Driver:  "test-driver",
 				BusType: BusTypeIde,
-				Format:  DiskFormatDefault,
 				Devname: "test-device-name",
 				Primary: false,
 			}
@@ -267,6 +268,15 @@ func TestDisk(t *testing.T) {
 
 			must.ErrorIs(t, d.Validate(ValidationOptions{}), ErrNoPrimary)
 		})
+
+		t.Run("multiple primaries defined", func(t *testing.T) {
+			d := Disks{{Kind: DiskKindDisk, Primary: true}, {Kind: DiskKindDisk}, {Kind: DiskKindDisk, Primary: true}}
+			d.SetDefaults(mockStorage)
+
+			err := d.Validate(ValidationOptions{})
+			must.ErrorIs(t, err, ErrMultiplePrimary)
+			must.ErrorContains(t, err, "disks: 1, 3")
+		})
 	})
 
 	t.Run("Prepare", func(t *testing.T) {
@@ -279,7 +289,7 @@ func TestDisk(t *testing.T) {
 				Name: "task_test-device.img",
 				Opts: storage.Options{
 					Chained: false,
-					Size:    "20MB",
+					Size:    20000000,
 					Target: storage.Target{
 						Format: DiskFormatRaw,
 					},
@@ -289,8 +299,11 @@ func TestDisk(t *testing.T) {
 				},
 				Result: &storage.Volume{Pool: "test-pool", Name: "test-volume"},
 			})
+			store := &mock_storage.StaticStorage{
+				DefaultPoolResult: pool,
+			}
 
-			must.NoError(t, d.Prepare("task", pool))
+			must.NoError(t, d.Prepare("task", store))
 			must.NotNil(t, d[0].Volume, must.Sprint("expected volume to be set"))
 
 			expectedVolume := &storage.Volume{

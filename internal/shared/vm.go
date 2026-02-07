@@ -7,19 +7,19 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/nomad-driver-virt/cloudinit"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
 const (
-	minDiskMB     = 2000
 	minMemoryMB   = 500
 	maxNameLength = 63 // According to RFC 1123 (https://www.rfc-editor.org/rfc/rfc1123.html) should be at most 63 characters
 
@@ -33,15 +33,18 @@ var (
 	// should be at most 63 characters according to the RFC
 	validLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
 
-	ErrEmptyName           = errors.New("virtual machine name can not be empty")
-	ErrMissingImage        = errors.New("image path can not be empty")
-	ErrNotEnoughDisk       = errors.New("not enough disk space assigned to task")
-	ErrNoCPUS              = errors.New("no cpus configured, use resources.cores to assign cores in the job spec")
-	ErrNotEnoughMemory     = errors.New("not enough memory assigned to task")
-	ErrIncompleteOSVariant = errors.New("provided os information is incomplete: arch and machine are mandatory ")
-	ErrInvalidHostName     = fmt.Errorf("a resource name must consist of lower case alphanumeric characters or '-', must start and end with an alphanumeric character and be less than %d characters", maxNameLength+1)
-	ErrPathNotAllowed      = fmt.Errorf("base_image is not in the allowed paths")
-	ErrNotFound            = errors.New("not found")
+	ErrEmptyName            = errors.New("virtual machine name can not be empty")
+	ErrMissingImage         = errors.New("image path can not be empty")
+	ErrNotEnoughDisk        = errors.New("not enough disk space assigned to task")
+	ErrNoCPUS               = errors.New("no cpus configured, use resources.cores to assign cores in the job spec")
+	ErrNotEnoughMemory      = errors.New("not enough memory assigned to task")
+	ErrIncompleteOSVariant  = errors.New("provided os information is incomplete: arch and machine are mandatory ")
+	ErrInvalidHostName      = fmt.Errorf("a resource name must consist of lower case alphanumeric characters or '-', must start and end with an alphanumeric character and be less than %d characters", maxNameLength+1)
+	ErrPathNotAllowed       = disks.ErrDisallowedPath
+	ErrNotFound             = errors.New("not found")
+	ErrNotImplemented       = errors.New("not impleneted")
+	ErrNotSupported         = errors.New("feature is not supported")
+	ErrInvalidConfiguration = errors.New("invalid configuration")
 )
 
 type VMState string
@@ -97,9 +100,6 @@ type Config struct {
 	CPUset            string
 	CPUs              uint
 	OsVariant         *OSVariant
-	BaseImage         string
-	DiskFmt           string
-	PrimaryDiskSize   uint64
 	HostName          string
 	Timezone          *time.Location
 	Mounts            []MountFileConfig
@@ -110,25 +110,15 @@ type Config struct {
 	BOOTCMDs          []string
 	CIUserData        string
 
+	Disks             disks.Disks
 	NetworkInterfaces net.NetworkInterfacesConfig
 }
 
+// Validate validates the configuration.
 func (vm *Config) Validate(allowedPaths []string) error {
 	var mErr *multierror.Error
 	if vm.Name == "" {
 		mErr = multierror.Append(mErr, ErrEmptyName)
-	}
-
-	if vm.BaseImage == "" {
-		mErr = multierror.Append(mErr, ErrMissingImage)
-	} else {
-		if !isAllowedImagePath(allowedPaths, vm.BaseImage) {
-			mErr = multierror.Append(mErr, ErrPathNotAllowed)
-		}
-	}
-
-	if vm.PrimaryDiskSize < minDiskMB {
-		mErr = multierror.Append(mErr, ErrNotEnoughDisk)
 	}
 
 	if vm.Memory < minMemoryMB {
@@ -150,6 +140,10 @@ func (vm *Config) Validate(allowedPaths []string) error {
 		mErr = multierror.Append(mErr, ErrInvalidHostName)
 	}
 
+	if err := vm.Disks.Validate(disks.ValidationOptions{AllowedPaths: allowedPaths}); err != nil {
+		mErr = multierror.Append(mErr, err)
+	}
+
 	if err := vm.NetworkInterfaces.Validate(); err != nil {
 		mErr = multierror.Append(mErr, err)
 	}
@@ -157,6 +151,7 @@ func (vm *Config) Validate(allowedPaths []string) error {
 	return mErr.ErrorOrNil()
 }
 
+// Copy makes a deep copy of the configuration.
 func (vm *Config) Copy() *Config {
 	copy := &Config{
 		RemoveConfigFiles: vm.RemoveConfigFiles,
@@ -165,9 +160,6 @@ func (vm *Config) Copy() *Config {
 		Memory:            vm.Memory,
 		CPUset:            vm.CPUset,
 		CPUs:              vm.CPUs,
-		BaseImage:         vm.BaseImage,
-		DiskFmt:           vm.DiskFmt,
-		PrimaryDiskSize:   vm.PrimaryDiskSize,
 		NetworkInterfaces: slices.Clone(vm.NetworkInterfaces),
 		HostName:          vm.HostName,
 		Mounts:            slices.Clone(vm.Mounts),
@@ -177,6 +169,7 @@ func (vm *Config) Copy() *Config {
 		CMDs:              slices.Clone(vm.CMDs),
 		BOOTCMDs:          slices.Clone(vm.BOOTCMDs),
 		CIUserData:        vm.CIUserData,
+		Disks:             vm.Disks.Copy(),
 	}
 
 	if vm.OsVariant != nil {
@@ -191,6 +184,50 @@ func (vm *Config) Copy() *Config {
 	}
 
 	return copy
+}
+
+// CloudInitConfig generates the cloud-init configuration from
+// the configuration.
+func (vm *Config) CloudInitConfig() *cloudinit.Config {
+	ms := []cloudinit.MountFileConfig{}
+	for _, m := range vm.Mounts {
+		mount := cloudinit.MountFileConfig{
+			Destination: m.Destination,
+			Tag:         m.Tag,
+		}
+
+		ms = append(ms, mount)
+	}
+
+	fs := []cloudinit.File{}
+	for _, f := range vm.Files {
+		file := cloudinit.File{
+			Path:        f.Path,
+			Content:     f.Content,
+			Permissions: f.Permissions,
+			Encoding:    f.Encoding,
+			Owner:       f.Owner,
+			Group:       f.Group,
+		}
+
+		fs = append(fs, file)
+	}
+
+	return &cloudinit.Config{
+		MetaData: cloudinit.MetaData{
+			InstanceID:    vm.Name,
+			LocalHostname: vm.HostName,
+		},
+		VendorData: cloudinit.VendorData{
+			BootCMD:  vm.BOOTCMDs,
+			RunCMD:   vm.CMDs,
+			Mounts:   ms,
+			Files:    fs,
+			Password: vm.Password,
+			SSHKey:   vm.SSHKey,
+		},
+		UserData: vm.CIUserData,
+	}
 }
 
 type NetworkInterface struct {
@@ -239,19 +276,4 @@ func ValidateHostName(name string) error {
 	}
 
 	return nil
-}
-
-func isParent(parent, path string) bool {
-	rel, err := filepath.Rel(parent, path)
-	return err == nil && !strings.HasPrefix(rel, "..")
-}
-
-func isAllowedImagePath(allowedPaths []string, imagePath string) bool {
-	for _, ap := range allowedPaths {
-		if isParent(ap, imagePath) {
-			return true
-		}
-	}
-
-	return false
 }

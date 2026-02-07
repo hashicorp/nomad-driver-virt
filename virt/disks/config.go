@@ -4,13 +4,16 @@
 package disks
 
 import (
+	"crypto/sha512"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/nomad-driver-virt/internal/convert"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 )
@@ -18,7 +21,9 @@ import (
 var (
 	ErrMissingAttribute = errors.New("missing required attribute")
 	ErrDisallowedPath   = errors.New("access to path is not allowed")
+	ErrPathNotFound     = errors.New("path not found")
 	ErrNoPrimary        = errors.New("no primary disk defined")
+	ErrMultiplePrimary  = errors.New("multiple primary disks defined")
 
 	configSpec = hclspec.NewBlockSet("disk", hclspec.NewObject(map[string]*hclspec.Spec{
 		"pool":        hclspec.NewAttr("pool", "string", false),
@@ -32,6 +37,7 @@ var (
 		"size":        hclspec.NewAttr("size", "string", false),
 		"chained":     hclspec.NewAttr("chained", "bool", false),
 		"read_only":   hclspec.NewAttr("read_only", "bool", false),
+		"sparse":      hclspec.NewAttr("sparse", "bool", false),
 		"source": hclspec.NewBlock("source", false, hclspec.NewObject(map[string]*hclspec.Spec{
 			"format":   hclspec.NewAttr("format", "string", false),
 			"image":    hclspec.NewAttr("image", "string", false),
@@ -54,9 +60,10 @@ const (
 	DiskKindLun   = "lun"
 	DiskKindCdrom = "cdrom"
 
-	BusTypeDefault    = "virtio"
-	DiskFormatDefault = "raw"
-	DiskKindDefault   = "disk"
+	BusTypeDefault  = "virtio"
+	DiskKindDefault = "disk"
+
+	identifierPrefix = "nmdsrc"
 )
 
 // NewDisks returns a new disk collection.
@@ -88,6 +95,10 @@ func (v ValidationOptions) AllowedPath(path string) bool {
 			dir += string(filepath.Separator)
 		}
 
+		if len(dir) > len(path) {
+			continue
+		}
+
 		if !strings.EqualFold(dir, path[0:len(dir)]) {
 			continue
 		}
@@ -116,8 +127,9 @@ type Disk struct {
 	BusType    string  `codec:"bus_type"`    // Bus type of the disk (virtio/ide/etc)
 	Primary    bool    `codec:"primary"`     // Primary disk to be booted (only one allowed)
 	Format     string  `codec:"format"`      // Format of the disk (raw,qcow2,etc)
-	Size       string  `codec:"size"`        // Size of generated VM image
+	Size       string  `codec:"size"`        // Size of the volume
 	Chained    bool    `codec:"chained"`     // Volume should be chained to source ("thin" copy)
+	Sparse     bool    `codec:"sparse"`      // Volume should be sparsely populated if supported
 	ReadOnly   bool    `codec:"read_only"`   // Disk is readonly
 	Source     *Source `codec:"source"`      // Source image for new volume
 	Pool       string  `codec:"pool"`        // Name of pool to store disk volume
@@ -132,12 +144,14 @@ type Source struct {
 	Format   string `codec:"format"`   // Format of the source image
 	Snapshot string `codec:"snapshot"` // Snapshot from which to generate new volume
 	Volume   string `codec:"volume"`   // Existing volume from which to generate new volume
+
+	identifier string
 }
 
 // ApplyCloudInit will add a disk entry as a cdrom for cloud-init
 func (d Disks) ApplyCloudInit(isoPath string) Disks {
 	if d == nil {
-		return nil
+		d = Disks{}
 	}
 
 	f, err := os.Stat(isoPath)
@@ -164,10 +178,10 @@ func (d Disks) ApplyCloudInit(isoPath string) Disks {
 // CompatAddImage supports deprecated task configuration
 func (d Disks) CompatAddImage(image string, size int64, thinCopy bool) Disks {
 	if d == nil {
-		return nil
+		d = Disks{}
 	}
 
-	return append(d, &Disk{
+	newDisk := &Disk{
 		BusType: BusTypeVirtio,
 		Primary: true,
 		Source: &Source{
@@ -175,7 +189,15 @@ func (d Disks) CompatAddImage(image string, size int64, thinCopy bool) Disks {
 		},
 		Size:    fmt.Sprintf("%dMiB", size),
 		Chained: thinCopy,
-	})
+	}
+
+	// For proper compatibility, set the format to qcow2
+	// if making a thin copy.
+	if thinCopy {
+		newDisk.Format = "qcow2"
+	}
+
+	return append(d, newDisk)
 }
 
 // ResolveImages normalizes paths in the file disk configurations
@@ -191,6 +213,9 @@ func (d Disks) ResolveImages(dirs []string) {
 
 		if disk.Source.Image != "" && !fileExists(disk.Source.Image) && filepath.IsLocal(disk.Source.Image) {
 			for _, dir := range dirs {
+				if dir == "" {
+					continue
+				}
 				testPath := filepath.Join(dir, disk.Source.Image)
 				if fileExists(testPath) {
 					disk.Source.Image = testPath
@@ -203,15 +228,38 @@ func (d Disks) ResolveImages(dirs []string) {
 // SetDefaults will fill in applicable empty values in disk configurations
 // with default values
 func (d Disks) SetDefaults(s storage.Storage) {
+	if d == nil {
+		return
+	}
+
 	validPrimaryDisks := []*Disk{}
 	var primaryFound bool
-
 	for _, disk := range d {
+		// Default driver is informed by the storage implementation
 		if disk.Driver == "" {
 			disk.Driver = s.DefaultDiskDriver()
 		}
 		if disk.Kind == "" {
-			disk.Kind = DiskKindDisk
+			disk.Kind = DiskKindDefault
+		}
+		// If a source is set, attempt to determine the format if not set
+		if disk.Format == "" && disk.Source != nil {
+			// Attempt to extract the format from the source
+			if disk.Source.Format != "" {
+				disk.Format = disk.Source.Format
+			} else if disk.Source.Image != "" {
+				if iFmt, err := s.ImageHandler().GetImageFormat(disk.Source.Image); err == nil {
+					disk.Format = iFmt
+					disk.Source.Format = iFmt
+				}
+			}
+		}
+		// If no size is set and a source image is available, attempt
+		// to use that size
+		if disk.Size == "" && disk.Source != nil && disk.Source.Image != "" {
+			if info, err := os.Stat(disk.Source.Image); err == nil {
+				disk.Size = fmt.Sprintf("%d", info.Size())
+			}
 		}
 		if disk.BusType == "" {
 			if disk.Kind == DiskKindCdrom {
@@ -219,9 +267,6 @@ func (d Disks) SetDefaults(s storage.Storage) {
 			} else {
 				disk.BusType = BusTypeDefault
 			}
-		}
-		if disk.Format == "" {
-			disk.Format = DiskFormatDefault
 		}
 		if disk.Devname == "" {
 			disk.Devname = d.generateDevname(disk, s)
@@ -246,13 +291,14 @@ func (d Disks) SetDefaults(s storage.Storage) {
 // Validate validates the disks configurations
 func (d Disks) Validate(opts ValidationOptions) error {
 	var mErr *multierror.Error
-	var primaryFound bool
+	var primaryIdx []string
 
 	for i, disk := range d {
-		errPrefix := fmt.Sprintf("disk[%d] -", i)
+		displayIdx := i + 1 // NOTE: Increment index so disk counts start at 1 for user
+		errPrefix := fmt.Sprintf("disk[%d] -", displayIdx)
 
 		if disk.Primary {
-			primaryFound = true
+			primaryIdx = append(primaryIdx, fmt.Sprintf("%d", displayIdx))
 		}
 
 		if disk.BusType == "" {
@@ -270,14 +316,28 @@ func (d Disks) Validate(opts ValidationOptions) error {
 				fmt.Errorf("%s %w: Devname", errPrefix, ErrMissingAttribute))
 		}
 
-		if disk.Source != nil && disk.Source.Image != "" && !opts.AllowedPath(disk.Source.Image) {
+		if disk.Size != "" && !convert.ValidBytesString(disk.Size) {
 			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: %s", errPrefix, ErrDisallowedPath, disk.Source.Image))
+				fmt.Errorf("%s Size value is not valid - %q", errPrefix, disk.Size))
+		}
+
+		if disk.Source != nil && disk.Source.Image != "" {
+			if !fileExists(disk.Source.Image) {
+				mErr = multierror.Append(mErr,
+					fmt.Errorf("%s %w: %s", errPrefix, ErrPathNotFound, disk.Source.Image))
+			}
+			if !opts.AllowedPath(disk.Source.Image) {
+				mErr = multierror.Append(mErr,
+					fmt.Errorf("%s %w: %s", errPrefix, ErrDisallowedPath, disk.Source.Image))
+			}
 		}
 	}
 
-	if !primaryFound {
+	if len(primaryIdx) == 0 {
 		mErr = multierror.Append(mErr, ErrNoPrimary)
+	} else if len(primaryIdx) > 1 {
+		mErr = multierror.Append(mErr, fmt.Errorf("%w (disks: %s)",
+			ErrMultiplePrimary, strings.Join(primaryIdx, ", ")))
 	}
 
 	if mErr != nil {
@@ -287,25 +347,61 @@ func (d Disks) Validate(opts ValidationOptions) error {
 	return nil
 }
 
-// Prepare prepares the file for usage, importing it into the storage pool. The
+// Prepare prepares the disk for usage, importing it into the storage pool. The
 // name is used for volume naming. Using the task name is ideal.
-func (d Disks) Prepare(name string, pool storage.Pool) error {
+func (d Disks) Prepare(name string, s storage.Storage) error {
 	// Generate the volumes for the virtual machine
 	for _, disk := range d {
+		var pool storage.Pool
+		var err error
+
+		if disk.Pool != "" {
+			if pool, err = s.GetPool(disk.Pool); err != nil {
+				return err
+			}
+		} else {
+			if pool, err = s.DefaultPool(); err != nil {
+				return err
+			}
+		}
 		volumeName := fmt.Sprintf("%s_%s.img", name, disk.Devname)
 		opts := storage.Options{
 			Chained: disk.Chained,
-			Size:    disk.Size,
+			Size:    convert.MustToBytes(disk.Size),
+			Sparse:  disk.Sparse,
 			Target: storage.Target{
 				Format: disk.Format,
 			},
 		}
+
 		if disk.Source != nil {
 			opts.Source = storage.Source{
-				Format:   disk.Source.Format,
-				Path:     disk.Source.Image,
-				Snapshot: disk.Source.Snapshot,
-				Volume:   disk.Source.Volume,
+				Format:     disk.Source.Format,
+				Path:       disk.Source.Image,
+				Snapshot:   disk.Source.Snapshot,
+				Volume:     disk.Source.Volume,
+				Identifier: disk.Source.identifier,
+			}
+
+			// If the disk source has an image and the identifier was
+			// not set, generate the identifier now
+			// NOTE: this is only done if chained since the identifer
+			// is not used otherwise.
+			if disk.Source.identifier == "" && disk.Chained {
+				id, err := generateIdentifier(disk.Source.Image)
+				if err != nil {
+					return err
+				}
+				opts.Source.Identifier = id
+			}
+
+			// If the size what not set, use the size of the image
+			if disk.Size == "" && disk.Source.Image != "" {
+				info, err := os.Stat(disk.Source.Image)
+				if err != nil {
+					return err
+				}
+				opts.Size = uint64(info.Size())
 			}
 		}
 
@@ -314,10 +410,15 @@ func (d Disks) Prepare(name string, pool storage.Pool) error {
 			return err
 		}
 
+		// If the format was already set by the pool,
+		// prefer that value
+		if vol.Format == "" {
+			vol.Format = disk.Format
+		}
+
 		// Fill in extra volume information
 		vol.Kind = disk.Kind
 		vol.Driver = disk.Driver
-		vol.Format = disk.Format
 		vol.DeviceName = disk.Devname
 		vol.BusType = disk.BusType
 		vol.Primary = disk.Primary
@@ -377,6 +478,24 @@ func ConfigSpec() *hclspec.Spec {
 	return configSpec
 }
 
+// generateIdentifier generates an identifier for a source file based
+// on the checksum of the contents
+func generateIdentifier(path string) (string, error) {
+	hash := sha512.New()
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	if _, err := io.Copy(hash, f); err != nil {
+		return "", err
+	}
+
+	return fmt.Sprintf("%s-%x.img", identifierPrefix, hash.Sum(nil)), nil
+}
+
+// fileExists checks if a file exists at the path
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	if os.IsNotExist(err) {

@@ -7,6 +7,8 @@ package storage
 type Pool interface {
 	// AddVolume adds a new volume to the storage pool
 	AddVolume(name string, opts Options) (*Volume, error)
+	// GetVolume retrieves a volume from the storage pool if it exists
+	GetVolume(name string) (*Volume, error)
 	// DeleteVolume deletes a volume from the storage pool
 	DeleteVolume(name string) error
 }
@@ -14,7 +16,8 @@ type Pool interface {
 // Options are supported options for AddVolume
 type Options struct {
 	Chained bool   // Volume is chained to a parent volume
-	Size    string // Size of the volume (10GiB or 10GB)
+	Sparse  bool   // Volume should be sparse (full capacity not allocated)
+	Size    uint64 // Size of the volume in bytes
 	Source  Source // Describes the source of the volume
 	Target  Target // Options for the target to be created
 }
@@ -26,8 +29,9 @@ type Target struct {
 
 // Source describes the source of the volume to create
 type Source struct {
-	Format   string // Format of the source
-	Path     string // Path to a source image file
-	Snapshot string // Snapshot to clone
-	Volume   string // Volume to clone
+	Format     string // Format of the source
+	Path       string // Path to a source image file
+	Identifier string // Identifier for a source image file
+	Snapshot   string // Snapshot to clone
+	Volume     string // Volume to clone
 }

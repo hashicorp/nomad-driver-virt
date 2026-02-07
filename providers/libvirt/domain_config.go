@@ -4,47 +4,48 @@
 package libvirt
 
 import (
-	domain "github.com/hashicorp/nomad-driver-virt/internal/shared"
-
+	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/storage"
 	"libvirt.org/go/libvirtxml"
 )
 
-func parseConfiguration(config *domain.Config, cloudInitPath string) (string, error) {
+func parseVolumes(vols []storage.Volume) ([]libvirtxml.DomainDisk, error) {
+	result := make([]libvirtxml.DomainDisk, 0, len(vols))
+	for _, fd := range vols {
+		disk := libvirtxml.DomainDisk{
+			Device: fd.Kind,
+			Driver: &libvirtxml.DomainDiskDriver{
+				Name: fd.Driver,
+				Type: fd.Format,
+			},
+			Source: &libvirtxml.DomainDiskSource{
+				Volume: &libvirtxml.DomainDiskSourceVolume{
+					Pool:   fd.Pool,
+					Volume: fd.Name,
+				},
+			},
+			Target: &libvirtxml.DomainDiskTarget{
+				Dev: fd.DeviceName,
+				Bus: fd.BusType,
+			},
+		}
+
+		// If this is the primary device, mark to boot
+		if fd.Primary {
+			disk.Boot = &libvirtxml.DomainDeviceBoot{Order: 1}
+		}
+		result = append(result, disk)
+	}
+
+	return result, nil
+}
+
+func parseConfiguration(config *vm.Config) (string, error) {
 	zero := uint(0)
 
-	disks := []libvirtxml.DomainDisk{
-		{
-			Device: "disk",
-			Driver: &libvirtxml.DomainDiskDriver{
-				Name: "qemu",
-				Type: config.DiskFmt,
-			},
-			Source: &libvirtxml.DomainDiskSource{
-				File: &libvirtxml.DomainDiskSourceFile{
-					File: config.BaseImage,
-				},
-			},
-			Target: &libvirtxml.DomainDiskTarget{
-				Dev: "vda",
-				Bus: "virtio",
-			},
-		},
-		{
-			Device: "cdrom",
-			Driver: &libvirtxml.DomainDiskDriver{
-				Name: "qemu",
-				Type: "raw",
-			},
-			Source: &libvirtxml.DomainDiskSource{
-				File: &libvirtxml.DomainDiskSourceFile{
-					File: cloudInitPath,
-				},
-			},
-			Target: &libvirtxml.DomainDiskTarget{
-				Dev: "sda",
-				Bus: "sata",
-			},
-		},
+	disks, err := parseVolumes(config.Disks.Volumes())
+	if err != nil {
+		return "", err
 	}
 
 	mounts := []libvirtxml.DomainFilesystem{}
@@ -71,7 +72,7 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 	}
 
 	osType := &libvirtxml.DomainOSType{
-		Type: defaultVirtualizatioType,
+		Type: defaultVirtualizationType,
 	}
 
 	if config.OsVariant != nil {
@@ -156,6 +157,7 @@ func parseConfiguration(config *domain.Config, cloudInitPath string) (string, er
 			},
 		},
 		Devices: &libvirtxml.DomainDeviceList{
+			// TODO: Check if these are actually needed with volumes
 			Controllers: []libvirtxml.DomainController{
 				// Used for the base image disk
 				{

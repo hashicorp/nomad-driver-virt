@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers"
-	"github.com/hashicorp/nomad-driver-virt/storage/image_tools"
 	"github.com/hashicorp/nomad-driver-virt/virt"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/client/lib/idset"
@@ -119,7 +119,7 @@ type VirtDriverPlugin struct {
 	signalShutdown context.CancelFunc
 	logger         hclog.Logger
 	dataDir        string
-	imageHandler   image_tools.ImageHandler
+	ci             cloudinit.CloudInit
 }
 
 // NewPlugin returns a new driver plugin
@@ -137,7 +137,6 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 		tasks:          newTaskStore(),
 		signalShutdown: cancel,
 		logger:         logger,
-		imageHandler:   image_tools.NewHandler(logger),
 	}
 }
 
@@ -160,30 +159,26 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 		}
 	}
 
-	// Apply any required configuration updates
-	d.config.Compat()
-
 	// Save the configuration to the plugin
 	d.config = &config
+
+	// Apply any required configuration updates
+	d.config.Compat()
 
 	// Save the Nomad agent configuration
 	if cfg.AgentConfig != nil {
 		d.nomadConfig = cfg.AgentConfig.Driver
 	}
 
-	if d.config.DataDir != "" {
-		d.dataDir = config.DataDir
-	} else {
-		d.dataDir = defaultDataDir
-	}
-
-	err := createDataDirectory(d.dataDir)
-	if err != nil {
-		return fmt.Errorf("virt: unable to create data dir: %w", err)
-	}
-
 	if err := d.providers.Setup(d.config); err != nil {
 		return fmt.Errorf("virt: failed to setup providers: %w", err)
+	}
+
+	if d.ci == nil {
+		var err error
+		if d.ci, err = cloudinit.NewController(d.logger); err != nil {
+			return fmt.Errorf("virt: unable to create cloudinit controller: %w", err)
+		}
 	}
 
 	return nil
@@ -411,15 +406,6 @@ func vmNameFromTaskID(taskID string) string {
 	return strings.Join(ids[1:], "-")
 }
 
-func createDataDirectory(path string) error {
-	err := os.MkdirAll(path, dataDirPermissions)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func createAllocFileMounts(task *drivers.TaskConfig) []vm.MountFileConfig {
 	mounts := []vm.MountFileConfig{
 		{
@@ -460,14 +446,6 @@ func createEnvsFile(envs map[string]string) vm.File {
 		Permissions: envVariblesFilePermissions,
 		Content:     base64.StdEncoding.EncodeToString([]byte(strings.Join(con, "\n\t"))),
 	}
-}
-
-func fileExists(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return !info.IsDir()
 }
 
 func addCMDsForMounts(mounts []vm.MountFileConfig) []string {
@@ -527,40 +505,16 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	// The alloc directory and plugin data directory are assumed to be allowed
 	// paths to load images from.
-	allowedPaths := append(d.config.ImagePaths, d.dataDir, cfg.AllocDir)
-
-	diskImagePath := driverConfig.ImagePath
-
-	if !fileExists(diskImagePath) {
-
-		// Assuming the image was downloaded using artifacts and will be placed
-		// somewhere in the alloc's filesystem.
-		diskImagePath = filepath.Join(cfg.TaskDir().Dir, diskImagePath)
-		if !fileExists(diskImagePath) {
-			return nil, nil, fmt.Errorf("virt: %s, %w", cfg.AllocID, ErrImageNotFound)
-		}
-	}
-
-	diskFormat, err := d.imageHandler.GetImageFormat(diskImagePath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("virt: unable to get disk format %s: %w", cfg.AllocID, err)
-	}
-
-	if driverConfig.UseThinCopy {
-		copyPath := filepath.Join(d.dataDir, taskName+".img")
-		d.logger.Info("creating thin copy at", "path", copyPath) // TODO: Put back at info
-
-		if err := d.imageHandler.CreateChainedCopy(diskImagePath, copyPath,
-			cfg.Resources.NomadResources.Memory.MemoryMB); err != nil {
-			return nil, nil, fmt.Errorf("virt: unable to create thin copy for %s: %w",
-				taskName, err)
-		}
-
-		diskImagePath = copyPath
-		diskFormat = "qcow2"
-	}
+	allowedPaths := append(d.config.ImagePaths, cfg.AllocDir)
+	imagePaths := append(allowedPaths, cfg.TaskDir().Dir)
 
 	cpuSet := idset.Parse[hw.CoreID](cfg.Resources.LinuxResources.CpusetCpus)
+
+	// Fetch the virtualizer
+	virtualizer, err := d.providers.Default()
+	if err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
+	}
 
 	dc := &vm.Config{
 		RemoveConfigFiles: true,
@@ -569,9 +523,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		CPUs:              uint(cpuSet.Size()),
 		CPUset:            cfg.Resources.LinuxResources.CpusetCpus,
 		OsVariant:         osVariant,
-		BaseImage:         diskImagePath,
-		DiskFmt:           diskFormat,
-		PrimaryDiskSize:   driverConfig.PrimaryDiskSize,
 		HostName:          hostname,
 		Mounts:            allocFSMounts,
 		CMDs:              driverConfig.CMDs,
@@ -583,14 +534,48 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		NetworkInterfaces: driverConfig.NetworkInterfacesConfig,
 	}
 
+	disks := driverConfig.Disks
+	// Compat to add old config into disks
+	if driverConfig.ImagePath != "" {
+		disks = disks.CompatAddImage(driverConfig.ImagePath, int64(driverConfig.PrimaryDiskSize),
+			driverConfig.UseThinCopy)
+	}
+
+	// Fix up the image paths
+	disks.ResolveImages(imagePaths)
+
+	// If cloudinit configuration is available, add it
+	if virtualizer.UseCloudInit() && dc.CloudInitConfig() != nil {
+		isoPath := filepath.Join(cfg.AllocDir, "cloudinit.iso")
+		if err := d.ci.Apply(dc.CloudInitConfig(), isoPath); err != nil {
+			return nil, nil, err
+		}
+		// the iso will be copied into the storage pool, so
+		// this file does not need to persist.
+		defer os.RemoveAll(isoPath)
+
+		disks = disks.ApplyCloudInit(isoPath)
+	}
+
+	// Set defaults on the disks
+	disks.SetDefaults(virtualizer.Storage())
+	// And set the updated disks into the config
+	dc.Disks = disks
+
+	// Run validation
 	if err := dc.Validate(allowedPaths); err != nil {
 		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
 	}
 
-	virtualizer, err := d.providers.Default()
-	if err != nil {
-		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
+	// Prepare the disks to generate the storage pool volumes
+	if err := dc.Disks.Prepare(taskName, virtualizer.Storage()); err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to create storage volumes %s: %w", cfg.AllocID, err)
 	}
+
+	if err := dc.Validate(allowedPaths); err != nil {
+		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
+	}
+
 	networking, err := virtualizer.Networking()
 	if err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)

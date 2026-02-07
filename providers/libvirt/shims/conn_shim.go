@@ -68,4 +68,10 @@ type ConnectNetwork interface {
 	// Also see:
 	// https://libvirt.org/html/libvirt-libvirt-network.html#virNetworkGetXMLDesc
 	GetXMLDesc(flags libvirt.NetworkXMLFlags) (string, error)
+
+	// Free the resources associated to this instance
+	//
+	// Also see:
+	// https://libvirt.org/html/libvirt-libvirt-network.html#virNetworkFree
+	Free() error
 }

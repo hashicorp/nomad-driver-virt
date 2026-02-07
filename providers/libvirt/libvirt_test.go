@@ -5,7 +5,6 @@ package libvirt
 
 import (
 	"context"
-	"errors"
 	"os"
 	"testing"
 
@@ -56,205 +55,97 @@ func TestGetInfo(t *testing.T) {
 	ld.Close()
 }
 
-func fileExists(t *testing.T, filePath string) bool {
-	info, err := os.Stat(filePath)
-	if os.IsNotExist(err) {
-		return false
-	}
-	must.NoError(t, err)
-
-	return !info.IsDir()
-}
-
 func TestStartDomain(t *testing.T) {
 	t.Parallel()
 
-	testError := errors.New("oh no! there is an error")
+	makeConfig := func() *domain.Config {
+		return &domain.Config{
+			Memory:   66600,
+			CPUs:     2,
+			HostName: "test-hostname",
+			SSHKey:   "sshkey lkbfubwfu...",
+			Password: "test-password",
+			CMDs:     []string{"cmd arg arg", "cmd arg arg"},
+			BOOTCMDs: []string{"cmd arg arg", "cmd arg arg"},
+			Mounts: []domain.MountFileConfig{
+				{
+					Source:      "/mount/source/one",
+					Destination: "/path/to/file/one",
+					Tag:         "tagOne",
+					ReadOnly:    true,
+				},
+				{Source: "/mount/source/two",
+					Destination: "/path/to/file/two",
+					Tag:         "tagTwo",
+					ReadOnly:    false},
+			},
+			Files: []domain.File{
+				{
+					Path:        "/path/to/file/one",
+					Content:     "content",
+					Permissions: "444",
+					Encoding:    "b64",
+				},
+				{
+					Path:        "/path/to/file/two",
+					Content:     "content",
+					Permissions: "666",
+				},
+			},
+		}
 
-	tests := []struct {
-		name              string
-		domainName        string
-		removeConfigFiles bool
-		ciUserData        string
-		expectError       error
-		expectedCIConfig  *cloudinit.Config
-		ciError           error
-		expectedPath      string
-	}{
-		{
-			name:              "domain_created_successfully_dont_remove_files_with_userdata",
-			domainName:        "domain-1",
-			removeConfigFiles: false,
-			ciUserData:        "/path/to/user/data",
-			expectedCIConfig: &cloudinit.Config{
-				VendorData: cloudinit.VendorData{
-					Password: "test-password",
-					SSHKey:   "sshkey lkbfubwfu...",
-					RunCMD:   []string{"cmd arg arg", "cmd arg arg"},
-					BootCMD:  []string{"cmd arg arg", "cmd arg arg"},
-					Mounts: []cloudinit.MountFileConfig{
-						{
-							Destination: "/path/to/file/one",
-							Tag:         "tagOne",
-						},
-						{
-							Destination: "/path/to/file/two",
-							Tag:         "tagTwo",
-						},
-					},
-					Files: []cloudinit.File{
-						{
-							Path:        "/path/to/file/one",
-							Content:     "content",
-							Permissions: "444",
-							Encoding:    "b64",
-						},
-						{
-							Path:        "/path/to/file/two",
-							Content:     "content",
-							Permissions: "666",
-						},
-					},
-				},
-				MetaData: cloudinit.MetaData{InstanceID: "domain-1", LocalHostname: "test-hostname"},
-				UserData: "/path/to/user/data",
-			},
-		},
-		{
-			name:              "domain_created_successfully_remove_files_with_userdata",
-			domainName:        "domain-2",
-			removeConfigFiles: true,
-			ciUserData:        "/path/to/user/data",
-			expectedCIConfig: &cloudinit.Config{
-				VendorData: cloudinit.VendorData{
-					Password: "test-password",
-					SSHKey:   "sshkey lkbfubwfu...",
-					RunCMD:   []string{"cmd arg arg", "cmd arg arg"},
-					BootCMD:  []string{"cmd arg arg", "cmd arg arg"},
-					Mounts: []cloudinit.MountFileConfig{
-						{
-							Destination: "/path/to/file/one",
-							Tag:         "tagOne",
-						},
-						{
-							Destination: "/path/to/file/two",
-							Tag:         "tagTwo",
-						},
-					},
-					Files: []cloudinit.File{
-						{
-							Path:        "/path/to/file/one",
-							Content:     "content",
-							Permissions: "444",
-							Encoding:    "b64",
-						},
-						{
-							Path:        "/path/to/file/two",
-							Content:     "content",
-							Permissions: "666",
-						},
-					},
-				},
-				MetaData: cloudinit.MetaData{
-					InstanceID:    "domain-2",
-					LocalHostname: "test-hostname"},
-				UserData: "/path/to/user/data",
-			},
-		},
-		{
-			name:        "duplicated_domain_error",
-			domainName:  "domain-2",
-			expectError: ErrDomainExists,
-		},
-		{
-			name:        "cloud_init_error_propagation",
-			domainName:  "domain-3",
-			expectError: testError,
-			ciError:     testError,
-		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			cim := &cloudInitMock{
-				err: tt.ciError,
-			}
+	t.Run("domain created successfully", func(t *testing.T) {
+		ld := New(context.Background(), hclog.NewNullLogger(),
+			WithConnectionURI(TestURI))
+		err := ld.Init()
+		must.NoError(t, err)
+		defer ld.Close()
 
-			// The "test:///default" uri connects to a mock hypervisor provided by libvirt
-			// to use for testing.
-			ld := New(context.Background(), hclog.NewNullLogger(),
-				WithConnectionURI("test:///default"), WithCIController(cim))
-			ld.dataDir = t.TempDir()
-			err := ld.Init()
-			must.NoError(t, err)
-			defer ld.Close()
+		i, err := ld.GetInfo()
+		must.NoError(t, err)
+		existingRunning := i.RunningDomains
 
-			i, err := ld.GetInfo()
-			must.NoError(t, err)
+		domConfig := makeConfig()
+		domConfig.Name = "domain-1"
 
-			runningDomains := i.RunningDomains
-			domConfig := &domain.Config{
-				RemoveConfigFiles: tt.removeConfigFiles,
-				Name:              tt.domainName,
-				Memory:            66600,
-				CPUs:              2,
-				BaseImage:         "/path/to/test/image",
-				HostName:          "test-hostname",
-				SSHKey:            "sshkey lkbfubwfu...",
-				Password:          "test-password",
-				CMDs:              []string{"cmd arg arg", "cmd arg arg"},
-				BOOTCMDs:          []string{"cmd arg arg", "cmd arg arg"},
-				CIUserData:        tt.ciUserData,
-				Mounts: []domain.MountFileConfig{
-					{
-						Source:      "/mount/source/one",
-						Destination: "/path/to/file/one",
-						Tag:         "tagOne",
-						ReadOnly:    true,
-					},
-					{Source: "/mount/source/two",
-						Destination: "/path/to/file/two",
-						Tag:         "tagTwo",
-						ReadOnly:    false},
-				},
-				Files: []domain.File{
-					{
-						Path:        "/path/to/file/one",
-						Content:     "content",
-						Permissions: "444",
-						Encoding:    "b64",
-					},
-					{
-						Path:        "/path/to/file/two",
-						Content:     "content",
-						Permissions: "666",
-					},
-				},
-			}
+		must.NoError(t, ld.CreateVM(domConfig))
+		i, err = ld.GetInfo()
+		must.NoError(t, err)
+		must.One(t, i.RunningDomains-existingRunning)
+	})
 
-			err = ld.CreateVM(domConfig)
-			must.Eq(t, tt.expectError, errors.Unwrap(err))
-			if err == nil {
-				i, err = ld.GetInfo()
-				must.NoError(t, err)
+	t.Run("duplicated domain error", func(t *testing.T) {
+		ld := New(context.Background(), hclog.NewNullLogger(),
+			WithConnectionURI(TestURI))
+		err := ld.Init()
+		must.NoError(t, err)
+		defer ld.Close()
 
-				isoPath := ld.dataDir + "/" + domConfig.Name + ".iso"
-				must.Eq(t, tt.removeConfigFiles, !fileExists(t, isoPath))
-				must.One(t, i.RunningDomains-runningDomains)
-				must.Eq(t, tt.expectedCIConfig, cim.passedConfig)
-			}
-		})
-	}
+		i, err := ld.GetInfo()
+		must.NoError(t, err)
+		existingRunning := i.RunningDomains
+
+		domConfig := makeConfig()
+		domConfig.Name = "domain-1"
+
+		must.NoError(t, ld.CreateVM(domConfig))
+		i, err = ld.GetInfo()
+		must.NoError(t, err)
+		must.One(t, i.RunningDomains-existingRunning)
+
+		// try again
+		err = ld.CreateVM(domConfig)
+		must.ErrorIs(t, err, ErrDomainExists)
+	})
 }
 
 func Test_CreateStopAndDestroyDomain(t *testing.T) {
-	cim := &cloudInitMock{}
-
 	// The "test:///default" uri connects to a mock hypervisor provided by libvirt
 	// to use for testing.
 	ld := New(context.Background(), hclog.NewNullLogger(),
-		WithConnectionURI("test:///default"), WithCIController(cim))
-	ld.dataDir = t.TempDir()
+		WithConnectionURI("test:///default"))
 	err := ld.Init()
 	must.NoError(t, err)
 	defer ld.Close()
@@ -276,7 +167,6 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 		Name:              domainName,
 		Memory:            66600,
 		CPUs:              6,
-		BaseImage:         "/path/to/test/image",
 	})
 	must.NoError(t, err)
 
@@ -320,8 +210,7 @@ func Test_GetNetworkInterfaces(t *testing.T) {
 	// The "test:///default" uri connects to a mock hypervisor provided by libvirt
 	// to use for testing.
 	ld := New(context.Background(), hclog.NewNullLogger(),
-		WithConnectionURI("test:///default"), WithCIController(&cloudInitMock{}))
-	ld.dataDir = t.TempDir()
+		WithConnectionURI("test:///default"))
 	err := ld.Init()
 	must.NoError(t, err)
 	defer ld.Close()
@@ -332,7 +221,6 @@ func Test_GetNetworkInterfaces(t *testing.T) {
 		Name:              domainName,
 		Memory:            66600,
 		CPUs:              6,
-		BaseImage:         "/path/to/test/image",
 		NetworkInterfaces: []*net.NetworkInterfaceConfig{
 			{
 				Bridge: &net.NetworkInterfaceBridgeConfig{

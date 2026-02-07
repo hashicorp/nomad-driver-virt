@@ -76,6 +76,7 @@ func (c *Controller) Fingerprint(attr map[string]*structs.Attribute) {
 				"network", networkName, "error", err)
 			continue
 		}
+		defer networkInfo.Free()
 
 		active, err := networkInfo.IsActive()
 		if err != nil {
@@ -219,6 +220,7 @@ func (c *Controller) VMStartedBuild(req *net.VMStartedBuildRequest) (*net.VMStar
 	if err != nil {
 		return nil, fmt.Errorf("failed to lookup network: %w", err)
 	}
+	defer network.Free()
 
 	ipAddr, macAddr, err := c.discoverDHCPLeaseIP(network, req.Hostname, networkName, req.Hwaddrs)
 	if err != nil {
@@ -291,6 +293,7 @@ func (c *Controller) networkNameFromBridgeName(name string) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		defer networkInfo.Free()
 
 		brdigeName, err := networkInfo.GetBridgeName()
 		if err != nil {
@@ -608,6 +611,7 @@ func (c *Controller) removeIPReservation(networkName, reservation string) error 
 	if err != nil {
 		return fmt.Errorf("failed to find network %q: %w", networkName, err)
 	}
+	defer network.Free()
 
 	exists, err := c.ipReservationExists(network, reservation)
 	if err != nil {
@@ -669,6 +673,7 @@ func (c *Controller) releaseDHCPLease(networkName, reservation string) error {
 	if err != nil {
 		return fmt.Errorf("failed to lookup network %q: %w", networkName, err)
 	}
+	defer network.Free()
 
 	bridge, err := network.GetBridgeName()
 	if err != nil {

@@ -3,7 +3,13 @@
 
 package image_tools
 
-import "github.com/shoenig/test/must"
+import (
+	"runtime"
+	"strings"
+	"sync"
+
+	"github.com/shoenig/test/must"
+)
 
 func NewMockImageHandler(t must.T) *MockImageHandler {
 	return &MockImageHandler{t: t}
@@ -15,21 +21,66 @@ func NewStaticImageHandler() *StaticImageHandler {
 
 type StaticImageHandler struct {
 	GetImageFormatResult string
+
+	counts map[string]int
+	m      sync.Mutex
+	o      sync.Once
+}
+
+func (s *StaticImageHandler) incrCount() {
+	s.o.Do(func() {
+		s.counts = make(map[string]int)
+	})
+
+	ctr, _, _, ok := runtime.Caller(1)
+	if !ok {
+		panic("unable to get caller information")
+	}
+	info := runtime.FuncForPC(ctr)
+	if info == nil {
+		panic("unable to get function information")
+	}
+
+	name := info.Name()[strings.LastIndex(info.Name(), ".")+1:]
+	s.counts[name]++
+}
+
+func (s *StaticImageHandler) CallCount(fnName string) int {
+	s.m.Lock()
+	defer s.m.Unlock()
+
+	if s.counts == nil {
+		return 0
+	}
+
+	return s.counts[fnName]
 }
 
 func (s *StaticImageHandler) GetImageFormat(string) (string, error) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
 	if s.GetImageFormatResult != "" {
 		return s.GetImageFormatResult, nil
 	}
 
-	return "raw", nil
+	return "test-format", nil
 }
 
 func (s *StaticImageHandler) CreateCopy(string, string, int64) error {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
 	return nil
 }
 
 func (s *StaticImageHandler) CreateChainedCopy(string, string, int64) error {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
 	return nil
 }
 
@@ -59,6 +110,7 @@ type MockImageHandler struct {
 	getImageFormat    []GetImageFormat
 	createCopy        []CreateCopy
 	createChainedCopy []CreateChainedCopy
+	m                 sync.Mutex
 }
 
 func (m *MockImageHandler) Expect(calls ...any) *MockImageHandler {
@@ -79,21 +131,33 @@ func (m *MockImageHandler) Expect(calls ...any) *MockImageHandler {
 }
 
 func (m *MockImageHandler) ExpectGetImageFormat(c GetImageFormat) *MockImageHandler {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.getImageFormat = append(m.getImageFormat, c)
 	return m
 }
 
 func (m *MockImageHandler) ExpectCreateCopy(c CreateCopy) *MockImageHandler {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.createCopy = append(m.createCopy, c)
 	return m
 }
 
 func (m *MockImageHandler) ExpectCreateChainedCopy(c CreateChainedCopy) *MockImageHandler {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.createChainedCopy = append(m.createChainedCopy, c)
 	return m
 }
 
 func (m *MockImageHandler) GetImageFormat(path string) (string, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.getImageFormat,
@@ -111,6 +175,9 @@ func (m *MockImageHandler) GetImageFormat(path string) (string, error) {
 }
 
 func (m *MockImageHandler) CreateCopy(src, dst string, sizeM int64) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.createCopy,
@@ -134,6 +201,9 @@ func (m *MockImageHandler) CreateCopy(src, dst string, sizeM int64) error {
 }
 
 func (m *MockImageHandler) CreateChainedCopy(src, dst string, sizeM int64) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.createChainedCopy,
@@ -157,6 +227,9 @@ func (m *MockImageHandler) CreateChainedCopy(src, dst string, sizeM int64) error
 }
 
 func (m *MockImageHandler) AssertExpectations() {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceEmpty(m.t, m.getImageFormat,

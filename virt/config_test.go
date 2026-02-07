@@ -6,6 +6,7 @@ package virt
 import (
 	"testing"
 
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 	"github.com/shoenig/test/must"
@@ -157,6 +158,7 @@ config {
 					Arch:    "x86_64",
 					Machine: "pc-i440fx-jammy",
 				},
+				Disks: disks.NewDisks(),
 				NetworkInterfacesConfig: []*net.NetworkInterfaceConfig{
 					{
 						Bridge: &net.NetworkInterfaceBridgeConfig{
