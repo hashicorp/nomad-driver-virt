@@ -5,6 +5,7 @@ package iptables
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/shoenig/test/must"
 )
@@ -70,6 +71,7 @@ type mockIPTables struct {
 	listChains     []ListChains
 	newChains      []NewChain
 	t              must.T
+	m              sync.Mutex
 }
 
 // Expect adds a list of expected calls.
@@ -102,53 +104,80 @@ func (m *mockIPTables) Expect(calls ...any) *mockIPTables {
 
 // ExpectAppend adds an expected Append call.
 func (m *mockIPTables) ExpectAppend(app Append) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.appends = append(m.appends, app)
 	return m
 }
 
 // ExpectClearChain adds an expected ClearChain call.
 func (m *mockIPTables) ExpectClearChain(clear ClearChain) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.clearChains = append(m.clearChains, clear)
 	return m
 }
 
 // ExpectDelete adds an expected Delete call.
 func (m *mockIPTables) ExpectDelete(del Delete) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.deletes = append(m.deletes, del)
 	return m
 }
 
 // ExpectDeleteChain adds an expected DeleteChain call.
 func (m *mockIPTables) ExpectDeleteChain(del DeleteChain) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.deleteChains = append(m.deleteChains, del)
 	return m
 }
 
 // ExpectDeleteIfExists adds an expected DeleteIfExists call.
 func (m *mockIPTables) ExpectDeleteIfExists(del DeleteIfExists) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.deleteIfExists = append(m.deleteIfExists, del)
 	return m
 }
 
 // ExpectInsert adds an expected Insert call.
 func (m *mockIPTables) ExpectInsert(ins Insert) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.inserts = append(m.inserts, ins)
 	return m
 }
 
 // ExpectListChains adds an expected ListChains call.
 func (m *mockIPTables) ExpectListChains(list ListChains) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.listChains = append(m.listChains, list)
 	return m
 }
 
 // ExpectNewChain adds an expected NewChain call.
 func (m *mockIPTables) ExpectNewChain(new NewChain) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.newChains = append(m.newChains, new)
 	return m
 }
 
 func (m *mockIPTables) Append(table, chain string, rulespec ...string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.appends,
@@ -168,6 +197,9 @@ func (m *mockIPTables) Append(table, chain string, rulespec ...string) error {
 }
 
 func (m *mockIPTables) ClearChain(table, chain string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.clearChains,
@@ -186,6 +218,9 @@ func (m *mockIPTables) ClearChain(table, chain string) error {
 }
 
 func (m *mockIPTables) Delete(table, chain string, rulespec ...string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.deletes,
@@ -205,6 +240,9 @@ func (m *mockIPTables) Delete(table, chain string, rulespec ...string) error {
 }
 
 func (m *mockIPTables) DeleteChain(table, chain string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.deleteChains,
@@ -223,6 +261,9 @@ func (m *mockIPTables) DeleteChain(table, chain string) error {
 }
 
 func (m *mockIPTables) DeleteIfExists(table, chain string, rulespec ...string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.deleteIfExists,
@@ -242,6 +283,9 @@ func (m *mockIPTables) DeleteIfExists(table, chain string, rulespec ...string) e
 }
 
 func (m *mockIPTables) Insert(table, chain string, pos int, rulespec ...string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.inserts,
@@ -262,6 +306,9 @@ func (m *mockIPTables) Insert(table, chain string, pos int, rulespec ...string) 
 }
 
 func (m *mockIPTables) ListChains(table string) ([]string, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.listChains,
@@ -275,6 +322,9 @@ func (m *mockIPTables) ListChains(table string) ([]string, error) {
 }
 
 func (m *mockIPTables) NewChain(table, chain string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.newChains,
@@ -295,6 +345,9 @@ func (m *mockIPTables) NewChain(table, chain string) error {
 // AssertExpectations verifies that all expected invocations
 // have been called.
 func (m *mockIPTables) AssertExpectations() {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceEmpty(m.t, m.appends,

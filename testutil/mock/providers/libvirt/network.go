@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"net/netip"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
@@ -44,13 +45,19 @@ type GetXMLDesc struct {
 	Err    error
 }
 
+type Free struct {
+	Err error
+}
+
 type MockNetwork struct {
 	isActives      []IsActive
 	getBridgeNames []GetBridgeName
 	getDHCPLeases  []GetDHCPLeases
 	updates        []Update
 	getXMLDescs    []GetXMLDesc
+	free           []Free
 	t              must.T
+	m              sync.Mutex
 }
 
 // NewNetwork returns a new mock compatible with libvirt.ConnectNetworkShim
@@ -72,6 +79,8 @@ func (m *MockNetwork) Expect(calls ...any) *MockNetwork {
 			m.ExpectUpdate(c)
 		case GetXMLDesc:
 			m.ExpectGetXMLDesc(c)
+		case Free:
+			m.ExpectFree(c)
 		default:
 			panic(fmt.Sprintf("unsupported type for mock expectation: %T", c))
 		}
@@ -82,35 +91,61 @@ func (m *MockNetwork) Expect(calls ...any) *MockNetwork {
 
 // ExpactIsActive adds an expected IsActive call.
 func (m *MockNetwork) ExpectIsActive(act IsActive) *MockNetwork {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.isActives = append(m.isActives, act)
 	return m
 }
 
 // ExpectGetBridgeName adds an expected ExpectGetBridgeName call.
 func (m *MockNetwork) ExpectGetBridgeName(get GetBridgeName) *MockNetwork {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.getBridgeNames = append(m.getBridgeNames, get)
 	return m
 }
 
 // ExpectGetDHCPLeases adds an expected ExpectGetDHCPLeases call.
 func (m *MockNetwork) ExpectGetDHCPLeases(get GetDHCPLeases) *MockNetwork {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.getDHCPLeases = append(m.getDHCPLeases, get)
 	return m
 }
 
 // ExpectUpdate adds an expected Update call.
 func (m *MockNetwork) ExpectUpdate(up Update) *MockNetwork {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.updates = append(m.updates, up)
 	return m
 }
 
 // ExpectGetXMLDesc adds an expected GetXMLDesc call.
 func (m *MockNetwork) ExpectGetXMLDesc(get GetXMLDesc) *MockNetwork {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.getXMLDescs = append(m.getXMLDescs, get)
 	return m
 }
 
+func (m *MockNetwork) ExpectFree(free Free) *MockNetwork {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.free = append(m.free, free)
+	return m
+}
+
 func (m *MockNetwork) IsActive() (bool, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.isActives,
@@ -122,6 +157,9 @@ func (m *MockNetwork) IsActive() (bool, error) {
 }
 
 func (m *MockNetwork) GetBridgeName() (string, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.getBridgeNames,
@@ -133,6 +171,9 @@ func (m *MockNetwork) GetBridgeName() (string, error) {
 }
 
 func (m *MockNetwork) GetDHCPLeases() ([]libvirt.NetworkDHCPLease, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.getDHCPLeases,
@@ -144,6 +185,9 @@ func (m *MockNetwork) GetDHCPLeases() ([]libvirt.NetworkDHCPLease, error) {
 }
 
 func (m *MockNetwork) Update(cmd libvirt.NetworkUpdateCommand, section libvirt.NetworkUpdateSection, parentIndex int, xml string, flags libvirt.NetworkUpdateFlags) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.updates,
@@ -165,6 +209,9 @@ func (m *MockNetwork) Update(cmd libvirt.NetworkUpdateCommand, section libvirt.N
 }
 
 func (m *MockNetwork) GetXMLDesc(flags libvirt.NetworkXMLFlags) (string, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.getXMLDescs,
@@ -177,9 +224,26 @@ func (m *MockNetwork) GetXMLDesc(flags libvirt.NetworkXMLFlags) (string, error) 
 	return call.Result, call.Err
 }
 
+func (m *MockNetwork) Free() error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.free,
+		must.Sprint("Unexpected call to Free"))
+	call := m.free[0]
+	m.free = m.free[1:]
+
+	return call.Err
+}
+
 // AssertExpectations verifies that all expected invocations
 // have been called.
 func (m *MockNetwork) AssertExpectations() {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceEmpty(m.t, m.isActives,
@@ -192,6 +256,8 @@ func (m *MockNetwork) AssertExpectations() {
 		must.Sprintf("Update expecting %d more invocations", len(m.updates)))
 	must.SliceEmpty(m.t, m.getXMLDescs,
 		must.Sprintf("GetXMLDesc expecting %d more invocations", len(m.getXMLDescs)))
+	must.SliceEmpty(m.t, m.free,
+		must.Sprintf("Free expecting %d more invocations", len(m.free)))
 }
 
 var startLeaseAddress = netip.MustParseAddr("192.168.88.3")

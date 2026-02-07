@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -15,8 +16,10 @@ import (
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
-	"github.com/hashicorp/nomad-driver-virt/storage/image_tools"
+	"github.com/hashicorp/nomad-driver-virt/storage"
+	mock_cloudinit "github.com/hashicorp/nomad-driver-virt/testutil/mock/cloudinit"
 	mock_providers "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers"
+	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 
@@ -107,13 +110,22 @@ type mockVirtualizer struct {
 
 	*mockTaskGetter
 
-	config *vm.Config
-	count  int
-	err    error
+	storage storage.Storage
+	config  *vm.Config
+	count   int
+	err     error
 }
 
 func (mv *mockVirtualizer) Init() error {
 	return nil
+}
+
+func (mv *mockVirtualizer) SetupStorage(*storage.Config) error {
+	return nil
+}
+
+func (mv *mockVirtualizer) Storage() storage.Storage {
+	return mv.storage
 }
 
 func (mv *mockVirtualizer) Networking() (net.Net, error) {
@@ -194,8 +206,7 @@ func createBasicResources() *drivers.Resources {
 
 // virtDriverHarness wires up everything needed to launch a task with a virt driver.
 // A driver plugin interface and cleanup function is returned
-func virtDriverHarness(t *testing.T, p providers.Providers, ih image_tools.ImageHandler,
-	dataDir string) *dtestutil.DriverHarness {
+func virtDriverHarness(t *testing.T, p providers.Providers, ci cloudinit.CloudInit, dataDir string) *dtestutil.DriverHarness {
 	logger := testlog.HCLogger(t)
 	if testing.Verbose() {
 		logger.SetLevel(hclog.Trace)
@@ -205,7 +216,8 @@ func virtDriverHarness(t *testing.T, p providers.Providers, ih image_tools.Image
 
 	baseConfig := &base.Config{}
 	config := &virt.Config{
-		DataDir: dataDir,
+		DataDir:    dataDir,
+		ImagePaths: []string{dataDir},
 	}
 
 	if err := base.MsgPackEncode(&baseConfig.PluginConfig, config); err != nil {
@@ -214,9 +226,13 @@ func virtDriverHarness(t *testing.T, p providers.Providers, ih image_tools.Image
 
 	d := NewPlugin(logger).(*VirtDriverPlugin)
 	d.providers = p
+	if ci != nil {
+		d.ci = ci
+	} else {
+		d.ci = &mock_cloudinit.StaticCloudInit{}
+	}
 
 	must.NoError(t, d.SetConfig(baseConfig))
-	d.imageHandler = ih
 
 	harness := dtestutil.NewDriverHarness(t, d)
 
@@ -280,19 +296,27 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 		},
 	}
 
-	mockVirtualizer := &mockVirtualizer{mockTaskGetter: mockTaskGetter}
-
-	mockImageHandler := &mockImageHandler{
-		imageFormat: "tif",
+	mockVirtualizer := &mockVirtualizer{
+		mockTaskGetter: mockTaskGetter,
+		storage: &mock_storage.StaticStorage{
+			ImageHandlerResult: &mockImageHandler{
+				imageFormat: "tif",
+			},
+			GenerateDeviceNameResult: "test-dev-name",
+		},
 	}
 
-	d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), mockImageHandler, tempDir)
+	d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), nil, tempDir)
 	cleanup := d.MkAllocDir(task, true)
 	defer cleanup()
 
+	// Stub the cloudinit generated image
+	f, err := os.OpenFile(filepath.Join(task.AllocDir, "cloudinit.iso"), os.O_CREATE, 0644)
+	must.NoError(t, err)
+	f.Close()
+
 	dth, _, err := d.StartTask(task)
 	must.NoError(t, err)
-
 	must.One(t, dth.Version)
 	must.One(t, mockVirtualizer.getNumberOfVMs())
 
@@ -303,9 +327,11 @@ func TestVirtDriver_Start_Wait_Destroy(t *testing.T) {
 	must.Eq(t, 3, callConfig.CPUs)
 	must.StrContains(t, "arch", callConfig.OsVariant.Arch)
 	must.StrContains(t, "machine", callConfig.OsVariant.Machine)
-	must.StrContains(t, mockImage.Name(), callConfig.BaseImage)
-	must.StrContains(t, "tif", callConfig.DiskFmt)
-	must.Eq(t, 2666, callConfig.PrimaryDiskSize)
+
+	// these checks need to be in disks
+	must.SliceNotEmpty(t, callConfig.Disks)
+	must.StrContains(t, mockImage.Name(), callConfig.Disks[0].Source.Image)
+	must.StrContains(t, "tif", callConfig.Disks[0].Format)
 	must.StrContains(t, "nomad-task-name-0000000", callConfig.HostName)
 	must.Eq(t, 3, len(callConfig.Mounts))
 	must.Eq(t, vm.MountFileConfig{
@@ -407,15 +433,22 @@ func TestVirtDriver_Start_Recover_Destroy(t *testing.T) {
 
 	mockVirtualizer := &mockVirtualizer{
 		mockTaskGetter: mockTaskGetter,
+		storage: &mock_storage.StaticStorage{
+			ImageHandlerResult: &mockImageHandler{
+				imageFormat: "tif",
+			},
+			GenerateDeviceNameResult: "test-dev-name",
+		},
 	}
 
-	mockImageHandler := &mockImageHandler{
-		imageFormat: "tif",
-	}
-
-	d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), mockImageHandler, tempDir)
+	d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), nil, tempDir)
 	cleanup := d.MkAllocDir(task, true)
 	defer cleanup()
+
+	// Stub the cloudinit generated image
+	f, err := os.OpenFile(filepath.Join(task.AllocDir, "cloudinit.iso"), os.O_CREATE, 0644)
+	must.NoError(t, err)
+	f.Close()
 
 	dth, _, err := d.StartTask(task)
 	must.NoError(t, err)
@@ -432,7 +465,7 @@ func TestVirtDriver_Start_Recover_Destroy(t *testing.T) {
 	must.Eq(t, drivers.TaskStateRunning, ts.State)
 	must.StrContains(t, task.ID, ts.ID)
 
-	d = virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), mockImageHandler, tempDir)
+	d = virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), nil, tempDir)
 
 	err = d.RecoverTask(dth)
 	must.NoError(t, err)
@@ -466,15 +499,24 @@ func TestVirtDriver_Start_Wait_Crashed(t *testing.T) {
 		},
 	}
 
-	mockVirtualizer := &mockVirtualizer{mockTaskGetter: mockTaskGetter}
-
-	mockImageHandler := &mockImageHandler{
-		imageFormat: "tif",
+	mockVirtualizer := &mockVirtualizer{
+		mockTaskGetter: mockTaskGetter,
+		storage: &mock_storage.StaticStorage{
+			ImageHandlerResult: &mockImageHandler{
+				imageFormat: "tif",
+			},
+			GenerateDeviceNameResult: "test-dev-name",
+		},
 	}
 
-	d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), mockImageHandler, tempDir)
+	d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), nil, tempDir)
 	cleanup := d.MkAllocDir(task, true)
 	defer cleanup()
+
+	// Stub the cloudinit generated image
+	f, err := os.OpenFile(filepath.Join(task.AllocDir, "cloudinit.iso"), os.O_CREATE, 0644)
+	must.NoError(t, err)
+	f.Close()
 
 	dth, _, err := d.StartTask(task)
 	must.NoError(t, err)
@@ -517,10 +559,14 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 		},
 	}
 
-	mockVirtualizer := &mockVirtualizer{mockTaskGetter: mockTaskGetter}
-
-	mockImageHandler := &mockImageHandler{
-		imageFormat: "tif",
+	mockVirtualizer := &mockVirtualizer{
+		mockTaskGetter: mockTaskGetter,
+		storage: &mock_storage.StaticStorage{
+			ImageHandlerResult: &mockImageHandler{
+				imageFormat: "tif",
+			},
+			GenerateDeviceNameResult: "test-device-name",
+		},
 	}
 
 	tests := []struct {
@@ -538,7 +584,7 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 		{
 			name:           "copy_requested",
 			enableThinCopy: true,
-			expectedPath:   fmt.Sprintf("%s/%s.img", tempDir, "task-name-0000000"),
+			expectedPath:   fmt.Sprintf("%s/%s.img", tempDir, mockImage.Name()),
 			expectedFormat: "qcow2",
 		},
 	}
@@ -556,16 +602,22 @@ func TestVirtDriver_ImageOptions(t *testing.T) {
 			}
 			must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-			d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), mockImageHandler, tempDir)
+			d := virtDriverHarness(t, mock_providers.NewStatic(mockVirtualizer), nil, tempDir)
 			cleanup := d.MkAllocDir(task, true)
 			defer cleanup()
+
+			// Stub the cloudinit generated image
+			f, err := os.OpenFile(filepath.Join(task.AllocDir, "cloudinit.iso"), os.O_CREATE, 0644)
+			must.NoError(t, err)
+			f.Close()
 
 			_, _, err = d.StartTask(task)
 			must.NoError(t, err)
 
 			calledConfig := mockVirtualizer.getPassedConfig()
-			must.StrContains(t, tt.expectedPath, calledConfig.BaseImage)
-			must.StrContains(t, tt.expectedFormat, calledConfig.DiskFmt)
+			must.SliceNotEmpty(t, calledConfig.Disks)
+			must.StrContains(t, tt.expectedPath, calledConfig.Disks[0].Source.Image)
+			must.StrContains(t, tt.expectedFormat, calledConfig.Disks[0].Format)
 		})
 	}
 }
@@ -610,20 +662,26 @@ func TestVirtDriver_Start_Wait_Destroy_LibvirtIntegration(t *testing.T) {
 
 	must.NoError(t, task.EncodeConcreteDriverConfig(&taskCfg))
 
-	mockImageHandler := &mockImageHandler{
-		imageFormat: "qcow2",
-	}
-
-	cloudInitMock := cloudInitMock{}
-
 	v := libvirt.New(context.Background(), hclog.NewNullLogger(),
-		libvirt.WithConnectionURI("test:///default"),
-		libvirt.WithCIController(&cloudInitMock))
+		libvirt.WithConnectionURI("test:///default"))
 	must.NoError(t, v.Init())
+	must.NoError(t, v.SetupStorage(&storage.Config{
+		Directory: []storage.Directory{
+			{
+				Name: "legacy-pool",
+				Path: tempDir,
+			},
+		},
+	}))
 
-	d := virtDriverHarness(t, mock_providers.NewStatic(v), mockImageHandler, tempDir)
+	d := virtDriverHarness(t, mock_providers.NewStatic(v), nil, tempDir)
 	cleanup := d.MkAllocDir(task, true)
 	defer cleanup()
+
+	// Stub the cloudinit generated image
+	f, err := os.OpenFile(filepath.Join(task.AllocDir, "cloudinit.iso"), os.O_CREATE, 0644)
+	must.NoError(t, err)
+	f.Close()
 
 	dth, _, err := d.StartTask(task)
 	must.NoError(t, err)

@@ -145,4 +145,8 @@ func (cnm *StaticNetwork) Update(cmd libvirt.NetworkUpdateCommand, section libvi
 	return nil
 }
 
+func (cnm *StaticNetwork) Free() error {
+	return nil
+}
+
 var _ shims.ConnectNetwork = (*StaticNetwork)(nil)
