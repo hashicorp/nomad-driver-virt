@@ -515,6 +515,7 @@ func TestController_discoverDHCPLeaseIP(t *testing.T) {
 	defaultNet, err := controller.netConn.LookupNetworkByName("default")
 	must.NoError(t, err)
 	must.NotNil(t, defaultNet)
+	defer defaultNet.Free()
 
 	// Query for a domain that does not have a lease entry and ensure the
 	// timeout is triggered.
@@ -1083,6 +1084,7 @@ func Test_ipReservationExists(t *testing.T) {
 
 	network, err := controller.netConn.LookupNetworkByName("default")
 	must.NoError(t, err)
+	defer network.Free()
 
 	for _, tc := range testCases {
 		t.Run(tc.desc, func(t *testing.T) {

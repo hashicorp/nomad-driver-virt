@@ -5,6 +5,7 @@ package libvirt
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/shoenig/test/must"
@@ -25,6 +26,7 @@ type MockConnect struct {
 	listNetworks         []ListNetworks
 	lookupNetworkByNames []LookupNetworkByName
 	t                    must.T
+	m                    sync.Mutex
 }
 
 // NewConnect returns a new mock compatible with shims.Connect
@@ -50,17 +52,26 @@ func (m *MockConnect) Expect(calls ...any) *MockConnect {
 
 // ExpectListNetworks adds an expected ListNetworks call.
 func (m *MockConnect) ExpectListNetworks(list ListNetworks) *MockConnect {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.listNetworks = append(m.listNetworks, list)
 	return m
 }
 
 // ExpectLookupNetworkByName adds an expected ExpectLookupNetworkByName call.
 func (m *MockConnect) ExpectLookupNetworkByName(lookup LookupNetworkByName) *MockConnect {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.lookupNetworkByNames = append(m.lookupNetworkByNames, lookup)
 	return m
 }
 
 func (m *MockConnect) ListNetworks() ([]string, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.listNetworks,
@@ -72,6 +83,9 @@ func (m *MockConnect) ListNetworks() ([]string, error) {
 }
 
 func (m *MockConnect) LookupNetworkByName(name string) (shims.ConnectNetwork, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.lookupNetworkByNames,
@@ -79,7 +93,7 @@ func (m *MockConnect) LookupNetworkByName(name string) (shims.ConnectNetwork, er
 	call := m.lookupNetworkByNames[0]
 	m.lookupNetworkByNames = m.lookupNetworkByNames[1:]
 
-	must.Eq(m.t, call.Name, name,
+	must.Eq(m.t, struct{ Name string }{call.Name}, struct{ Name string }{name},
 		must.Sprint("LookupNetworkByName received incorrect arguments"))
 
 	return call.Result, call.Err
@@ -88,6 +102,9 @@ func (m *MockConnect) LookupNetworkByName(name string) (shims.ConnectNetwork, er
 // AssertExpectations verifies that all expected invocations
 // have been called.
 func (m *MockConnect) AssertExpectations() {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceEmpty(m.t, m.listNetworks,

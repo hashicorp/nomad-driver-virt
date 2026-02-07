@@ -6,6 +6,7 @@ package net
 import (
 	"maps"
 	"slices"
+	"sync"
 
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
@@ -43,6 +44,7 @@ type MockNet struct {
 	fingerprint          []Fingerprint
 	vmStartedBuild       []VMStartedBuild
 	vmTerminatedTeardown []VMTerminatedTeardown
+	m                    sync.Mutex
 }
 
 func (m *MockNet) Expect(calls ...any) *MockNet {
@@ -65,26 +67,41 @@ func (m *MockNet) Expect(calls ...any) *MockNet {
 }
 
 func (m *MockNet) ExpectInit(c Init) *MockNet {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.init = append(m.init, c)
 	return m
 }
 
 func (m *MockNet) ExpectFingerprint(c Fingerprint) *MockNet {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.fingerprint = append(m.fingerprint, c)
 	return m
 }
 
 func (m *MockNet) ExpectVMStartedBuild(c VMStartedBuild) *MockNet {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.vmStartedBuild = append(m.vmStartedBuild, c)
 	return m
 }
 
 func (m *MockNet) ExpectVMTerminatedTeardown(c VMTerminatedTeardown) *MockNet {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.vmTerminatedTeardown = append(m.vmTerminatedTeardown, c)
 	return m
 }
 
 func (m *MockNet) Init() error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.init,
@@ -96,6 +113,9 @@ func (m *MockNet) Init() error {
 }
 
 func (m *MockNet) Fingerprint(attrs map[string]*structs.Attribute) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.fingerprint,
@@ -128,6 +148,9 @@ func (m *MockNet) Fingerprint(attrs map[string]*structs.Attribute) {
 }
 
 func (m *MockNet) VMStartedBuild(request *net.VMStartedBuildRequest) (*net.VMStartedBuildResponse, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.vmStartedBuild,
@@ -145,6 +168,9 @@ func (m *MockNet) VMStartedBuild(request *net.VMStartedBuildRequest) (*net.VMSta
 }
 
 func (m *MockNet) VMTerminatedTeardown(request *net.VMTerminatedTeardownRequest) (*net.VMTerminatedTeardownResponse, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.vmTerminatedTeardown,

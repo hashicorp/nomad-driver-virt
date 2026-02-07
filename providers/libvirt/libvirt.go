@@ -8,14 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"net/netip"
-	"os"
-	"path/filepath"
 	"sync"
 
-	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	libvirtnet "github.com/hashicorp/nomad-driver-virt/providers/libvirt/net"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
+	libvirt_storage "github.com/hashicorp/nomad-driver-virt/providers/libvirt/storage"
+	"github.com/hashicorp/nomad-driver-virt/storage"
 	virtnet "github.com/hashicorp/nomad-driver-virt/virt/net"
 
 	"github.com/hashicorp/go-hclog"
@@ -25,16 +24,12 @@ import (
 )
 
 const (
-	defaultURI               = "qemu:///system"
-	defaultVirtualizatioType = "hvm"
-	defaultAccelerator       = "kvm"
-	defaultSecurityMode      = "mapped"
-	defaultInterfaceModel    = "virtio"
-	libvirtVirtioChannel     = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
-
-	defaultDataDir     = "/var/lib/"
-	dataDirPermissions = 777
-	storagePoolName    = "virt-sp"
+	defaultURI                = "qemu:///system"
+	defaultVirtualizationType = "hvm"
+	defaultAccelerator        = "kvm"
+	defaultSecurityMode       = "mapped"
+	defaultInterfaceModel     = "virtio"
+	libvirtVirtioChannel      = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
 
 	// URI for running in test mode
 	TestURI = "test:///default"
@@ -53,7 +48,8 @@ const (
 var (
 	ErrConnectionClosed = errors.New("libvirt connection is closed")
 	ErrDomainExists     = errors.New("the domain exists already")
-	ErrDomainNotFound   = errors.New("the domain does not exist")
+	ErrDomainNotFound   = fmt.Errorf("domain %w", vm.ErrNotFound)
+	ErrPoolNotFound     = fmt.Errorf("storage pool %w", vm.ErrNotFound)
 
 	// nomadDomainStates is a mapping of the libvirt domain state to local string constant
 	nomadDomainStates = map[libvirt.DomainState]string{
@@ -80,12 +76,6 @@ var (
 	}
 )
 
-// TODO: Add function to test for correct cloudinit userdata syntax, and dont
-// use it if it fails, throw a warning!
-type CloudInit interface {
-	Apply(ci *cloudinit.Config, path string) error
-}
-
 type driver struct {
 	ctx      context.Context
 	uri      string
@@ -93,11 +83,10 @@ type driver struct {
 	logger   hclog.Logger
 	user     string
 	password string
-	ci       CloudInit
-	dataDir  string
-	sp       *libvirt.StoragePool
 	opts     []Option
 	closed   bool
+	storage  storage.Storage
+	cancel   context.CancelFunc
 	m        sync.Mutex
 }
 
@@ -113,9 +102,7 @@ func (d *driver) Copy() *driver {
 		logger:   d.logger,
 		user:     d.user,
 		password: d.password,
-		ci:       d.ci,
-		dataDir:  d.dataDir,
-		sp:       d.sp,
+		storage:  d.storage,
 	}
 	go dCopy.monitorCtx()
 
@@ -123,12 +110,6 @@ func (d *driver) Copy() *driver {
 }
 
 type Option func(*driver)
-
-func WithDataDir(dir string) Option {
-	return func(d *driver) {
-		d.dataDir = dir
-	}
-}
 
 func WithConfig(c *Config) Option {
 	return func(d *driver) {
@@ -161,9 +142,9 @@ func WithAuth(user, password string) Option {
 	}
 }
 
-func WithCIController(ci CloudInit) Option {
+func WithStorage(s storage.Storage) Option {
 	return func(d *driver) {
-		d.ci = ci
+		d.storage = s
 	}
 }
 
@@ -174,10 +155,11 @@ func newConnection(uri string, user string, pass string) (*libvirt.Connect, erro
 
 	callback := func(creds []*libvirt.ConnectCredential) {
 		for _, cred := range creds {
-			if cred.Type == libvirt.CRED_AUTHNAME {
+			switch cred.Type {
+			case libvirt.CRED_AUTHNAME:
 				cred.Result = user
 				cred.ResultLen = len(cred.Result)
-			} else if cred.Type == libvirt.CRED_PASSPHRASE {
+			case libvirt.CRED_PASSPHRASE:
 				cred.Result = pass
 				cred.ResultLen = len(cred.Result)
 			}
@@ -195,6 +177,7 @@ func newConnection(uri string, user string, pass string) (*libvirt.Connect, erro
 	return virConn, err
 }
 
+// connection returns a working connection to the libvirt daemon
 func (d *driver) connection() (*libvirt.Connect, error) {
 	d.m.Lock()
 	defer d.m.Unlock()
@@ -213,6 +196,9 @@ func (d *driver) connection() (*libvirt.Connect, error) {
 		if err != nil {
 			d.logger.Warn("error on connection alive check", "error", err)
 		}
+
+		// it's not alive so close it to free the connection resources
+		d.conn.Close()
 	}
 
 	var err error
@@ -224,47 +210,28 @@ func (d *driver) connection() (*libvirt.Connect, error) {
 	return d.conn, nil
 }
 
+// monitorCtx monitors the context and once done closes
+// the connection and marks the driver as closed
 func (d *driver) monitorCtx() {
-	select {
-	case <-d.ctx.Done():
-		d.m.Lock()
-		defer d.m.Unlock()
+	<-d.ctx.Done()
+	d.m.Lock()
+	defer d.m.Unlock()
 
-		d.closed = true
-		if d.conn != nil {
-			d.conn.Close()
-		}
-		return
+	d.closed = true
+	if d.conn != nil {
+		d.conn.Close()
+		d.conn = nil
 	}
-}
-
-func (d *driver) lookForExistingStoragePool(name string) (*libvirt.StoragePool, error) {
-	sps, err := d.conn.ListAllStoragePools(libvirt.CONNECT_LIST_STORAGE_POOLS_ACTIVE)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, sp := range sps {
-		n, err := sp.GetName()
-		if err != nil {
-			return nil, err
-		}
-
-		if n == name {
-			return &sp, nil
-		}
-	}
-
-	return nil, nil
 }
 
 func New(ctx context.Context, logger hclog.Logger, opt ...Option) *driver {
+	ctx, cancel := context.WithCancel(ctx)
 	d := &driver{
-		ctx:     ctx,
-		logger:  logger.Named("nomad-virt-plugin"),
-		uri:     defaultURI,
-		opts:    opt,
-		dataDir: defaultDataDir,
+		ctx:    ctx,
+		logger: logger.Named("libvirt"),
+		uri:    defaultURI,
+		opts:   opt,
+		cancel: cancel,
 	}
 
 	for _, opt := range d.opts {
@@ -276,59 +243,94 @@ func New(ctx context.Context, logger hclog.Logger, opt ...Option) *driver {
 	return d
 }
 
-// Start executes all the options passed at creation and initializes all
-// the dependencies, they are not initialized at creation because the NewPlugin
-// function does not return errors. It also starts or reataches a storage pool
-// to place the disks for the virtual machines.
+// Init initializes the driver. For libvirt, this just verifies it can connect.
 func (d *driver) Init() error {
-	if d.ci == nil {
-		ci, err := cloudinit.NewController(d.logger.Named("cloud-init"))
-		if err != nil {
-			return err
-		}
-		d.ci = ci
-	}
-	conn, err := d.connection()
+	_, err := d.connection()
 	if err != nil {
 		return err
 	}
 
-	// In order to make host files visible to the virtual machines, they need to be
-	// placed inside a defined storage pool.
-	found, err := d.lookForExistingStoragePool(storagePoolName)
-	if err != nil {
-		return fmt.Errorf("libvirt: unable to list existing storage pools: %w", err)
-
-	}
-
-	if found == nil {
-		sp := libvirtxml.StoragePool{
-			Name: storagePoolName,
-			Target: &libvirtxml.StoragePoolTarget{
-				Path: d.dataDir,
-			},
-			Type: "dir",
-		}
-
-		spXML, err := sp.Marshal()
-		if err != nil {
-			return err
-		}
-
-		d.logger.Info("creating storage pool")
-		found, err = conn.StoragePoolCreateXML(spXML, 0)
-		if err != nil {
-			return fmt.Errorf("libvirt: unable to create storage pool: %w", err)
-
-		}
-
-		d.logger.Info("assigning storage pool")
-	}
-	d.sp = found
-
 	return nil
 }
 
+// SetupStorage loads the storage interface enabling connfigured storage pool
+func (d *driver) SetupStorage(config *storage.Config) error {
+	if config == nil {
+		return fmt.Errorf("%w: missing storage pool configuration", vm.ErrInvalidConfiguration)
+	}
+
+	s, err := libvirt_storage.New(d.logger, d, config)
+	if err != nil {
+		return err
+	}
+
+	d.storage = s
+	return nil
+}
+
+// NewStream creates a new libvirt stream
+// NOTE: caller is responsible to free result
+func (d *driver) NewStream() (shims.Stream, error) {
+	c, err := d.connection()
+	if err != nil {
+		return nil, err
+	}
+
+	s, err := c.NewStream(0)
+	if err != nil {
+		return nil, err
+	}
+
+	return shims.WrapStream(s), nil
+}
+
+// FindStoragePool finds the named storage pool
+// NOTE: caller is responsible to free result
+func (d *driver) FindStoragePool(name string) (shims.StoragePool, error) {
+	conn, err := d.connection()
+	if err != nil {
+		return nil, err
+	}
+
+	pool, err := conn.LookupStoragePoolByName(name)
+	if err != nil && !errors.Is(err, libvirt.ERR_NO_STORAGE_POOL) {
+		return nil, err
+	}
+
+	if pool == nil {
+		return nil, ErrPoolNotFound
+	}
+
+	return shims.WrapStoragePool(pool), nil
+}
+
+// CreateStoragePool creates a new libvirt storage pool
+// NOTE: caller is responsible to free result
+func (d *driver) CreateStoragePool(def libvirtxml.StoragePool) (shims.StoragePool, error) {
+	conn, err := d.connection()
+	if err != nil {
+		return nil, err
+	}
+
+	poolDef, err := def.Marshal()
+	if err != nil {
+		return nil, err
+	}
+
+	pool, err := conn.StoragePoolCreateXML(poolDef, 0)
+	if err != nil {
+		return nil, err
+	}
+
+	return shims.WrapStoragePool(pool), nil
+}
+
+// Storage returns the storage interface
+func (d *driver) Storage() storage.Storage {
+	return d.storage
+}
+
+// ListNetworks lists the available networks to libvirt
 func (d *driver) ListNetworks() ([]string, error) {
 	conn, err := d.connection()
 	if err != nil {
@@ -338,6 +340,8 @@ func (d *driver) ListNetworks() ([]string, error) {
 	return conn.ListNetworks()
 }
 
+// LookupNetworkByName looks up a network by its name
+// NOTE: caller is responsible to free result
 func (d *driver) LookupNetworkByName(name string) (shims.ConnectNetwork, error) {
 	conn, err := d.connection()
 	if err != nil {
@@ -347,6 +351,7 @@ func (d *driver) LookupNetworkByName(name string) (shims.ConnectNetwork, error) 
 	return conn.LookupNetworkByName(name)
 }
 
+// GetInfo returns information about this virtualizer
 func (d *driver) GetInfo() (vm.VirtualizerInfo, error) {
 	li := vm.VirtualizerInfo{}
 
@@ -379,16 +384,31 @@ func (d *driver) GetInfo() (vm.VirtualizerInfo, error) {
 	if err != nil {
 		return li, fmt.Errorf("libvirt: unable to get active domains: %w", err)
 	}
+	defer func() {
+		for _, d := range aDoms {
+			d.Free()
+		}
+	}()
 
 	iDoms, err := conn.ListAllDomains(libvirt.CONNECT_LIST_DOMAINS_INACTIVE)
 	if err != nil {
 		return li, fmt.Errorf("libvirt: unable to get inactive domains: %w", err)
 	}
+	defer func() {
+		for _, d := range iDoms {
+			d.Free()
+		}
+	}()
 
 	sps, err := conn.ListAllStoragePools(libvirt.CONNECT_LIST_STORAGE_POOLS_ACTIVE)
 	if err != nil {
 		return li, fmt.Errorf("libvirt: unable to get storage pools: %w", err)
 	}
+	defer func() {
+		for _, p := range sps {
+			p.Free()
+		}
+	}()
 
 	li.Cores = ni.Cores
 	li.Memory = ni.Memory
@@ -404,62 +424,30 @@ func (d *driver) GetInfo() (vm.VirtualizerInfo, error) {
 	return li, nil
 }
 
-func (d *driver) Close() (int, error) {
+// Close closes the connection to libvirtd.
+func (d *driver) Close() error {
 	d.m.Lock()
 	defer d.m.Unlock()
+	var err error
 
-	if d.conn == nil {
-		return 0, nil
+	// If the connection is still available, close it
+	// and unset it
+	if d.conn != nil {
+		_, err = d.conn.Close()
+		d.conn = nil
 	}
 
-	return d.conn.Close()
-}
+	// Mark as closed
+	d.closed = true
 
-func createCloudInitConfig(config *vm.Config) *cloudinit.Config {
+	// Cancel the context to stop the monitor
+	d.cancel()
 
-	ms := []cloudinit.MountFileConfig{}
-	for _, m := range config.Mounts {
-		mount := cloudinit.MountFileConfig{
-			Destination: m.Destination,
-			Tag:         m.Tag,
-		}
-
-		ms = append(ms, mount)
-	}
-
-	fs := []cloudinit.File{}
-	for _, f := range config.Files {
-		file := cloudinit.File{
-			Path:        f.Path,
-			Content:     f.Content,
-			Permissions: f.Permissions,
-			Encoding:    f.Encoding,
-			Owner:       f.Owner,
-			Group:       f.Group,
-		}
-
-		fs = append(fs, file)
-	}
-
-	return &cloudinit.Config{
-		MetaData: cloudinit.MetaData{
-			InstanceID:    config.Name,
-			LocalHostname: config.HostName,
-		},
-		VendorData: cloudinit.VendorData{
-			BootCMD:  config.BOOTCMDs,
-			RunCMD:   config.CMDs,
-			Mounts:   ms,
-			Files:    fs,
-			Password: config.Password,
-			SSHKey:   config.SSHKey,
-		},
-		UserData: config.CIUserData,
-	}
+	return err
 }
 
 // getDomain looks up a domain by name, if an error ocurred, it will be returned.
-// If no domain is found, nil is returned.
+// NOTE: caller is responsible to free result
 func (d *driver) getDomain(name string) (*libvirt.Domain, error) {
 	conn, err := d.connection()
 	if err != nil {
@@ -467,13 +455,12 @@ func (d *driver) getDomain(name string) (*libvirt.Domain, error) {
 	}
 
 	dom, err := conn.LookupDomainByName(name)
-	if err != nil {
-		lverr, ok := err.(libvirt.Error)
-		if ok {
-			if lverr.Code != libvirt.ERR_NO_DOMAIN {
-				return nil, fmt.Errorf("libvirt: unable to verify exiting domains %s: %w", name, err)
-			}
-		}
+	if err != nil && !errors.Is(err, libvirt.ERR_NO_DOMAIN) {
+		return nil, fmt.Errorf("libvirt: unable to verify existing domain %s: %w", name, err)
+	}
+
+	if dom == nil {
+		return nil, ErrDomainNotFound
 	}
 
 	return dom, nil
@@ -488,10 +475,7 @@ func (d *driver) StopVM(name string) error {
 	if err != nil {
 		return err
 	}
-
-	if dom == nil {
-		return ErrDomainNotFound
-	}
+	defer dom.Free()
 
 	err = dom.Destroy()
 	if err != nil {
@@ -510,9 +494,12 @@ func (d *driver) DestroyVM(name string) error {
 	if err != nil {
 		return err
 	}
+	defer dom.Free()
 
-	if dom == nil {
-		return ErrDomainNotFound
+	// Collect storage volumes attached to the domain
+	vols, err := d.getDomainVolumes(dom)
+	if err != nil {
+		return err
 	}
 
 	err = dom.Destroy()
@@ -533,6 +520,19 @@ func (d *driver) DestroyVM(name string) error {
 		return fmt.Errorf("libvirt: unable to undefine domain %s: %w", name, err)
 	}
 
+	// Now that the domain is destroyed, remove the associated volumes
+	for _, vol := range vols {
+		d.logger.Debug("deleting volume", "domain", name, "volume", vol)
+		pool, err := d.storage.GetPool(vol.Pool)
+		if err != nil {
+			return err
+		}
+
+		if err := pool.DeleteVolume(vol.Name); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -545,43 +545,22 @@ func (d *driver) CreateVM(config *vm.Config) error {
 	}
 
 	dom, err := d.getDomain(config.Name)
-	if err != nil {
+	if err != nil && !errors.Is(err, vm.ErrNotFound) {
 		return err
 	}
 
 	if dom != nil {
+		dom.Free()
 		return fmt.Errorf("libvirt: %s: %w", config.Name, ErrDomainExists)
 	}
 
 	d.logger.Debug("domain doesn't exist, creating it", "name", config.Name)
 
-	cloudInitConfigPath := filepath.Join(d.dataDir, config.Name+".iso")
-
-	cic := createCloudInitConfig(config)
-	d.logger.Debug("creating cloud init configuration: ", fmt.Sprintf("%+v", cic))
-
-	if err := d.ci.Apply(cic, cloudInitConfigPath); err != nil {
-		return fmt.Errorf("libvirt: unable to create cidata %s: %w", config.Name, err)
-	}
-
-	if config.RemoveConfigFiles {
-		defer func() {
-			err := os.Remove(cloudInitConfigPath)
-			if err != nil {
-				d.logger.Warn("libvirt: unable to remove cloudinit configFile", "error", err)
-			}
-		}()
-	}
-
-	if err := d.sp.Refresh(0); err != nil {
-		return fmt.Errorf("libvirt: unable to refresh storage pool %s: %w", config.Name, err)
-	}
-
 	var domXML string
 	if config.XMLConfig != "" {
 		domXML = config.XMLConfig
 	} else {
-		domXML, err = parseConfiguration(config, cloudInitConfigPath)
+		domXML, err = parseConfiguration(config)
 		if err != nil {
 			return fmt.Errorf("libvirt: unable to parse domain configuration %s: %w", config.Name, err)
 		}
@@ -593,6 +572,7 @@ func (d *driver) CreateVM(config *vm.Config) error {
 	if err != nil {
 		return fmt.Errorf("libvirt: unable to define domain %s: %w", config.Name, err)
 	}
+	defer dom.Free()
 
 	if err := dom.Create(); err != nil {
 		return fmt.Errorf("libvirt: unable to create domain %s: %w", config.Name, err)
@@ -608,10 +588,7 @@ func (d *driver) GetVM(name string) (*vm.Info, error) {
 	if err != nil {
 		return nil, fmt.Errorf("libvirt: unable to get domain %s: %w", name, err)
 	}
-
-	if dom == nil {
-		return nil, fmt.Errorf("libvirt: domain %s %w", name, vm.ErrNotFound)
-	}
+	defer dom.Free()
 
 	info, err := dom.GetInfo()
 	if err != nil {
@@ -637,6 +614,8 @@ func (d *driver) GetNetworkInterfaces(name string) ([]vm.NetworkInterface, error
 		d.logger.Error("cannot get domain", "domain", name, "error", err)
 		return nil, fmt.Errorf("libvirt: unable to get domain %s: %w", name, err)
 	}
+	defer dom.Free()
+
 	xml, err := dom.GetXMLDesc(0)
 	if err != nil {
 		d.logger.Error("cannot get domain XML", "domain", name, "error", err)
@@ -656,6 +635,11 @@ func (d *driver) GetNetworkInterfaces(name string) ([]vm.NetworkInterface, error
 		d.logger.Error("cannot list available networks", "domain", name, "error", err)
 		return nil, fmt.Errorf("libvirt: unable to get domain interfaces list %s: %w", name, err)
 	}
+	defer func() {
+		for _, n := range allNetworks {
+			n.Free()
+		}
+	}()
 
 	bridgeNetworks := map[string]string{}
 	for _, network := range allNetworks {
@@ -731,6 +715,11 @@ func (d *driver) GetAllDomains() ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("libvirt: unable to list domains: %w", err)
 	}
+	defer func() {
+		for _, d := range doms {
+			d.Free()
+		}
+	}()
 
 	dns := []string{}
 	for _, dom := range doms {
@@ -800,6 +789,34 @@ func (d *driver) Fingerprint() (map[string]*structs.Attribute, error) {
 	return attrs, nil
 }
 
+// getDomainVolumes collects the list of storage volumes attached to the domain
+func (d *driver) getDomainVolumes(dom *libvirt.Domain) ([]storage.Volume, error) {
+	info := new(libvirtxml.Domain)
+	if xmlDesc, err := dom.GetXMLDesc(0); err != nil {
+		return nil, err
+	} else if err := info.Unmarshal(xmlDesc); err != nil {
+		return nil, err
+	}
+
+	vols := []storage.Volume{}
+
+	if info.Devices == nil || len(info.Devices.Disks) == 0 {
+		return vols, nil
+	}
+
+	for _, disk := range info.Devices.Disks {
+		if disk.Source == nil || disk.Source.Volume == nil {
+			continue
+		}
+		vols = append(vols, storage.Volume{
+			Pool: disk.Source.Volume.Pool,
+			Name: disk.Source.Volume.Volume,
+		})
+	}
+
+	return vols, nil
+}
+
 const (
 	majorDivisor = 1_000_000
 	minorDivisor = 1_000
@@ -814,25 +831,4 @@ func computeVersion(version uint32) string {
 	version -= version % minorDivisor
 
 	return fmt.Sprintf("%d.%d.%d", major, minor, version)
-}
-
-func folderExists(path string) bool {
-	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
-		return false
-	}
-	return info.IsDir()
-}
-
-func createDataDirectory(path string) error {
-	if folderExists(path) {
-		return nil
-	}
-
-	err := os.MkdirAll(path, dataDirPermissions)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

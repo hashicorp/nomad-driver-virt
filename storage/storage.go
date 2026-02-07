@@ -7,6 +7,8 @@ import "github.com/hashicorp/nomad-driver-virt/storage/image_tools"
 
 // Storage defines the required interface for support storage
 type Storage interface {
+	// DefaultPool returns the default storage pool
+	DefaultPool() (Pool, error)
 	// GetPool returns the requested storage pool by name
 	GetPool(name string) (Pool, error)
 	// ImageHandler returns an image handler

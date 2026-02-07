@@ -30,7 +30,7 @@ type QemuTools struct {
 	logger hclog.Logger
 }
 
-func NewHandler(logger hclog.Logger) *QemuTools {
+func NewQemuHandler(logger hclog.Logger) *QemuTools {
 	return &QemuTools{
 		logger: logger,
 	}

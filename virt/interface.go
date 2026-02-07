@@ -5,6 +5,7 @@ package virt
 
 import (
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
 )
@@ -44,6 +45,12 @@ type Virtualizer interface {
 
 	// Fingerprint returns fingerprint attributes for the provider
 	Fingerprint() (map[string]*structs.Attribute, error)
+
+	// SetupStorage prepares the configured storage pools for usage
+	SetupStorage(config *storage.Config) error
+
+	// Storage returns the storage interface
+	Storage() storage.Storage
 
 	VMGetter
 }
