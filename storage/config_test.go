@@ -15,16 +15,14 @@ func TestConfig(t *testing.T) {
 
 	t.Run("valid", func(t *testing.T) {
 		expected := &Config{
-			Directory: []Directory{
-				{
-					Name:    "dir-pool",
+			Directory: map[string]Directory{
+				"dir-pool": {
 					Path:    "/dev/null",
 					Default: false,
 				},
 			},
-			Ceph: []Ceph{
-				{
-					Name:  "ceph-pool",
+			Ceph: map[string]Ceph{
+				"ceph-pool": {
 					Pool:  "test-pool",
 					Hosts: []string{"localhost"},
 					Authentication: Authentication{
@@ -38,14 +36,12 @@ func TestConfig(t *testing.T) {
 		parser := hclutils.NewConfigParser(configSpec)
 		validHcl := `
 config {
-  directory {
-    name = "dir-pool" 
+  directory "dir-pool" {
     path = "/dev/null"
     default = false
   }
 
-  ceph {
-    name = "ceph-pool"
+  ceph "ceph-pool" {
     pool = "test-pool"
     hosts = ["localhost"]
     authentication {
@@ -63,21 +59,18 @@ config {
 
 	t.Run("valid multiples", func(t *testing.T) {
 		expected := &Config{
-			Directory: []Directory{
-				{
-					Name:    "dir-pool",
+			Directory: map[string]Directory{
+				"dir-pool": {
 					Path:    "/dev/null",
 					Default: false,
 				},
-				{
-					Name:    "other-dir-pool",
+				"other-dir-pool": {
 					Path:    "/dev/null/other",
 					Default: false,
 				},
 			},
-			Ceph: []Ceph{
-				{
-					Name:  "ceph-pool",
+			Ceph: map[string]Ceph{
+				"ceph-pool": {
 					Pool:  "test-pool",
 					Hosts: []string{"localhost"},
 					Authentication: Authentication{
@@ -91,19 +84,16 @@ config {
 		parser := hclutils.NewConfigParser(configSpec)
 		validHcl := `
 config {
-  directory {
-    name = "dir-pool" 
+  directory "dir-pool" {
     path = "/dev/null"
     default = false
   }
 
-  directory {
-    name = "other-dir-pool"
+  directory "other-dir-pool" {
     path = "/dev/null/other"
   } 
 
-  ceph {
-    name = "ceph-pool"
+  ceph "ceph-pool" {
     pool = "test-pool"
     hosts = ["localhost"]
     authentication {

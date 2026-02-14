@@ -5,6 +5,7 @@ package libvirt
 
 import (
 	"runtime"
+	"slices"
 	"strings"
 	"sync"
 
@@ -172,8 +173,12 @@ func (m *MockLibvirt) CreateStoragePool(desc libvirtxml.StoragePool) (shims.Stor
 
 	must.SliceNotEmpty(m.t, m.createStoragePool,
 		must.Sprint("Unexpected call to CreateStoragePool"))
-	call := m.createStoragePool[0]
-	m.createStoragePool = m.createStoragePool[1:]
+	idx := max(slices.IndexFunc(m.createStoragePool, func(c CreateStoragePool) bool {
+		return c.Desc.Name == desc.Name
+	}), 0)
+
+	call := m.createStoragePool[idx]
+	m.createStoragePool = append(m.createStoragePool[:idx], m.createStoragePool[idx+1:]...)
 
 	must.Eq(m.t, call.Desc, desc,
 		must.Sprint("CreateStoragePool received incorrect argument"))
@@ -189,8 +194,13 @@ func (m *MockLibvirt) FindStoragePool(name string) (shims.StoragePool, error) {
 
 	must.SliceNotEmpty(m.t, m.findStoragePool,
 		must.Sprint("Unexpected call to FindStoragePool"))
-	call := m.findStoragePool[0]
-	m.findStoragePool = m.findStoragePool[1:]
+
+	idx := max(slices.IndexFunc(m.findStoragePool, func(c FindStoragePool) bool {
+		return c.Name == name
+	}), 0)
+
+	call := m.findStoragePool[idx]
+	m.findStoragePool = append(m.findStoragePool[:idx], m.findStoragePool[idx+1:]...)
 
 	must.Eq(m.t, struct{ Name string }{call.Name}, struct{ Name string }{name},
 		must.Sprint("FindStoragePool received incorrect argument"))

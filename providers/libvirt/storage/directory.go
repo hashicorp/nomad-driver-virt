@@ -27,9 +27,9 @@ type directory struct {
 }
 
 // newDirectoryPool creates a new directory based storage pool.
-func newDirectoryPool(logger hclog.Logger, l libvirtStorage, config storage.Directory, s storage.Storage) (storage.Pool, error) {
-	logger = logger.Named("storage-pool").With("name", config.Name)
-	p, err := l.FindStoragePool(config.Name)
+func newDirectoryPool(logger hclog.Logger, l libvirtStorage, poolName string, config storage.Directory, s storage.Storage) (storage.Pool, error) {
+	logger = logger.Named("storage-pool").With("name", poolName)
+	p, err := l.FindStoragePool(poolName)
 	if err != nil && !errors.Is(err, vm.ErrNotFound) {
 		return nil, err
 	}
@@ -49,7 +49,7 @@ func newDirectoryPool(logger hclog.Logger, l libvirtStorage, config storage.Dire
 		}
 
 		if p, err = l.CreateStoragePool(libvirtxml.StoragePool{
-			Name: config.Name,
+			Name: poolName,
 			Target: &libvirtxml.StoragePoolTarget{
 				Path: config.Path,
 			},
@@ -59,7 +59,7 @@ func newDirectoryPool(logger hclog.Logger, l libvirtStorage, config storage.Dire
 		}
 	}
 
-	return &directory{logger: logger, poolName: config.Name, l: l, s: s}, nil
+	return &directory{logger: logger, poolName: poolName, l: l, s: s}, nil
 }
 
 // AddVolume implements storage.Pool
