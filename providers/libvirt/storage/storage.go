@@ -40,16 +40,16 @@ func New(logger hclog.Logger, l libvirtStorage, config *storage.Config) (*store,
 		imageHandler: image_tools.NewQemuHandler(logger),
 	}
 
-	for _, d := range config.Directory {
-		logger.Debug("adding new directory storage pool", "name", d.Name, "path", d.Path)
-		pool, err := newDirectoryPool(logger, l, d, s)
+	for name, d := range config.Directory {
+		logger.Debug("adding new directory storage pool", "name", name, "path", d.Path)
+		pool, err := newDirectoryPool(logger, l, name, d, s)
 		if err != nil {
 			return nil, err
 		}
-		s.pools[d.Name] = pool
+		s.pools[name] = pool
 
 		if s.defaultPool == nil || d.Default {
-			logger.Info("default storage pool set", "name", d.Name)
+			logger.Info("default storage pool set", "name", name)
 			s.defaultPool = pool
 		}
 	}

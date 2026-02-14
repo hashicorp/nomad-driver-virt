@@ -134,23 +134,22 @@ func (c *Config) Compat() {
 	// If the deprecated DataDir value is set, use it to create the compat pool.
 	if c.DataDir != "" {
 		if c.StoragePools == nil {
-			c.StoragePools = new(storage.Config)
+			c.StoragePools = storage.NewConfig()
 		}
-		c.StoragePools.Directory = append(c.StoragePools.Directory, storage.Directory{
-			Name: compatDefaultStoragePool,
+
+		c.StoragePools.Directory[compatDefaultStoragePool] = storage.Directory{
 			Path: filepath.Join(c.DataDir, compatDefaultStoragePool),
-		})
+		}
 	}
 
 	// If no storage pools are defined, add in the compat pool.
 	if c.StoragePools == nil || (len(c.StoragePools.Ceph) == 0 && len(c.StoragePools.Directory) == 0) {
 		if c.StoragePools == nil {
-			c.StoragePools = new(storage.Config)
+			c.StoragePools = storage.NewConfig()
 		}
-		c.StoragePools.Directory = append(c.StoragePools.Directory, storage.Directory{
-			Name: compatDefaultStoragePool,
+		c.StoragePools.Directory[compatDefaultStoragePool] = storage.Directory{
 			Path: filepath.Join(compatDefaultStoragePath, compatDefaultStoragePool),
-		})
+		}
 	}
 }
 
