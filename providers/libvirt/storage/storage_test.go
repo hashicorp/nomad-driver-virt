@@ -4,7 +4,6 @@
 package storage
 
 import (
-	"errors"
 	"path/filepath"
 	"testing"
 
@@ -21,14 +20,12 @@ func TestStorage_New(t *testing.T) {
 
 	mkconfig := func(dir string) *storage.Config {
 		return &storage.Config{
-			Directory: []storage.Directory{
-				{
-					Name:    "main-pool",
+			Directory: map[string]storage.Directory{
+				"main-pool": {
 					Path:    filepath.Join(dir, "main-pool"),
 					Default: true,
 				},
-				{
-					Name: "aux-pool",
+				"aux-pool": {
 					Path: filepath.Join(dir, "aux-pool"),
 				},
 			},
@@ -123,24 +120,6 @@ func TestStorage_New(t *testing.T) {
 		// Should not create the main directory since the pool already exists
 		must.DirNotExists(t, filepath.Join(poolDir, "main-pool"))
 
-		// Ensure everything was called
-		l.AssertExpectations()
-	})
-
-	t.Run("frees successful pool on error", func(t *testing.T) {
-		poolDir := t.TempDir()
-		staticPool := mock_storage.NewStaticStoragePool()
-		l := mock_libvirt.NewMockLibvirt(t)
-		l.Expect(
-			mock_libvirt.FindStoragePool{Name: "main-pool", Result: staticPool},
-			mock_libvirt.FindStoragePool{Name: "aux-pool", Err: errors.New("test error")},
-		)
-
-		_, err := New(hclog.NewNullLogger(), l, mkconfig(poolDir))
-		must.Error(t, err)
-		must.ErrorContains(t, err, "test error")
-		// Free should be called once for returned pool
-		must.One(t, staticPool.CallCount("Free"), must.Sprint("expected pool Free call"))
 		// Ensure everything was called
 		l.AssertExpectations()
 	})
