@@ -666,9 +666,8 @@ func TestVirtDriver_Start_Wait_Destroy_LibvirtIntegration(t *testing.T) {
 		libvirt.WithConnectionURI("test:///default"))
 	must.NoError(t, v.Init())
 	must.NoError(t, v.SetupStorage(&storage.Config{
-		Directory: []storage.Directory{
-			{
-				Name: "legacy-pool",
+		Directory: map[string]storage.Directory{
+			"legacy-pool": {
 				Path: tempDir,
 			},
 		},

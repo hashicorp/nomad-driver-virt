@@ -6,13 +6,11 @@ package storage
 import "github.com/hashicorp/nomad/plugins/shared/hclspec"
 
 var configSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-	"directory": hclspec.NewBlockList("directory", hclspec.NewObject(map[string]*hclspec.Spec{
-		"name":    hclspec.NewAttr("name", "string", true),
+	"directory": hclspec.NewBlockMap("directory", []string{"name"}, hclspec.NewObject(map[string]*hclspec.Spec{
 		"path":    hclspec.NewAttr("path", "string", true),
 		"default": hclspec.NewAttr("default", "bool", false),
 	})),
-	"ceph": hclspec.NewBlockList("ceph", hclspec.NewObject(map[string]*hclspec.Spec{
-		"name":  hclspec.NewAttr("name", "string", true),
+	"ceph": hclspec.NewBlockMap("ceph", []string{"name"}, hclspec.NewObject(map[string]*hclspec.Spec{
 		"pool":  hclspec.NewAttr("pool", "string", true),
 		"hosts": hclspec.NewAttr("hosts", "list(string)", true),
 		"authentication": hclspec.NewBlock("authentication", true, hclspec.NewObject(map[string]*hclspec.Spec{
@@ -26,21 +24,19 @@ var configSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 // Config provides configuration for storage pools
 type Config struct {
 	// Directory provides directory storage pool configuration
-	Directory []Directory `codec:"directory"`
+	Directory map[string]Directory `codec:"directory"`
 	// Ceph provides ceph storage pool configuration
-	Ceph []Ceph `codec:"ceph"`
+	Ceph map[string]Ceph `codec:"ceph"`
 }
 
 // Directory provides configuration for local directory storage pools
 type Directory struct {
-	Name    string `codec:"name"`    // Name of the storage pool
 	Path    string `codec:"path"`    // Local path of the storage pool
 	Default bool   `codec:"default"` // Pool is the default storage pool
 }
 
 // Ceph provides configuration for ceph rbd storage pools
 type Ceph struct {
-	Name           string         `codec:"name"`           // Name of the storage pool
 	Pool           string         `codec:"pool"`           // Name of the ceph storage pool
 	Hosts          []string       `codec:"hosts"`          // List of ceph hosts
 	Authentication Authentication `codec:"authentication"` // Autentication for ceph connection
@@ -51,6 +47,14 @@ type Ceph struct {
 type Authentication struct {
 	Username string `codec:"username"`
 	Secret   string `codec:"secret"`
+}
+
+// NewConfig returns a new initialized config.
+func NewConfig() *Config {
+	return &Config{
+		Directory: make(map[string]Directory),
+		Ceph:      make(map[string]Ceph),
+	}
 }
 
 // ConfigSpec returns the hcl spec for the storage pools configuration
