@@ -134,7 +134,7 @@ type DefaultDiskDriver struct {
 }
 
 type GenerateDeviceName struct {
-	DiskType        string
+	BusType         string
 	ExistingDevices []string
 	Result          string
 }
@@ -273,7 +273,7 @@ func (m *MockStorage) DefaultDiskDriver() string {
 	return call.Result
 }
 
-func (m *MockStorage) GenerateDeviceName(diskType string, existingDevices []string) string {
+func (m *MockStorage) GenerateDeviceName(busType string, existingDevices []string) string {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -286,13 +286,13 @@ func (m *MockStorage) GenerateDeviceName(diskType string, existingDevices []stri
 
 	must.Eq(m.t,
 		struct {
-			DiskType        string
+			BusType         string
 			ExistingDevices []string
-		}{call.DiskType, call.ExistingDevices},
+		}{call.BusType, call.ExistingDevices},
 		struct {
-			DiskType        string
+			BusType         string
 			ExistingDevices []string
-		}{diskType, existingDevices},
+		}{busType, existingDevices},
 		must.Sprint("GeneratedDeviceName received incorrect arguments"),
 	)
 

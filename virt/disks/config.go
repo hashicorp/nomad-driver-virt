@@ -148,6 +148,17 @@ type Source struct {
 	identifier string
 }
 
+func (s *Source) Equal(rhs *Source) bool {
+	if s == nil && rhs == nil {
+		return true
+	}
+	if s == nil || rhs == nil {
+		return false
+	}
+
+	return *s == *rhs
+}
+
 // ApplyCloudInit will add a disk entry as a cdrom for cloud-init
 func (d Disks) ApplyCloudInit(isoPath string) Disks {
 	if d == nil {

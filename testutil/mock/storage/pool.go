@@ -23,6 +23,7 @@ func NewStaticPool() *StaticPool {
 type StaticPool struct {
 	AddVolumeResult *storage.Volume
 	GetVolumeResult *storage.Volume
+	NameResult      string
 
 	counts map[string]int
 	m      sync.Mutex
@@ -90,6 +91,14 @@ func (s *StaticPool) DeleteVolume(string) error {
 	return nil
 }
 
+func (s *StaticPool) Name() string {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	return s.NameResult
+}
+
 type AddVolume struct {
 	Name   string
 	Opts   storage.Options
@@ -108,12 +117,17 @@ type DeleteVolume struct {
 	Err  error
 }
 
+type Name struct {
+	Result string
+}
+
 type MockPool struct {
 	t must.T
 
 	addVolume    []AddVolume
 	getVolume    []GetVolume
 	deleteVolume []DeleteVolume
+	name         []Name
 	m            sync.Mutex
 }
 
@@ -126,6 +140,8 @@ func (m *MockPool) Expect(calls ...any) *MockPool {
 			m.ExpectGetVolume(c)
 		case DeleteVolume:
 			m.ExpectDeleteVolume(c)
+		case Name:
+			m.ExpectName(c)
 		default:
 			m.t.Fatalf("unsupported type for mock expectation: %T", c)
 		}
@@ -155,6 +171,14 @@ func (m *MockPool) ExpectDeleteVolume(c DeleteVolume) *MockPool {
 	defer m.m.Unlock()
 
 	m.deleteVolume = append(m.deleteVolume, c)
+	return m
+}
+
+func (m *MockPool) ExpectName(c Name) *MockPool {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.name = append(m.name, c)
 	return m
 }
 
@@ -224,6 +248,20 @@ func (m *MockPool) DeleteVolume(name string) error {
 	return call.Err
 }
 
+func (m *MockPool) Name() string {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.name,
+		must.Sprint("Unexpected call to Name"))
+	call := m.name[0]
+	m.name = m.name[1:]
+
+	return call.Result
+}
+
 // AssertExpectations verifies that all expected invocations
 // have been called.
 func (m *MockPool) AssertExpectations() {
@@ -238,6 +276,8 @@ func (m *MockPool) AssertExpectations() {
 		must.Sprintf("GetVolume expecting %d more invocations", len(m.getVolume)))
 	must.SliceEmpty(m.t, m.deleteVolume,
 		must.Sprintf("DeleteVolume expecting %d more invocations", len(m.deleteVolume)))
+	must.SliceEmpty(m.t, m.name,
+		must.Sprintf("Name expecting %d more invocations", len(m.name)))
 }
 
 var (

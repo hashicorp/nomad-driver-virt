@@ -11,6 +11,7 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	mock_virt "github.com/hashicorp/nomad-driver-virt/testutil/mock/virt"
 	"github.com/hashicorp/nomad/client/structs"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/shoenig/test/must"
@@ -23,17 +24,20 @@ func Test_GetStats(t *testing.T) {
 		name           string
 		expectedError  error
 		getterError    error
-		info           *vm.Info
+		info           mock_virt.GetVM
 		expectedResult *drivers.TaskResourceUsage
 	}{
 		{
 			name: "successful_stats_returned",
-			info: &vm.Info{
-				State:     vm.VMStateRunning,
-				Memory:    666,
-				CPUTime:   66,
-				MaxMemory: 6666,
-				NrVirtCPU: 6,
+			info: mock_virt.GetVM{
+				Name: "test-vm",
+				Result: &vm.Info{
+					State:     vm.VMStateRunning,
+					Memory:    666,
+					CPUTime:   66,
+					MaxMemory: 6666,
+					NrVirtCPU: 6,
+				},
 			},
 			expectedResult: &drivers.TaskResourceUsage{
 				ResourceUsage: &structs.ResourceUsage{
@@ -45,20 +49,19 @@ func Test_GetStats(t *testing.T) {
 		{
 			name:          "getter_error_propagation",
 			expectedError: mockError,
-			getterError:   mockError,
+			info:          mock_virt.GetVM{Name: "test-vm", Err: mockError},
 		},
 		{
 			name:          "task_not_found_error",
+			info:          mock_virt.GetVM{Name: "test-vm", Err: vm.ErrNotFound},
 			expectedError: drivers.ErrTaskNotFound,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dgm := &mockTaskGetter{
-				err:  tt.getterError,
-				info: tt.info,
-			}
+			dgm := mock_virt.NewMock(t)
+			dgm.Expect(tt.info)
 
 			th := &taskHandle{
 				name:       "test-vm",
@@ -68,10 +71,6 @@ func Test_GetStats(t *testing.T) {
 			stats, err := th.GetStats()
 			must.Eq(t, tt.expectedError, errors.Unwrap(err))
 			if err == nil {
-				dgm.lock.Lock()
-				must.StrContains(t, "test-vm", dgm.name)
-				dgm.lock.Unlock()
-
 				must.Eq(t, tt.expectedResult.ResourceUsage, stats.ResourceUsage)
 			}
 		})
@@ -79,11 +78,15 @@ func Test_GetStats(t *testing.T) {
 }
 
 func Test_Monitor(t *testing.T) {
-	dgm := &mockTaskGetter{
-		info: &vm.Info{
-			State: vm.VMStateRunning,
-		},
-	}
+	errTest := errors.New("testing error")
+
+	dgm := mock_virt.NewMock(t)
+	dgm.Expect(
+		mock_virt.GetVM{Name: "test-vm", Result: &vm.Info{State: vm.VMStateRunning}},
+		mock_virt.GetVM{Name: "test-vm", Result: &vm.Info{State: vm.VMStateRunning}},
+		mock_virt.GetVM{Name: "test-vm", Err: errTest},
+		mock_virt.GetVM{Name: "test-vm", Result: &vm.Info{State: vm.VMStateError}},
+	)
 
 	th := &taskHandle{
 		logger:     hclog.NewNullLogger(),
@@ -92,45 +95,39 @@ func Test_Monitor(t *testing.T) {
 		procState:  drivers.TaskStateRunning,
 	}
 
+	// Start monitoring
 	exitChannel := make(chan *drivers.ExitResult, 1)
 	defer close(exitChannel)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 
-	go th.monitor(ctx, exitChannel)
+	go th.monitor(ctx, 50*time.Millisecond, exitChannel)
 
-	time.Sleep(2 * time.Second)
+	// Allow for two check to occur
+	time.Sleep(110 * time.Millisecond)
 
+	// No exit should be detected yet
 	must.Zero(t, len(exitChannel))
 
+	// Check the task handle state
 	th.stateLock.Lock()
 	must.Eq(t, drivers.TaskStateRunning, th.procState)
 	th.stateLock.Unlock()
 
-	// An error from the vm getter should cause the task to move
-	// to an unknown state.
-	dgm.lock.Lock()
-	dgm.err = errors.New("oh no! an error!")
-	dgm.lock.Unlock()
+	// Wait for next check
+	time.Sleep(50 * time.Millisecond)
 
-	time.Sleep(2 * time.Second)
-
+	// An error should be returned so state should be unknown
 	th.stateLock.Lock()
 	must.Eq(t, drivers.TaskStateUnknown, th.procState)
 	th.stateLock.Unlock()
 
-	// A vm reporting a crash should force the monitor to send an exit
-	// result and return.
-	dgm.lock.Lock()
-	dgm.err = nil
-	dgm.info.State = vm.VMStateError
-	dgm.lock.Unlock()
+	// Wait for the next check
+	time.Sleep(50 * time.Millisecond)
 
-	time.Sleep(2 * time.Second)
-
+	// Error state should force the monitor to send exit and return
 	must.One(t, len(exitChannel))
-
 	res := <-exitChannel
 
 	must.One(t, res.ExitCode)

@@ -6,6 +6,7 @@ package virt
 import (
 	"sync"
 
+	"github.com/google/go-cmp/cmp/cmpopts"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
@@ -233,6 +234,7 @@ func (m *MockVirt) Init() error {
 
 	must.SliceNotEmpty(m.t, m.init,
 		must.Sprint("Unexpected call to Init"))
+
 	call := m.init[0]
 	m.init = m.init[1:]
 
@@ -250,8 +252,11 @@ func (m *MockVirt) CreateVM(config *vm.Config) error {
 	call := m.createVm[0]
 	m.createVm = m.createVm[1:]
 
+	// NOTE: ignore the content field for now until dynamic content
+	// can be handled better.
 	must.Eq(m.t, call.Config, config,
-		must.Sprint("CreateVM received incorrect argument"))
+		must.Sprint("CreateVM received incorrect argument"),
+		must.Cmp(cmpopts.IgnoreFields(vm.File{}, "Content")))
 
 	return call.Err
 }

@@ -16,5 +16,5 @@ type Storage interface {
 	// DefaultDiskDriver provides the name of the default disk driver
 	DefaultDiskDriver() string
 	// GenerateDeviceName generates a new device name for a disk
-	GenerateDeviceName(diskType string, existingDevices []string) string
+	GenerateDeviceName(busType string, existingDevices []string) string
 }

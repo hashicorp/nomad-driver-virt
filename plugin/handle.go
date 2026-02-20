@@ -5,6 +5,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -63,11 +64,10 @@ func (h *taskHandle) TaskStatus() *drivers.TaskStatus {
 func (h *taskHandle) GetStats() (*drivers.TaskResourceUsage, error) {
 	virtvm, err := h.taskGetter.GetVM(h.name)
 	if err != nil {
+		if errors.Is(err, vm.ErrNotFound) {
+			return nil, fmt.Errorf("virt: task not found %s: %w", h.name, drivers.ErrTaskNotFound)
+		}
 		return nil, fmt.Errorf("virt: unable to get task %s stats: %w", h.name, err)
-	}
-
-	if virtvm == nil {
-		return nil, fmt.Errorf("virt: task not found %s: %w", h.name, drivers.ErrTaskNotFound)
 	}
 
 	return fillStats(virtvm), nil
@@ -81,16 +81,18 @@ func (h *taskHandle) IsRunning() bool {
 
 // Run is in charge of monitoring and updating the task status. It  will only return
 // when the task is stopped or no longer present or when the context is cancelled.
-func (h *taskHandle) monitor(ctx context.Context, exitCh chan<- *drivers.ExitResult) {
-
-	ticker := time.NewTicker(defaultMonitorInterval)
+func (h *taskHandle) monitor(ctx context.Context, interval time.Duration, exitCh chan<- *drivers.ExitResult) {
+	if interval < 1 {
+		interval = defaultMonitorInterval
+	}
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-ticker.C:
 			virtvm, err := h.taskGetter.GetVM(h.name)
-			if err != nil {
+			if err != nil && !errors.Is(err, vm.ErrNotFound) {
 				h.logger.Error("virt: unable to get task state", "task", h.name, "error", err)
 				h.stateLock.Lock()
 				h.procState = drivers.TaskStateUnknown
