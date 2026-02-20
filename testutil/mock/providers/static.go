@@ -56,10 +56,19 @@ func (s *StaticProviders) CallCount(fnName string) int {
 	return s.counts[fnName]
 }
 
-func (s *StaticProviders) Setup(*virt.Config) error {
+func (s *StaticProviders) Setup(c *virt.Config) error {
 	s.m.Lock()
 	defer s.m.Unlock()
 	s.incrCount()
+
+	// If a default virtualizer is set, pass the calls
+	// through that would be done during normal setup
+	if s.virtualizer != nil {
+		s.virtualizer.Init()
+		n, _ := s.virtualizer.Networking()
+		n.Init()
+		s.virtualizer.SetupStorage(c.StoragePools)
+	}
 
 	return nil
 }
