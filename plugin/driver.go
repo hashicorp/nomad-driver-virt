@@ -257,7 +257,7 @@ func (d *VirtDriverPlugin) WaitTask(ctx context.Context, taskID string) (<-chan 
 		defer close(exitCh)
 		d.logger.Info("monitoring task", "task_id", handle.name)
 
-		handle.monitor(ctx, exitCh)
+		handle.monitor(ctx, 0, exitCh)
 
 	}(ctx, handle, exitChannel)
 
@@ -431,7 +431,7 @@ func createAllocFileMounts(task *drivers.TaskConfig) []vm.MountFileConfig {
 	return mounts
 }
 
-// To create the alloc env vars, they are all writtent into a scripy in
+// To create the alloc env vars, they are all writtent into a script in
 // /etc/profile.d/virt.sh where the OS will take care of executing it at start.
 func createEnvsFile(envs map[string]string) vm.File {
 	con := []string{}

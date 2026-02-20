@@ -62,6 +62,11 @@ func newDirectoryPool(logger hclog.Logger, l libvirtStorage, poolName string, co
 	return &directory{logger: logger, poolName: poolName, l: l, s: s}, nil
 }
 
+// Name implements storage.Pool
+func (d *directory) Name() string {
+	return d.poolName
+}
+
 // AddVolume implements storage.Pool
 func (d *directory) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {
 	// The directory pool does not support cloning volumes or snapshots
