@@ -160,7 +160,7 @@ func (m *MockNet) VMStartedBuild(request *net.VMStartedBuildRequest) (*net.VMSta
 
 	must.NotNil(m.t, request, must.Sprint("VMStartedBuild received incorrect argument"))
 	if call.Request != nil {
-		must.True(m.t, call.Request.IsEqual(request),
+		must.Equal(m.t, call.Request, request,
 			must.Sprint("VMStartedBuild request does not match expected"))
 	}
 
@@ -180,7 +180,7 @@ func (m *MockNet) VMTerminatedTeardown(request *net.VMTerminatedTeardownRequest)
 
 	must.NotNil(m.t, request, must.Sprint("VMTerminatedTeardown received incorrect argument"))
 	if call.Request != nil {
-		must.True(m.t, call.Request.IsEqual(request),
+		must.Equal(m.t, call.Request, request,
 			must.Sprint("VMTerminatedTeardown request does not match expected"))
 	}
 

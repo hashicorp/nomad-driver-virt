@@ -20,14 +20,14 @@ import (
 // performing iteration.
 type NetworkInterfacesConfig []*NetworkInterfaceConfig
 
-// IsEqual returns if the given NetworkInterfacesConfig is equal.
-func (n NetworkInterfacesConfig) IsEqual(rhs NetworkInterfacesConfig) bool {
+// Equal returns if the given NetworkInterfacesConfig is equal.
+func (n NetworkInterfacesConfig) Equal(rhs NetworkInterfacesConfig) bool {
 	if len(n) != len(rhs) {
 		return false
 	}
 
 	for i, lhs := range n {
-		if !lhs.IsEqual(rhs[i]) {
+		if !lhs.Equal(rhs[i]) {
 			return false
 		}
 	}
@@ -41,13 +41,13 @@ type NetworkInterfaceConfig struct {
 	Bridge *NetworkInterfaceBridgeConfig `codec:"bridge"`
 }
 
-// IsEqual returns if the given NetworkInterfaceConfig is equal.
-func (n *NetworkInterfaceConfig) IsEqual(rhs *NetworkInterfaceConfig) bool {
+// Equal returns if the given NetworkInterfaceConfig is equal.
+func (n *NetworkInterfaceConfig) Equal(rhs *NetworkInterfaceConfig) bool {
 	if n == nil || rhs == nil {
 		return false
 	}
 
-	if !n.Bridge.IsEqual(rhs.Bridge) {
+	if !n.Bridge.Equal(rhs.Bridge) {
 		return false
 	}
 
@@ -68,8 +68,8 @@ type NetworkInterfaceBridgeConfig struct {
 	Ports []string `codec:"ports"`
 }
 
-// IsEqual returns if the given NetworkInterfaceBridgeConfig is equal.
-func (n *NetworkInterfaceBridgeConfig) IsEqual(rhs *NetworkInterfaceBridgeConfig) bool {
+// Equal returns if the given NetworkInterfaceBridgeConfig is equal.
+func (n *NetworkInterfaceBridgeConfig) Equal(rhs *NetworkInterfaceBridgeConfig) bool {
 	if n == nil && rhs == nil {
 		return true
 	}

@@ -35,9 +35,9 @@ type VMStartedBuildRequest struct {
 	Hwaddrs   []string
 }
 
-// IsEqual returns if the given VMStartBuildRequest is equal.
+// Equal returns if the given VMStartBuildRequest is equal.
 // NOTE: ignores Resources value
-func (v *VMStartedBuildRequest) IsEqual(rhs *VMStartedBuildRequest) bool {
+func (v *VMStartedBuildRequest) Equal(rhs *VMStartedBuildRequest) bool {
 	if v == nil || rhs == nil {
 		return false
 	}
@@ -50,7 +50,7 @@ func (v *VMStartedBuildRequest) IsEqual(rhs *VMStartedBuildRequest) bool {
 		return false
 	}
 
-	if !v.NetConfig.IsEqual(rhs.NetConfig) {
+	if !v.NetConfig.Equal(rhs.NetConfig) {
 		return false
 	}
 
@@ -80,13 +80,13 @@ type VMTerminatedTeardownRequest struct {
 	TeardownSpec *TeardownSpec
 }
 
-// IsEqual returns if the given VMTerminatedTeardownRequest is equal.
-func (v *VMTerminatedTeardownRequest) IsEqual(rhs *VMTerminatedTeardownRequest) bool {
+// Equal returns if the given VMTerminatedTeardownRequest is equal.
+func (v *VMTerminatedTeardownRequest) Equal(rhs *VMTerminatedTeardownRequest) bool {
 	if v == nil || rhs == nil {
 		return false
 	}
 
-	if !v.TeardownSpec.IsEqual(rhs.TeardownSpec) {
+	if !v.TeardownSpec.Equal(rhs.TeardownSpec) {
 		return false
 	}
 
@@ -121,8 +121,8 @@ type TeardownSpec struct {
 	Network string
 }
 
-// IsEqual returns if the given TeardownSpec is equal.
-func (t *TeardownSpec) IsEqual(rhs *TeardownSpec) bool {
+// Equal returns if the given TeardownSpec is equal.
+func (t *TeardownSpec) Equal(rhs *TeardownSpec) bool {
 	if t == nil && rhs == nil {
 		return true
 	}

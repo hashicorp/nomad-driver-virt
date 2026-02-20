@@ -10,6 +10,7 @@ require (
 	github.com/coreos/go-iptables v0.8.0
 	github.com/diskfs/go-diskfs v1.8.0
 	github.com/docker/distribution v2.8.3+incompatible
+	github.com/google/go-cmp v0.7.0
 	github.com/gopacket/gopacket v1.5.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
@@ -51,7 +52,6 @@ require (
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/google/btree v1.1.3 // indirect
-	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0 // indirect
 	github.com/hashicorp/cli v1.1.7 // indirect
