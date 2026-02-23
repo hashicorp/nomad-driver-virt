@@ -786,6 +786,9 @@ func (d *driver) Fingerprint() (map[string]*structs.Attribute, error) {
 	// Add any fingerprint information from the networking subsystem
 	n.Fingerprint(attrs)
 
+	// Add any fingerprint information from the storage subsystem
+	d.storage.Fingerprint(attrs)
+
 	return attrs, nil
 }
 
