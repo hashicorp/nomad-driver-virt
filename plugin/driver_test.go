@@ -716,10 +716,24 @@ func TestVirtDriver_Libvirt(t *testing.T) {
 	libvirtProvider := libvirt.New(t.Context(), hclog.NewNullLogger(),
 		libvirt.WithConnectionURI(libvirt.TestURI))
 
-	providerMock := mock_providers.NewStatic(libvirtProvider)
 	cloudinitMock := mock_cloudinit.NewStaticCloudInit()
 
-	driver := testHarness(t, driverConfig(dir), providerMock, cloudinitMock, task, 5*time.Second)
+	// Generate the configuration and add the libvirt provider to create
+	// a real providers instance for the harness.
+	config := driverConfig(dir)
+	config.Provider = &virt.Provider{
+		Libvirt: &libvirt.Config{
+			URI: libvirt.TestURI,
+		},
+	}
+	logger := testlog.HCLogger(t)
+	if testing.Verbose() {
+		logger.SetLevel(hclog.Trace)
+	} else {
+		logger.SetLevel(hclog.Info)
+	}
+	prv := providers.New(t.Context(), logger)
+	driver := testHarness(t, config, prv, cloudinitMock, task, 5*time.Second)
 
 	// Stub the cloudinit generated file
 	f, err := os.Create(filepath.Join(task.AllocDir, "cloudinit.iso"))
@@ -775,4 +789,24 @@ func TestVirtDriver_Libvirt(t *testing.T) {
 	// Validate VM no longer exists
 	_, err = libvirtProvider.GetVM(vmName)
 	must.ErrorIs(t, err, vm.ErrNotFound)
+
+	// Get fingerprint information
+	fCh, err := driver.Fingerprint(t.Context())
+	must.NoError(t, err)
+	var print *drivers.Fingerprint
+	select {
+	case print = <-fCh:
+	case <-time.After(1 * time.Second):
+		t.Fatal("no fingerprint received")
+	}
+
+	// Don't match fingerprint exactly since local configurations
+	// may be different. Start with some virt information
+	must.True(t, *print.Attributes["driver.virt"].Bool)
+	must.True(t, *print.Attributes["driver.virt.provider.libvirt"].Bool)
+	must.Eq(t, "TEST", *print.Attributes["driver.virt.provider.libvirt.driver"].String)
+	// Check that storage pools are included
+	must.Eq(t, "directory", *print.Attributes["driver.virt.storage_pool.default-pool"].String)
+	must.True(t, *print.Attributes["driver.virt.storage_pool.default-pool.default"].Bool)
+	must.Eq(t, "libvirt", *print.Attributes["driver.virt.storage_pool.default-pool.provider"].String)
 }
