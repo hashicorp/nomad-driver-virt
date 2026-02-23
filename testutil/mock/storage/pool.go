@@ -24,6 +24,7 @@ type StaticPool struct {
 	AddVolumeResult *storage.Volume
 	GetVolumeResult *storage.Volume
 	NameResult      string
+	TypeResult      string
 
 	counts map[string]int
 	m      sync.Mutex
@@ -99,6 +100,14 @@ func (s *StaticPool) Name() string {
 	return s.NameResult
 }
 
+func (s *StaticPool) Type() string {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	return s.TypeResult
+}
+
 type AddVolume struct {
 	Name   string
 	Opts   storage.Options
@@ -121,6 +130,10 @@ type Name struct {
 	Result string
 }
 
+type Type struct {
+	Result string
+}
+
 type MockPool struct {
 	t must.T
 
@@ -128,6 +141,7 @@ type MockPool struct {
 	getVolume    []GetVolume
 	deleteVolume []DeleteVolume
 	name         []Name
+	types        []Type
 	m            sync.Mutex
 }
 
@@ -142,11 +156,21 @@ func (m *MockPool) Expect(calls ...any) *MockPool {
 			m.ExpectDeleteVolume(c)
 		case Name:
 			m.ExpectName(c)
+		case Type:
+			m.ExpectType(c)
 		default:
 			m.t.Fatalf("unsupported type for mock expectation: %T", c)
 		}
 	}
 
+	return m
+}
+
+func (m *MockPool) ExpectType(c Type) *MockPool {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.types = append(m.types, c)
 	return m
 }
 
@@ -262,6 +286,20 @@ func (m *MockPool) Name() string {
 	return call.Result
 }
 
+func (m *MockPool) Type() string {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.types,
+		must.Sprint("Unexpected call to Type"))
+	call := m.types[0]
+	m.types = m.types[1:]
+
+	return call.Result
+}
+
 // AssertExpectations verifies that all expected invocations
 // have been called.
 func (m *MockPool) AssertExpectations() {
@@ -278,6 +316,9 @@ func (m *MockPool) AssertExpectations() {
 		must.Sprintf("DeleteVolume expecting %d more invocations", len(m.deleteVolume)))
 	must.SliceEmpty(m.t, m.name,
 		must.Sprintf("Name expecting %d more invocations", len(m.name)))
+	must.SliceEmpty(m.t, m.types,
+		must.Sprintf("Type expecting %d more invocations", len(m.types)))
+
 }
 
 var (

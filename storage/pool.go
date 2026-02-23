@@ -13,6 +13,8 @@ type Pool interface {
 	DeleteVolume(name string) error
 	// Name returns the name of the storage pool
 	Name() string
+	// Type returns the type of the storage pool
+	Type() string
 }
 
 // Options are supported options for AddVolume
