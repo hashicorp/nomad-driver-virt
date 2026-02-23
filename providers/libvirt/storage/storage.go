@@ -13,10 +13,14 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/storage/image_tools"
+	"github.com/hashicorp/nomad/plugins/shared/structs"
 	"libvirt.org/go/libvirtxml"
 )
 
-const defaultDiskDriver = "qemu"
+const (
+	defaultDiskDriver = "qemu"
+	providerName      = "libvirt"
+)
 
 var (
 	ErrInvalidVolumeConfiguration = fmt.Errorf("%w for volume", vm.ErrInvalidConfiguration)
@@ -117,4 +121,18 @@ func (s *store) GenerateDeviceName(busType string, existingNames []string) strin
 
 	max := slices.Max(validNames)
 	return prefix + string(max[len(max)-1]+1)
+}
+
+// Fingerprint implements storage.Storage
+func (s *store) Fingerprint(attrs map[string]*structs.Attribute) {
+	for name, pool := range s.pools {
+		poolKey := fmt.Sprintf("%s.storage_pool.%s",
+			vm.FingerprintAttributeKeyPrefix, name)
+
+		attrs[poolKey] = structs.NewStringAttribute(pool.Type())
+		attrs[poolKey+".provider"] = structs.NewStringAttribute(providerName)
+		if s.defaultPool == pool {
+			attrs[poolKey+".default"] = structs.NewBoolAttribute(true)
+		}
+	}
 }
