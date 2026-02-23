@@ -67,6 +67,11 @@ func (d *directory) Name() string {
 	return d.poolName
 }
 
+// Type implements storage.Pool
+func (d *directory) Type() string {
+	return storage.PoolTypeDirectory
+}
+
 // AddVolume implements storage.Pool
 func (d *directory) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {
 	// The directory pool does not support cloning volumes or snapshots
