@@ -8,29 +8,31 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
+	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_libvirt "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt"
 	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt/storage"
+	"github.com/hashicorp/nomad/plugins/shared/structs"
 	"github.com/shoenig/test/must"
 	"libvirt.org/go/libvirtxml"
 )
 
+func mkconfig(dir string) *storage.Config {
+	return &storage.Config{
+		Directory: map[string]storage.Directory{
+			"main-pool": {
+				Path:    filepath.Join(dir, "main-pool"),
+				Default: true,
+			},
+			"aux-pool": {
+				Path: filepath.Join(dir, "aux-pool"),
+			},
+		},
+	}
+}
+
 func TestStorage_New(t *testing.T) {
 	t.Parallel()
-
-	mkconfig := func(dir string) *storage.Config {
-		return &storage.Config{
-			Directory: map[string]storage.Directory{
-				"main-pool": {
-					Path:    filepath.Join(dir, "main-pool"),
-					Default: true,
-				},
-				"aux-pool": {
-					Path: filepath.Join(dir, "aux-pool"),
-				},
-			},
-		}
-	}
 
 	t.Run("creates pools", func(t *testing.T) {
 		poolDir := t.TempDir()
@@ -122,5 +124,58 @@ func TestStorage_New(t *testing.T) {
 
 		// Ensure everything was called
 		l.AssertExpectations()
+	})
+}
+
+func TestStorage_Fingerprint(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		l := mock_libvirt.NewStaticLibvirt()
+		s, err := New(hclog.NewNullLogger(), l, mkconfig(t.TempDir()))
+		must.NoError(t, err)
+
+		attrs := make(map[string]*structs.Attribute)
+		s.Fingerprint(attrs)
+
+		expected := map[string]*structs.Attribute{
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool":          structs.NewStringAttribute("directory"),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.provider": structs.NewStringAttribute(providerName),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.default":  structs.NewBoolAttribute(true),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.aux-pool":           structs.NewStringAttribute("directory"),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.aux-pool.provider":  structs.NewStringAttribute(providerName),
+		}
+
+		must.Eq(t, expected, attrs)
+	})
+
+	t.Run("single pool", func(t *testing.T) {
+		l := mock_libvirt.NewStaticLibvirt()
+		config := mkconfig(t.TempDir())
+		delete(config.Directory, "aux-pool")
+		s, err := New(hclog.NewNullLogger(), l, config)
+		must.NoError(t, err)
+
+		attrs := make(map[string]*structs.Attribute)
+		s.Fingerprint(attrs)
+
+		expected := map[string]*structs.Attribute{
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool":          structs.NewStringAttribute("directory"),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.provider": structs.NewStringAttribute(providerName),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.default":  structs.NewBoolAttribute(true),
+		}
+
+		must.Eq(t, expected, attrs)
+	})
+
+	t.Run("no pools", func(t *testing.T) {
+		l := mock_libvirt.NewStaticLibvirt()
+		config := &storage.Config{}
+		s, err := New(hclog.NewNullLogger(), l, config)
+		must.NoError(t, err)
+
+		attrs := make(map[string]*structs.Attribute)
+		s.Fingerprint(attrs)
+
+		expected := make(map[string]*structs.Attribute)
+		must.Eq(t, expected, attrs)
 	})
 }
