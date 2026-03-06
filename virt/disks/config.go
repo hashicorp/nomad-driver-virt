@@ -4,7 +4,7 @@
 package disks
 
 import (
-	"crypto/sha512"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"io"
@@ -175,7 +175,8 @@ func (d Disks) ApplyCloudInit(isoPath string) Disks {
 		Kind:    DiskKindCdrom,
 		Format:  "raw",
 		Source: &Source{
-			Image: isoPath,
+			Format: "raw",
+			Image:  isoPath,
 		},
 		ReadOnly: true,
 	}
@@ -205,7 +206,7 @@ func (d Disks) CompatAddImage(image string, size int64, thinCopy bool) Disks {
 	// For proper compatibility, set the format to qcow2
 	// if making a thin copy.
 	if thinCopy {
-		newDisk.Format = "qcow2"
+		newDisk.Format = DiskFormatQcow2
 	}
 
 	return append(d, newDisk)
@@ -253,16 +254,10 @@ func (d Disks) SetDefaults(s storage.Storage) {
 		if disk.Kind == "" {
 			disk.Kind = DiskKindDefault
 		}
-		// If a source is set, attempt to determine the format if not set
-		if disk.Format == "" && disk.Source != nil {
-			// Attempt to extract the format from the source
-			if disk.Source.Format != "" {
-				disk.Format = disk.Source.Format
-			} else if disk.Source.Image != "" {
-				if iFmt, err := s.ImageHandler().GetImageFormat(disk.Source.Image); err == nil {
-					disk.Format = iFmt
-					disk.Source.Format = iFmt
-				}
+		// If a source image is set, attempt to determine its format if not set.
+		if disk.Source != nil && disk.Source.Image != "" && disk.Source.Format == "" {
+			if sfmt, err := s.ImageHandler().GetImageFormat(disk.Source.Image); err == nil {
+				disk.Source.Format = sfmt
 			}
 		}
 		// If no size is set and a source image is available, attempt
@@ -375,6 +370,11 @@ func (d Disks) Prepare(name string, s storage.Storage) error {
 				return err
 			}
 		}
+
+		if disk.Format == "" {
+			disk.Format = pool.DefaultImageFormat()
+		}
+
 		volumeName := fmt.Sprintf("%s_%s.img", name, disk.Devname)
 		opts := storage.Options{
 			Chained: disk.Chained,
@@ -398,8 +398,8 @@ func (d Disks) Prepare(name string, s storage.Storage) error {
 			// not set, generate the identifier now
 			// NOTE: this is only done if chained since the identifer
 			// is not used otherwise.
-			if disk.Source.identifier == "" && disk.Chained {
-				id, err := generateIdentifier(disk.Source.Image)
+			if disk.Source.identifier == "" && disk.Chained && disk.Source.Image != "" {
+				id, err := generateIdentifier(disk.Source.Image, disk.Format)
 				if err != nil {
 					return err
 				}
@@ -491,8 +491,8 @@ func ConfigSpec() *hclspec.Spec {
 
 // generateIdentifier generates an identifier for a source file based
 // on the checksum of the contents
-func generateIdentifier(path string) (string, error) {
-	hash := sha512.New()
+func generateIdentifier(path, format string) (string, error) {
+	hash := sha256.New()
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
@@ -503,7 +503,7 @@ func generateIdentifier(path string) (string, error) {
 		return "", err
 	}
 
-	return fmt.Sprintf("%s-%x.img", identifierPrefix, hash.Sum(nil)), nil
+	return fmt.Sprintf("%s-%s-%x.img", identifierPrefix, format, hash.Sum(nil)), nil
 }
 
 // fileExists checks if a file exists at the path

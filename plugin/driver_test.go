@@ -277,7 +277,8 @@ func TestVirtDriver(t *testing.T) {
 							Size:     "0",
 							ReadOnly: true,
 							Source: &disks.Source{
-								Image: filepath.Join(task.AllocDir, "cloudinit.iso"),
+								Format: "raw",
+								Image:  filepath.Join(task.AllocDir, "cloudinit.iso"),
 							},
 							Volume: &storage.Volume{
 								Kind:       "cdrom",
@@ -299,6 +300,7 @@ func TestVirtDriver(t *testing.T) {
 		)
 
 		pl.Expect(
+			mock_storage.DefaultImageFormat{Result: "tif"},
 			mock_storage.AddVolume{
 				Name: vmName + "_sda.img",
 				Opts: storage.Options{
@@ -318,7 +320,8 @@ func TestVirtDriver(t *testing.T) {
 				Opts: storage.Options{
 					Target: storage.Target{Format: "raw"},
 					Source: storage.Source{
-						Path: filepath.Join(task.AllocDir, "cloudinit.iso"),
+						Format: "raw",
+						Path:   filepath.Join(task.AllocDir, "cloudinit.iso"),
 					},
 				},
 				Result: &storage.Volume{},
@@ -499,6 +502,7 @@ func TestVirtDriver(t *testing.T) {
 		)
 
 		pl.Expect(
+			mock_storage.DefaultImageFormat{Result: "tif"},
 			mock_storage.AddVolume{
 				Name: vmName + "_sda.img",
 				Opts: storage.Options{
@@ -655,6 +659,7 @@ func TestVirtDriver(t *testing.T) {
 		)
 
 		pl.Expect(
+			mock_storage.DefaultImageFormat{Result: "tif"},
 			mock_storage.AddVolume{
 				Name: vmName + "_sda.img",
 				Opts: storage.Options{

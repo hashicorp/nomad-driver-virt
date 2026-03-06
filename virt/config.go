@@ -34,8 +34,9 @@ var (
 		"provider": hclspec.NewBlock("provider", false, hclspec.NewObject(map[string]*hclspec.Spec{
 			"libvirt": libvirt.ConfigSpec(),
 		})),
-		"data_dir":    hclspec.NewAttr("data_dir", "string", false),
-		"image_paths": hclspec.NewAttr("image_paths", "list(string)", false),
+		"data_dir":     hclspec.NewAttr("data_dir", "string", false),
+		"image_paths":  hclspec.NewAttr("image_paths", "list(string)", false),
+		"storage_pool": hclspec.NewBlock("storage_pool", false, storage.ConfigSpec()),
 	})
 
 	// taskConfigSpec is the specification of the plugin's configuration for
@@ -43,12 +44,11 @@ var (
 	// this is used to validated the configuration specified for the plugin
 	// when a job is submitted.
 	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
-		"storage_pool":                    hclspec.NewBlock("storage_pool", false, storage.ConfigSpec()),
 		"network_interface":               net.NetworkInterfaceHCLSpec(),
 		"disk":                            disks.ConfigSpec(),
 		"use_thin_copy":                   hclspec.NewAttr("use_thin_copy", "bool", false),
-		"primary_disk_size":               hclspec.NewAttr("primary_disk_size", "number", true),
-		"image":                           hclspec.NewAttr("image", "string", true),
+		"primary_disk_size":               hclspec.NewAttr("primary_disk_size", "number", false),
+		"image":                           hclspec.NewAttr("image", "string", false),
 		"hostname":                        hclspec.NewAttr("hostname", "string", false),
 		"user_data":                       hclspec.NewAttr("user_data", "string", false),
 		"default_user_authorized_ssh_key": hclspec.NewAttr("default_user_authorized_ssh_key", "string", false),
