@@ -1,0 +1,13 @@
+name: install-librados-dev
+description: install librados-dev package
+runs:
+  using: composite
+  steps:
+  - name: install librados-dev
+    run: |-
+      set -x
+      
+      sudo apt-get update
+      sudo apt-get install librados-dev librbd-dev
+
+    shell: bash

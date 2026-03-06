@@ -3,18 +3,20 @@
 
 package storage
 
-// Pool defines the required interface for supporting storage pools
+// Pool defines the required interface for supporting storage pools.
 type Pool interface {
-	// AddVolume adds a new volume to the storage pool
+	// AddVolume adds a new volume to the storage pool.
 	AddVolume(name string, opts Options) (*Volume, error)
-	// GetVolume retrieves a volume from the storage pool if it exists
+	// GetVolume retrieves a volume from the storage pool if it exists.
 	GetVolume(name string) (*Volume, error)
-	// DeleteVolume deletes a volume from the storage pool
+	// DeleteVolume deletes a volume from the storage pool.
 	DeleteVolume(name string) error
-	// Name returns the name of the storage pool
+	// Name returns the name of the storage pool.
 	Name() string
-	// Type returns the type of the storage pool
+	// Type returns the type of the storage pool.
 	Type() string
+	// DefaultImageFormat returns the default image format for the pool.
+	DefaultImageFormat() string
 }
 
 // Options are supported options for AddVolume
