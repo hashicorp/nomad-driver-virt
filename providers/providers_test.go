@@ -46,13 +46,13 @@ func TestProviders(t *testing.T) {
 		stubProvider(p, "test-virt", stub)
 
 		t.Run("existing provider", func(t *testing.T) {
-			pv, err := p.Get("test-virt")
+			pv, err := p.Get(t.Context(), "test-virt")
 			must.NoError(t, err)
 			must.Eq(t, vstub, pv)
 		})
 
 		t.Run("missing provider", func(t *testing.T) {
-			pv, err := p.Get("unknown")
+			pv, err := p.Get(t.Context(), "unknown")
 			must.ErrorIs(t, err, ErrUnavailableProvider)
 			must.Nil(t, pv)
 		})
@@ -61,7 +61,7 @@ func TestProviders(t *testing.T) {
 	t.Run("Default", func(t *testing.T) {
 		t.Run("no providers", func(t *testing.T) {
 			p := New(ctx, logger)
-			pv, err := p.Default()
+			pv, err := p.Default(t.Context())
 			must.ErrorIs(t, err, ErrUnavailableProvider)
 			must.Nil(t, pv)
 		})
@@ -69,7 +69,7 @@ func TestProviders(t *testing.T) {
 		t.Run("with providers", func(t *testing.T) {
 			p := New(ctx, logger)
 			stubProvider(p, "test-virt", stub)
-			pv, err := p.Default()
+			pv, err := p.Default(t.Context())
 			must.NoError(t, err)
 			must.Eq(t, vstub, pv)
 		})
@@ -108,7 +108,7 @@ func TestProviders(t *testing.T) {
 	t.Run("GetProviderForVM", func(t *testing.T) {
 		t.Run("no providers", func(t *testing.T) {
 			p := New(ctx, logger)
-			v, err := p.GetProviderForVM("test-vm")
+			v, err := p.GetProviderForVM(t.Context(), "test-vm")
 			must.ErrorIs(t, err, vm.ErrNotFound)
 			must.Nil(t, v)
 		})
@@ -117,7 +117,7 @@ func TestProviders(t *testing.T) {
 			p := New(ctx, logger)
 			stubProvider(p, "test-virt", mock_virtualizers.NewStatic())
 			stubProvider(p, "other-virt", mock_virtualizers.NewStatic())
-			v, err := p.GetProviderForVM("test-vm")
+			v, err := p.GetProviderForVM(t.Context(), "test-vm")
 			must.ErrorIs(t, err, vm.ErrNotFound)
 			must.Nil(t, v)
 		})
@@ -128,7 +128,7 @@ func TestProviders(t *testing.T) {
 			stub := &mock_virtualizers.StaticVirt{GetVMResult: &vm.Info{}}
 			stubProvider(p, "other-virt", stub)
 
-			v, err := p.GetProviderForVM("test-vm")
+			v, err := p.GetProviderForVM(t.Context(), "test-vm")
 			must.NoError(t, err)
 			must.Eq(t, virt.Virtualizer(stub), v)
 		})
@@ -194,7 +194,7 @@ func stubProvider(p Providers, name string, provider virt.Virtualizer) {
 	if ps.dispensers == nil {
 		ps.dispensers = make(map[string]dispenseProvider)
 	}
-	ps.dispensers[name] = func() (virt.Virtualizer, error) { return provider, nil }
+	ps.dispensers[name] = func(context.Context) (virt.Virtualizer, error) { return provider, nil }
 
 	if ps.defaultDispenser == nil {
 		ps.defaultDispenser = ps.dispensers[name]

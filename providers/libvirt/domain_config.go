@@ -9,41 +9,28 @@ import (
 	"libvirt.org/go/libvirtxml"
 )
 
-func parseVolumes(vols []storage.Volume) ([]libvirtxml.DomainDisk, error) {
+func (d *driver) parseVolumes(vols []storage.Volume) ([]libvirtxml.DomainDisk, error) {
 	result := make([]libvirtxml.DomainDisk, 0, len(vols))
 	for _, fd := range vols {
-		disk := libvirtxml.DomainDisk{
-			Device: fd.Kind,
-			Driver: &libvirtxml.DomainDiskDriver{
-				Name: fd.Driver,
-				Type: fd.Format,
-			},
-			Source: &libvirtxml.DomainDiskSource{
-				Volume: &libvirtxml.DomainDiskSourceVolume{
-					Pool:   fd.Pool,
-					Volume: fd.Name,
-				},
-			},
-			Target: &libvirtxml.DomainDiskTarget{
-				Dev: fd.DeviceName,
-				Bus: fd.BusType,
-			},
+		disk, err := d.storage.VolumeToDisk(fd)
+		if err != nil {
+			return nil, err
 		}
 
 		// If this is the primary device, mark to boot
 		if fd.Primary {
 			disk.Boot = &libvirtxml.DomainDeviceBoot{Order: 1}
 		}
-		result = append(result, disk)
+		result = append(result, *disk)
 	}
 
 	return result, nil
 }
 
-func parseConfiguration(config *vm.Config) (string, error) {
+func (d *driver) parseConfiguration(config *vm.Config) (string, error) {
 	zero := uint(0)
 
-	disks, err := parseVolumes(config.Disks.Volumes())
+	disks, err := d.parseVolumes(config.Disks.Volumes())
 	if err != nil {
 		return "", err
 	}

@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +21,7 @@ const defaultDirectoryImageFormat = "qcow2"
 // directory provides a local directory based implementation
 // of a storage pool.
 type directory struct {
+	ctx      context.Context
 	poolName string
 	logger   hclog.Logger
 	l        libvirtStorage
@@ -27,7 +29,7 @@ type directory struct {
 }
 
 // newDirectoryPool creates a new directory based storage pool.
-func newDirectoryPool(logger hclog.Logger, l libvirtStorage, poolName string, config storage.Directory, s storage.Storage) (storage.Pool, error) {
+func newDirectoryPool(ctx context.Context, logger hclog.Logger, l libvirtStorage, poolName string, config storage.Directory, s storage.Storage) (*directory, error) {
 	logger = logger.Named("storage-pool").With("name", poolName)
 	p, err := l.FindStoragePool(poolName)
 	if err != nil && !errors.Is(err, vm.ErrNotFound) {
@@ -48,7 +50,7 @@ func newDirectoryPool(logger hclog.Logger, l libvirtStorage, poolName string, co
 			return nil, err
 		}
 
-		if p, err = l.CreateStoragePool(libvirtxml.StoragePool{
+		if p, err = l.CreateStoragePool(&libvirtxml.StoragePool{
 			Name: poolName,
 			Target: &libvirtxml.StoragePoolTarget{
 				Path: config.Path,
@@ -59,7 +61,7 @@ func newDirectoryPool(logger hclog.Logger, l libvirtStorage, poolName string, co
 		}
 	}
 
-	return &directory{logger: logger, poolName: poolName, l: l, s: s}, nil
+	return &directory{ctx: ctx, logger: logger, poolName: poolName, l: l, s: s}, nil
 }
 
 // Name implements storage.Pool
@@ -72,15 +74,17 @@ func (d *directory) Type() string {
 	return storage.PoolTypeDirectory
 }
 
+// DefaultImageFormat implements storage.Pool
+func (d *directory) DefaultImageFormat() string {
+	return defaultDirectoryImageFormat
+}
+
 // AddVolume implements storage.Pool
 func (d *directory) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {
 	// The directory pool does not support cloning volumes or snapshots
 	if opts.Source.Volume != "" || opts.Source.Snapshot != "" {
 		return nil, fmt.Errorf("cannot clone volumes or snapshots - %w", vm.ErrNotSupported)
 	}
-
-	src := opts.Source.Path
-	d.logger.Debug("adding new volume", "source", src, "name", name, "options", hclog.Fmt("%#v", opts))
 
 	pool, err := d.l.FindStoragePool(d.poolName)
 	if err != nil {
@@ -157,7 +161,7 @@ func (d *directory) AddVolume(name string, opts storage.Options) (*storage.Volum
 		return nil, err
 	}
 
-	vol, err := pool.StorageVolCreateXML(volData, 0)
+	vol, err := pool.StorageVolCreateXML(volData, libvirtNoFlags)
 	if err != nil {
 		return nil, err
 	}

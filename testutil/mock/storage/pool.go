@@ -21,10 +21,11 @@ func NewStaticPool() *StaticPool {
 }
 
 type StaticPool struct {
-	AddVolumeResult *storage.Volume
-	GetVolumeResult *storage.Volume
-	NameResult      string
-	TypeResult      string
+	AddVolumeResult          *storage.Volume
+	GetVolumeResult          *storage.Volume
+	NameResult               string
+	TypeResult               string
+	DefaultImageFormatResult string
 
 	counts map[string]int
 	m      sync.Mutex
@@ -108,10 +109,27 @@ func (s *StaticPool) Type() string {
 	return s.TypeResult
 }
 
+func (s *StaticPool) DefaultImageFormat() string {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	if s.DefaultImageFormatResult != "" {
+		return s.DefaultImageFormatResult
+	}
+
+	return "testing-image-format"
+}
+
 type AddVolume struct {
 	Name   string
 	Opts   storage.Options
 	Result *storage.Volume
+	Err    error
+}
+
+type DefaultImageFormat struct {
+	Result string
 	Err    error
 }
 
@@ -137,12 +155,13 @@ type Type struct {
 type MockPool struct {
 	t must.T
 
-	addVolume    []AddVolume
-	getVolume    []GetVolume
-	deleteVolume []DeleteVolume
-	name         []Name
-	types        []Type
-	m            sync.Mutex
+	addVolume          []AddVolume
+	getVolume          []GetVolume
+	defaultImageFormat []DefaultImageFormat
+	deleteVolume       []DeleteVolume
+	name               []Name
+	types              []Type
+	m                  sync.Mutex
 }
 
 func (m *MockPool) Expect(calls ...any) *MockPool {
@@ -150,6 +169,8 @@ func (m *MockPool) Expect(calls ...any) *MockPool {
 		switch c := call.(type) {
 		case AddVolume:
 			m.ExpectAddVolume(c)
+		case DefaultImageFormat:
+			m.ExpectDefaultImageFormat(c)
 		case GetVolume:
 			m.ExpectGetVolume(c)
 		case DeleteVolume:
@@ -179,6 +200,14 @@ func (m *MockPool) ExpectAddVolume(c AddVolume) *MockPool {
 	defer m.m.Unlock()
 
 	m.addVolume = append(m.addVolume, c)
+	return m
+}
+
+func (m *MockPool) ExpectDefaultImageFormat(c DefaultImageFormat) *MockPool {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.defaultImageFormat = append(m.defaultImageFormat, c)
 	return m
 }
 
@@ -286,6 +315,20 @@ func (m *MockPool) Name() string {
 	return call.Result
 }
 
+func (m *MockPool) DefaultImageFormat() string {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.defaultImageFormat,
+		must.Sprint("Unexpected call to DefaultImageFormat"))
+	call := m.defaultImageFormat[0]
+	m.defaultImageFormat = m.defaultImageFormat[1:]
+
+	return call.Result
+}
+
 func (m *MockPool) Type() string {
 	m.m.Lock()
 	defer m.m.Unlock()
@@ -316,12 +359,9 @@ func (m *MockPool) AssertExpectations() {
 		must.Sprintf("DeleteVolume expecting %d more invocations", len(m.deleteVolume)))
 	must.SliceEmpty(m.t, m.name,
 		must.Sprintf("Name expecting %d more invocations", len(m.name)))
+	must.SliceEmpty(m.t, m.defaultImageFormat,
+		must.Sprintf("DefaultImageFormat expecting %d more invocations", len(m.defaultImageFormat)))
 	must.SliceEmpty(m.t, m.types,
 		must.Sprintf("Type expecting %d more invocations", len(m.types)))
 
 }
-
-var (
-	_ storage.Pool = (*StaticPool)(nil)
-	_ storage.Pool = (*MockPool)(nil)
-)

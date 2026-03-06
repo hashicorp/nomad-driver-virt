@@ -92,15 +92,8 @@ func TestController_ensureIPTables(t *testing.T) {
 		ipt, err := iptables.New()
 		must.NoError(t, err)
 
-		// Try listing our custom chains to ensure they do not exist before the
-		// test starts.
-		natChains, err := ipt.ListChains(iptablesNATTableName)
-		must.NoError(t, err)
-		must.SliceNotContains(t, natChains, preroutingIPTablesChainName)
-
-		filterChains, err := ipt.ListChains(iptablesFilterTableName)
-		must.NoError(t, err)
-		must.SliceNotContains(t, filterChains, forwardIPTablesChainName)
+		// Always start with clean tables
+		iptablesCleanup(t, ipt)
 
 		// Add a cleanup function which will remove all the added iptables chain
 		// and rule entries.
@@ -114,7 +107,7 @@ func TestController_ensureIPTables(t *testing.T) {
 
 		// Ensure the custom chain is found within the NAT table and check that the
 		// table has a jump rule to the custom chain.
-		natChains, err = ipt.ListChains(iptablesNATTableName)
+		natChains, err := ipt.ListChains(iptablesNATTableName)
 		must.NoError(t, err)
 		must.SliceContains(t, natChains, preroutingIPTablesChainName)
 
@@ -124,7 +117,7 @@ func TestController_ensureIPTables(t *testing.T) {
 
 		// Ensure the custom chain is found within the filter table and check that
 		// the table has a jump rule to the custom chain.
-		filterChains, err = ipt.ListChains(iptablesFilterTableName)
+		filterChains, err := ipt.ListChains(iptablesFilterTableName)
 		must.NoError(t, err)
 		must.SliceContains(t, filterChains, forwardIPTablesChainName)
 
@@ -944,6 +937,13 @@ func TestController_VMTerminatedTeardown(t *testing.T) {
 		// conflict with calls to VMTerminatedTeardown.
 		ipt, err := iptables.New()
 		must.NoError(t, err)
+
+		// Always start with clean tables
+		iptablesCleanup(t, ipt)
+
+		// Add a cleanup function which will remove all the added iptables chain
+		// and rule entries.
+		t.Cleanup(func() { iptablesCleanup(t, ipt) })
 
 		// Add a cleanup function which will remove all the added iptables chain
 		// rule entries, in the event of a failure in the post stop failing to do

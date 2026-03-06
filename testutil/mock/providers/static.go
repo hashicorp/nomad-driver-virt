@@ -4,6 +4,7 @@
 package providers
 
 import (
+	"context"
 	"runtime"
 	"strings"
 	"sync"
@@ -73,7 +74,7 @@ func (s *StaticProviders) Setup(c *virt.Config) error {
 	return nil
 }
 
-func (s *StaticProviders) Get(string) (virt.Virtualizer, error) {
+func (s *StaticProviders) Get(context.Context, string) (virt.Virtualizer, error) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	s.incrCount()
@@ -81,7 +82,7 @@ func (s *StaticProviders) Get(string) (virt.Virtualizer, error) {
 	return s.virtualizer, nil
 }
 
-func (s *StaticProviders) Default() (virt.Virtualizer, error) {
+func (s *StaticProviders) Default(context.Context) (virt.Virtualizer, error) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	s.incrCount()
@@ -107,7 +108,7 @@ func (s *StaticProviders) GetVM(name string) (*vm.Info, error) {
 	return &vm.Info{}, nil
 }
 
-func (s *StaticProviders) GetProviderForVM(string) (virt.Virtualizer, error) {
+func (s *StaticProviders) GetProviderForVM(context.Context, string) (virt.Virtualizer, error) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	s.incrCount()
