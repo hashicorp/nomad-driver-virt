@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
@@ -27,8 +28,9 @@ import (
 // validate the driver implements the connect interface
 var _ shims.Connect = (*driver)(nil)
 
-func testNew(t *testing.T) *driver {
+func testNew(t *testing.T) (*driver, string) {
 	t.Helper()
+	poolName := strings.ReplaceAll(t.Name(), "/", "_")
 
 	l := New(
 		context.Background(),
@@ -37,7 +39,12 @@ func testNew(t *testing.T) *driver {
 	)
 	t.Cleanup(func() { l.Close() })
 	must.NoError(t, l.Init())
-	return l
+	must.NoError(t, l.SetupStorage(&storage.Config{
+		Directory: map[string]storage.Directory{
+			poolName: {Path: t.TempDir()},
+		},
+	}))
+	return l, poolName
 }
 
 func vmName(t *testing.T) string {
@@ -58,7 +65,7 @@ func TestStorage(t *testing.T) {
 		poolName, poolDir := mkPoolDir(t)
 		mainName := fmt.Sprintf("%s-%s", poolName, "main-pool")
 		secondName := fmt.Sprintf("%s-%s", poolName, "secondary-pool")
-		l := testNew(t)
+		l, _ := testNew(t)
 		pools := &storage.Config{
 			Directory: map[string]storage.Directory{
 				mainName: {
@@ -93,7 +100,7 @@ func TestStorage(t *testing.T) {
 	t.Run("Volumes", func(t *testing.T) {
 		t.Run("create-retrieve-delete", func(t *testing.T) {
 			poolName, poolDir := mkPoolDir(t)
-			l := testNew(t)
+			l, _ := testNew(t)
 			pools := &storage.Config{
 				Directory: map[string]storage.Directory{
 					poolName: {Path: filepath.Join(poolDir, "pool")}}}
@@ -129,7 +136,7 @@ func TestStorage(t *testing.T) {
 func TestGetInfo(t *testing.T) {
 	t.Parallel()
 
-	ld := testNew(t)
+	ld, _ := testNew(t)
 
 	i, err := ld.GetInfo()
 	must.NoError(t, err)
@@ -144,7 +151,7 @@ func TestGetInfo(t *testing.T) {
 func TestStartDomain(t *testing.T) {
 	t.Parallel()
 
-	makeConfig := func() *vm.Config {
+	makeConfig := func(poolName string) *vm.Config {
 		return &vm.Config{
 			Memory:   66600,
 			CPUs:     2,
@@ -181,7 +188,7 @@ func TestStartDomain(t *testing.T) {
 			Disks: disks.Disks{
 				{
 					Volume: &storage.Volume{
-						Pool:       "pool-name",
+						Pool:       poolName,
 						Name:       "vol-name",
 						Kind:       "disk",
 						Driver:     "qemu",
@@ -196,9 +203,9 @@ func TestStartDomain(t *testing.T) {
 	}
 
 	t.Run("domain created successfully", func(t *testing.T) {
-		ld := testNew(t)
+		ld, poolName := testNew(t)
 
-		domConfig := makeConfig()
+		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
 
 		must.NoError(t, ld.CreateVM(domConfig))
@@ -210,9 +217,9 @@ func TestStartDomain(t *testing.T) {
 	})
 
 	t.Run("duplicated domain error", func(t *testing.T) {
-		ld := testNew(t)
+		ld, poolName := testNew(t)
 
-		domConfig := makeConfig()
+		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
 		must.NoError(t, ld.CreateVM(domConfig))
 
@@ -222,9 +229,9 @@ func TestStartDomain(t *testing.T) {
 	})
 
 	t.Run("includes volume information", func(t *testing.T) {
-		ld := testNew(t)
+		ld, poolName := testNew(t)
 
-		domConfig := makeConfig()
+		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
 		must.NoError(t, ld.CreateVM(domConfig))
 
@@ -240,13 +247,13 @@ func TestStartDomain(t *testing.T) {
 	})
 
 	t.Run("includes additional volumes", func(t *testing.T) {
-		ld := testNew(t)
+		ld, poolName := testNew(t)
 
-		domConfig := makeConfig()
+		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
 		domConfig.Disks = append(domConfig.Disks, &disks.Disk{
 			Volume: &storage.Volume{
-				Pool:       "pool-name",
+				Pool:       poolName,
 				Name:       "vol-name",
 				Kind:       "cdrom",
 				Driver:     "qemu",
@@ -274,7 +281,7 @@ func TestStartDomain(t *testing.T) {
 func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	t.Parallel()
 
-	ld := testNew(t)
+	ld, _ := testNew(t)
 
 	domainName := vmName(t)
 	err := ld.CreateVM(&vm.Config{
@@ -310,7 +317,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 func Test_GetNetworkInterfaces(t *testing.T) {
 	t.Parallel()
 
-	ld := testNew(t)
+	ld, _ := testNew(t)
 	domainName := vmName(t)
 	err := ld.CreateVM(&vm.Config{
 		RemoveConfigFiles: true,

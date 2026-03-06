@@ -56,6 +56,14 @@ func (s *StaticImageHandler) CallCount(fnName string) int {
 	return s.counts[fnName]
 }
 
+func (s *StaticImageHandler) ConvertImage(string, string, string, string) error {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	return nil
+}
+
 func (s *StaticImageHandler) GetImageFormat(string) (string, error) {
 	s.m.Lock()
 	defer s.m.Unlock()
@@ -84,6 +92,14 @@ func (s *StaticImageHandler) CreateChainedCopy(string, string, int64) error {
 	return nil
 }
 
+type ConvertImage struct {
+	Src    string
+	SrcFmt string
+	Dst    string
+	DstFmt string
+	Err    error
+}
+
 type GetImageFormat struct {
 	Path   string
 	Result string
@@ -108,6 +124,7 @@ type MockImageHandler struct {
 	t must.T
 
 	getImageFormat    []GetImageFormat
+	convertImage      []ConvertImage
 	createCopy        []CreateCopy
 	createChainedCopy []CreateChainedCopy
 	m                 sync.Mutex
@@ -122,11 +139,21 @@ func (m *MockImageHandler) Expect(calls ...any) *MockImageHandler {
 			m.ExpectCreateCopy(c)
 		case CreateChainedCopy:
 			m.ExpectCreateChainedCopy(c)
+		case ConvertImage:
+			m.ExpectConvertImage(c)
 		default:
 			m.t.Fatalf("unsupported type for mock expectation: %T", c)
 		}
 	}
 
+	return m
+}
+
+func (m *MockImageHandler) ExpectConvertImage(c ConvertImage) *MockImageHandler {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.convertImage = append(m.convertImage, c)
 	return m
 }
 
@@ -152,6 +179,23 @@ func (m *MockImageHandler) ExpectCreateChainedCopy(c CreateChainedCopy) *MockIma
 
 	m.createChainedCopy = append(m.createChainedCopy, c)
 	return m
+}
+
+func (m *MockImageHandler) ConvertImage(src, srcFmt, dst, dstFmt string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.convertImage,
+		must.Sprint("Unexpected call to ConvertImage"))
+	call := m.convertImage[0]
+	m.convertImage = m.convertImage[1:]
+
+	must.Eq(m.t, call, ConvertImage{
+		Src: src, SrcFmt: srcFmt, Dst: dst, DstFmt: dstFmt, Err: call.Err})
+
+	return call.Err
 }
 
 func (m *MockImageHandler) GetImageFormat(path string) (string, error) {
@@ -238,4 +282,6 @@ func (m *MockImageHandler) AssertExpectations() {
 		must.Sprintf("CreateCopy expecting %d more invocations", len(m.createCopy)))
 	must.SliceEmpty(m.t, m.createChainedCopy,
 		must.Sprintf("CreateChainedCopy expecting %d more invocations", len(m.createChainedCopy)))
+	must.SliceEmpty(m.t, m.convertImage,
+		must.Sprintf("ConvertImage expecting %d more invocations", len(m.convertImage)))
 }

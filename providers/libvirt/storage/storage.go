@@ -4,7 +4,9 @@
 package storage
 
 import (
+	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -18,8 +20,12 @@ import (
 )
 
 const (
+	// Default disk driver to assign in libvirt
 	defaultDiskDriver = "qemu"
-	providerName      = "libvirt"
+	// Name of this provider
+	providerName = "libvirt"
+	// Value when passing no flags to libvirt
+	libvirtNoFlags = 0
 )
 
 var (
@@ -30,23 +36,29 @@ var (
 
 // This interface defines what functions are needed from the driver
 type libvirtStorage interface {
-	CreateStoragePool(def libvirtxml.StoragePool) (shims.StoragePool, error)
+	CreateStoragePool(def *libvirtxml.StoragePool) (shims.StoragePool, error)
 	FindStoragePool(name string) (shims.StoragePool, error)
+	GetCephSecret(name string) (string, error)
+	GetCephSecretID(name string) (string, error)
 	NewStream() (shims.Stream, error)
+	SetCephSecret(name, credential string) (string, error)
+	UpdateStoragePool(def *libvirtxml.StoragePool) error
 }
 
 // New creates a new storage instance
-func New(logger hclog.Logger, l libvirtStorage, config *storage.Config) (*store, error) {
+func New(ctx context.Context, logger hclog.Logger, l libvirtStorage, config *storage.Config) (*Storage, error) {
 	logger = logger.Named("storage")
-	s := &store{
+	s := &Storage{
 		logger:       logger,
 		pools:        make(map[string]storage.Pool),
 		imageHandler: image_tools.NewQemuHandler(logger),
+		l:            l,
 	}
 
-	for name, d := range config.Directory {
+	for _, name := range slices.Sorted(maps.Keys(config.Directory)) {
+		d := config.Directory[name]
 		logger.Debug("adding new directory storage pool", "name", name, "path", d.Path)
-		pool, err := newDirectoryPool(logger, l, name, d, s)
+		pool, err := newDirectoryPool(ctx, logger, l, name, d, s)
 		if err != nil {
 			return nil, err
 		}
@@ -58,27 +70,88 @@ func New(logger hclog.Logger, l libvirtStorage, config *storage.Config) (*store,
 		}
 	}
 
-	if len(config.Ceph) > 0 {
-		return nil, fmt.Errorf("ceph storage pools %w", vm.ErrNotImplemented)
+	for _, name := range slices.Sorted(maps.Keys(config.Ceph)) {
+
+		//	for name, c := range config.Ceph {
+		c := config.Ceph[name]
+		logger.Debug("adding new ceph storage pool", "name", name)
+		pool, err := newCephPool(ctx, logger, l, name, c, s)
+		if err != nil {
+			return nil, err
+		}
+		s.pools[name] = pool
+
+		if s.defaultPool == nil || c.Default {
+			logger.Info("default storage pool set", "name", name)
+			s.defaultPool = pool
+		}
 	}
 
 	return s, nil
 }
 
-type store struct {
+type Storage struct {
+	config       *storage.Config
 	logger       hclog.Logger
 	defaultPool  storage.Pool
 	pools        map[string]storage.Pool
 	imageHandler image_tools.ImageHandler
+	l            libvirtStorage
+}
+
+// Copy creates a new copy of the storage using the new context and
+// libvirtStorage interface.
+func (s *Storage) Copy(ctx context.Context, l libvirtStorage) *Storage {
+	newS := &Storage{
+		logger:       s.logger,
+		imageHandler: s.imageHandler,
+		pools:        make(map[string]storage.Pool),
+		l:            l,
+	}
+
+	for name, p := range s.pools {
+		switch pool := p.(type) {
+		case *ceph:
+			newS.pools[name] = &ceph{
+				ctx:      ctx,
+				poolName: name,
+				logger:   pool.logger,
+				uploader: pool.uploader,
+				l:        l,
+				s:        newS,
+			}
+
+		case *directory:
+			newS.pools[name] = &directory{
+				poolName: name,
+				logger:   pool.logger,
+				l:        l,
+				s:        newS,
+			}
+		default:
+			// NOTE: This should never happen
+			panic(fmt.Sprintf("cannot copy unknown storage pool type - %T", p))
+		}
+
+		if s.defaultPool.Name() == p.Name() {
+			newS.defaultPool = newS.pools[name]
+		}
+	}
+
+	return newS
 }
 
 // DefaultPool implements storage.Storage
-func (s *store) DefaultPool() (storage.Pool, error) {
+func (s *Storage) DefaultPool() (storage.Pool, error) {
+	if s.defaultPool == nil {
+		return nil, ErrPoolNotFound
+	}
+
 	return s.defaultPool, nil
 }
 
 // GetPool implements storage.Storage
-func (s *store) GetPool(name string) (storage.Pool, error) {
+func (s *Storage) GetPool(name string) (storage.Pool, error) {
 	if pool, ok := s.pools[name]; ok {
 		return pool, nil
 	}
@@ -87,17 +160,17 @@ func (s *store) GetPool(name string) (storage.Pool, error) {
 }
 
 // DefaultDiskDriver implements storage.Storage
-func (s *store) DefaultDiskDriver() string {
+func (s *Storage) DefaultDiskDriver() string {
 	return defaultDiskDriver
 }
 
 // ImageHandler implements storage.Storage
-func (s *store) ImageHandler() image_tools.ImageHandler {
+func (s *Storage) ImageHandler() image_tools.ImageHandler {
 	return s.imageHandler
 }
 
 // GenerateDeviceName implemenets storage.Storage
-func (s *store) GenerateDeviceName(busType string, existingNames []string) string {
+func (s *Storage) GenerateDeviceName(busType string, existingNames []string) string {
 	var prefix string
 	switch busType {
 	case "ide":
@@ -124,7 +197,7 @@ func (s *store) GenerateDeviceName(busType string, existingNames []string) strin
 }
 
 // Fingerprint implements storage.Storage
-func (s *store) Fingerprint(attrs map[string]*structs.Attribute) {
+func (s *Storage) Fingerprint(attrs map[string]*structs.Attribute) {
 	for name, pool := range s.pools {
 		poolKey := fmt.Sprintf("%s.storage_pool.%s",
 			vm.FingerprintAttributeKeyPrefix, name)
@@ -135,4 +208,143 @@ func (s *store) Fingerprint(attrs map[string]*structs.Attribute) {
 			attrs[poolKey+".default"] = structs.NewBoolAttribute(true)
 		}
 	}
+}
+
+// VolumeToDisk will convert a storage volume into a domain disk.
+// NOTE: Volumes _should_ be consistently converted into disk configuration,
+// however, some pools don't support volumes backing disks which is a sad
+// state of affairs.
+func (s *Storage) VolumeToDisk(vol storage.Volume) (*libvirtxml.DomainDisk, error) {
+	pool, err := s.GetPool(vol.Pool)
+	if err != nil {
+		return nil, err
+	}
+
+	disk := &libvirtxml.DomainDisk{
+		Device: vol.Kind,
+		Driver: &libvirtxml.DomainDiskDriver{
+			Name: vol.Driver,
+			Type: vol.Format,
+		},
+		Target: &libvirtxml.DomainDiskTarget{
+			Dev: vol.DeviceName,
+			Bus: vol.BusType,
+		},
+	}
+
+	switch pool.Type() {
+	case storage.PoolTypeDirectory:
+		disk.Source = &libvirtxml.DomainDiskSource{
+			Volume: &libvirtxml.DomainDiskSourceVolume{
+				Pool:   vol.Pool,
+				Volume: vol.Name,
+			},
+		}
+	case storage.PoolTypeCeph:
+		p, err := s.l.FindStoragePool(vol.Pool)
+		if err != nil {
+			return nil, err
+		}
+		defer p.Free()
+		info, err := getPoolInfo(p)
+		if err != nil {
+			return nil, err
+		}
+		secretId, err := s.l.GetCephSecretID(vol.Pool)
+		if err != nil {
+			return nil, err
+		}
+
+		hosts := make([]libvirtxml.DomainDiskSourceHost, len(info.Source.Host))
+		for i := range len(info.Source.Host) {
+			h := info.Source.Host[i]
+			hosts[i] = libvirtxml.DomainDiskSourceHost{
+				Name: h.Name,
+				Port: h.Port,
+			}
+		}
+
+		disk.Source = &libvirtxml.DomainDiskSource{
+			Network: &libvirtxml.DomainDiskSourceNetwork{
+				Protocol: "rbd",
+				Name:     fmt.Sprintf("%s/%s", info.Source.Name, vol.Name),
+				Hosts:    hosts,
+				Auth: &libvirtxml.DomainDiskAuth{
+					Username: info.Source.Auth.Username,
+					Secret: &libvirtxml.DomainDiskSecret{
+						Type: "ceph",
+						UUID: secretId,
+					},
+				},
+			},
+		}
+	default:
+		return nil, fmt.Errorf("unknown storage type - %s", pool.Type())
+	}
+
+	return disk, nil
+}
+
+// DiscoverVolumes will inspect a disk collection and return the set of storage
+// volumes it represents.
+func (s *Storage) DiscoverVolumes(disks []libvirtxml.DomainDisk) ([]storage.Volume, error) {
+	vols := make([]storage.Volume, 0)
+
+	cephPools := make(map[string]string)
+	for name, pool := range s.pools {
+		if pool.Type() != storage.PoolTypeCeph {
+			continue
+		}
+		p, err := s.l.FindStoragePool(name)
+		if err != nil {
+			return nil, err
+		}
+		defer p.Free()
+		info, err := getPoolInfo(p)
+		if err != nil {
+			return nil, err
+		}
+		cephPools[info.Source.Name] = name
+	}
+
+	for _, disk := range disks {
+		// If no source is configured on disk it can't be handled
+		if disk.Source == nil {
+			continue
+		}
+
+		// Disk is properly configured as backed by storage pool volume
+		if disk.Source.Volume != nil {
+			vols = append(vols, storage.Volume{
+				Pool: disk.Source.Volume.Pool,
+				Name: disk.Source.Volume.Volume,
+			})
+
+			continue
+		}
+
+		// Disk is Ceph volume
+		if disk.Source.Network != nil && disk.Source.Network.Protocol == "rbd" {
+			nameParts := strings.Split(disk.Source.Network.Name, "/")
+			if len(nameParts) < 2 {
+				return nil, fmt.Errorf("invalid rbd source name - %s", disk.Source.Network.Name)
+			}
+			cephPool := nameParts[0]
+			img := strings.Join(nameParts[1:], "/")
+			localPool, ok := cephPools[cephPool]
+			if !ok {
+				return nil, fmt.Errorf("failed to find rbd source storage pool - %s", disk.Source.Network.Name)
+			}
+
+			vols = append(vols, storage.Volume{
+				Pool: localPool,
+				Name: img,
+			})
+
+			continue
+		}
+		s.logger.Debug("cannot detect volume from disk", "disk", hclog.Fmt("%#v", disk))
+	}
+
+	return vols, nil
 }
