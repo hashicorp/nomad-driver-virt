@@ -30,21 +30,21 @@ type Providers interface {
 	// within the configuration.
 	Setup(config *virt.Config) error
 	// Get will return the named provider if it is available.
-	Get(name string) (virt.Virtualizer, error)
+	Get(ctx context.Context, name string) (virt.Virtualizer, error)
 	// Default will return the provider selected as the default.
-	Default() (virt.Virtualizer, error)
+	Default(ctx context.Context) (virt.Virtualizer, error)
 	// GetVM will return the virtual machine information for the
 	// named virtual machine.
 	GetVM(name string) (*vm.Info, error)
 	// GetProviderForVM will return the virt.Virtualizer responsible
 	// for the named virtual machine.
-	GetProviderForVM(name string) (virt.Virtualizer, error)
+	GetProviderForVM(ctx context.Context, name string) (virt.Virtualizer, error)
 	// Fingerprint will generate node fingerprint information based
 	// on available providers.
 	Fingerprint() (*drivers.Fingerprint, error)
 }
 
-type dispenseProvider func() (virt.Virtualizer, error)
+type dispenseProvider func(context.Context) (virt.Virtualizer, error)
 
 // New creates a new providers instance.
 func New(ctx context.Context, logger hclog.Logger) Providers {
@@ -96,7 +96,9 @@ func (p *providers) Setup(config *virt.Config) error {
 		}
 
 		// Add the dispenser for the libvirt provider
-		dispensers["libvirt"] = func() (virt.Virtualizer, error) { return lv.Copy(), nil }
+		dispensers["libvirt"] = func(ctx context.Context) (virt.Virtualizer, error) {
+			return lv.Copy(ctx), nil
+		}
 
 		// If marked as the default, set it
 		if config.Provider.Libvirt.Default {
@@ -126,6 +128,9 @@ func (p *providers) Fingerprint() (*drivers.Fingerprint, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	// Start with marking the virt driver in the attributes:
 	//
 	//   drivers.virt = true
@@ -135,7 +140,7 @@ func (p *providers) Fingerprint() (*drivers.Fingerprint, error) {
 
 	// Get fingerprint information for all available providers
 	for name, dispense := range p.dispensers {
-		pv, err := dispense()
+		pv, err := dispense(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -169,7 +174,7 @@ func (p *providers) Fingerprint() (*drivers.Fingerprint, error) {
 	}, nil
 }
 
-func (p *providers) Get(name string) (virt.Virtualizer, error) {
+func (p *providers) Get(ctx context.Context, name string) (virt.Virtualizer, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
 
@@ -177,10 +182,10 @@ func (p *providers) Get(name string) (virt.Virtualizer, error) {
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", ErrUnavailableProvider, name)
 	}
-	return dispense()
+	return dispense(ctx)
 }
 
-func (p *providers) Default() (virt.Virtualizer, error) {
+func (p *providers) Default(ctx context.Context) (virt.Virtualizer, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
 
@@ -188,15 +193,18 @@ func (p *providers) Default() (virt.Virtualizer, error) {
 		return nil, ErrUnavailableProvider
 	}
 
-	return p.defaultDispenser()
+	return p.defaultDispenser(ctx)
 }
 
 func (p *providers) GetVM(name string) (*vm.Info, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
 
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	for _, dispense := range p.dispensers {
-		pv, err := dispense()
+		pv, err := dispense(ctx)
 		if err != nil {
 			return nil, err
 		}
@@ -216,12 +224,12 @@ func (p *providers) GetVM(name string) (*vm.Info, error) {
 	return nil, vm.ErrNotFound
 }
 
-func (p *providers) GetProviderForVM(name string) (virt.Virtualizer, error) {
+func (p *providers) GetProviderForVM(ctx context.Context, name string) (virt.Virtualizer, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
 
 	for _, dispense := range p.dispensers {
-		pv, err := dispense()
+		pv, err := dispense(ctx)
 		if err != nil {
 			return nil, err
 		}

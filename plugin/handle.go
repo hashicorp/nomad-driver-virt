@@ -44,6 +44,10 @@ type taskHandle struct {
 	// netTeardown is the specification used to delete all the network
 	// configuration associated to a VM.
 	netTeardown *net.TeardownSpec
+
+	// context associated to the task
+	ctx      context.Context
+	cancelFn context.CancelFunc
 }
 
 func (h *taskHandle) TaskStatus() *drivers.TaskStatus {

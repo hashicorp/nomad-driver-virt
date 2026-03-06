@@ -5,9 +5,11 @@ package libvirt
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/netip"
+	"slices"
 	"sync"
 
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
@@ -30,6 +32,7 @@ const (
 	defaultSecurityMode       = "mapped"
 	defaultInterfaceModel     = "virtio"
 	libvirtVirtioChannel      = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
+	libvirtNoFlags            = 0
 
 	// URI for running in test mode
 	TestURI = "test:///default"
@@ -77,33 +80,36 @@ var (
 )
 
 type driver struct {
-	ctx      context.Context
-	uri      string
-	conn     *libvirt.Connect
-	logger   hclog.Logger
-	user     string
-	password string
-	opts     []Option
-	closed   bool
-	storage  storage.Storage
-	cancel   context.CancelFunc
-	m        sync.Mutex
+	ctx        context.Context
+	uri        string
+	conn       *libvirt.Connect
+	logger     hclog.Logger
+	user       string
+	password   string
+	opts       []Option
+	closed     bool
+	storage    *libvirt_storage.Storage
+	networking *libvirtnet.Controller
+	cancel     context.CancelFunc
+	m          sync.Mutex
 }
 
 // Copy creates a copy of this driver.
-func (d *driver) Copy() *driver {
+func (d *driver) Copy(ctx context.Context) *driver {
 	d.m.Lock()
 	defer d.m.Unlock()
 
 	dCopy := &driver{
-		ctx:      d.ctx,
+		ctx:      ctx,
 		closed:   d.closed,
 		uri:      d.uri,
 		logger:   d.logger,
 		user:     d.user,
 		password: d.password,
-		storage:  d.storage,
 	}
+	dCopy.storage = d.storage.Copy(ctx, dCopy)
+	dCopy.networking = d.networking.Copy(dCopy)
+
 	go dCopy.monitorCtx()
 
 	return dCopy
@@ -142,12 +148,6 @@ func WithAuth(user, password string) Option {
 	}
 }
 
-func WithStorage(s storage.Storage) Option {
-	return func(d *driver) {
-		d.storage = s
-	}
-}
-
 func newConnection(uri string, user string, pass string) (*libvirt.Connect, error) {
 	if user == "" {
 		return libvirt.NewConnect(uri)
@@ -172,7 +172,7 @@ func newConnection(uri string, user string, pass string) (*libvirt.Connect, erro
 		},
 		Callback: callback,
 	}
-	virConn, err := libvirt.NewConnectWithAuth(uri, auth, 0)
+	virConn, err := libvirt.NewConnectWithAuth(uri, auth, libvirtNoFlags)
 
 	return virConn, err
 }
@@ -233,6 +233,7 @@ func New(ctx context.Context, logger hclog.Logger, opt ...Option) *driver {
 		opts:   opt,
 		cancel: cancel,
 	}
+	d.networking = libvirtnet.NewController(d.logger, d)
 
 	for _, opt := range d.opts {
 		opt(d)
@@ -259,7 +260,7 @@ func (d *driver) SetupStorage(config *storage.Config) error {
 		return fmt.Errorf("%w: missing storage pool configuration", vm.ErrInvalidConfiguration)
 	}
 
-	s, err := libvirt_storage.New(d.logger, d, config)
+	s, err := libvirt_storage.New(d.ctx, d.logger, d, config)
 	if err != nil {
 		return err
 	}
@@ -276,7 +277,7 @@ func (d *driver) NewStream() (shims.Stream, error) {
 		return nil, err
 	}
 
-	s, err := c.NewStream(0)
+	s, err := c.NewStream(libvirtNoFlags)
 	if err != nil {
 		return nil, err
 	}
@@ -306,7 +307,7 @@ func (d *driver) FindStoragePool(name string) (shims.StoragePool, error) {
 
 // CreateStoragePool creates a new libvirt storage pool
 // NOTE: caller is responsible to free result
-func (d *driver) CreateStoragePool(def libvirtxml.StoragePool) (shims.StoragePool, error) {
+func (d *driver) CreateStoragePool(def *libvirtxml.StoragePool) (shims.StoragePool, error) {
 	conn, err := d.connection()
 	if err != nil {
 		return nil, err
@@ -317,12 +318,51 @@ func (d *driver) CreateStoragePool(def libvirtxml.StoragePool) (shims.StoragePoo
 		return nil, err
 	}
 
-	pool, err := conn.StoragePoolCreateXML(poolDef, 0)
+	// Define the pool to make the pool persistent.
+	pool, err := conn.StoragePoolDefineXML(poolDef, libvirtNoFlags)
 	if err != nil {
 		return nil, err
 	}
 
+	// Enable autostart on the pool so it will be turned
+	// on after the libvirt service is restarted.
+	if err := pool.SetAutostart(true); err != nil {
+		return nil, err
+	}
+
+	// Create starts the pool.
+	if err := pool.Create(libvirtNoFlags); err != nil {
+		return nil, err
+	}
+
 	return shims.WrapStoragePool(pool), nil
+}
+
+// UpdateStoragePool updates an existing libvirt storage pool
+func (d *driver) UpdateStoragePool(def *libvirtxml.StoragePool) error {
+	conn, err := d.connection()
+	if err != nil {
+		return err
+	}
+
+	poolDef, err := def.Marshal()
+	if err != nil {
+		return err
+	}
+
+	// This will update the pool definition
+	pool, err := conn.StoragePoolDefineXML(poolDef, libvirtNoFlags)
+	if err != nil {
+		return err
+	}
+	defer pool.Free()
+
+	// Now refresh the pool to pick up any changes
+	if err := pool.Refresh(libvirtNoFlags); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // Storage returns the storage interface
@@ -560,7 +600,7 @@ func (d *driver) CreateVM(config *vm.Config) error {
 	if config.XMLConfig != "" {
 		domXML = config.XMLConfig
 	} else {
-		domXML, err = parseConfiguration(config)
+		domXML, err = d.parseConfiguration(config)
 		if err != nil {
 			return fmt.Errorf("libvirt: unable to parse domain configuration %s: %w", config.Name, err)
 		}
@@ -616,7 +656,7 @@ func (d *driver) GetNetworkInterfaces(name string) ([]vm.NetworkInterface, error
 	}
 	defer dom.Free()
 
-	xml, err := dom.GetXMLDesc(0)
+	xml, err := dom.GetXMLDesc(libvirtNoFlags)
 	if err != nil {
 		d.logger.Error("cannot get domain XML", "domain", name, "error", err)
 		return nil, fmt.Errorf("libvirt: unable to get domain XML %s: %w", name, err)
@@ -744,7 +784,7 @@ func (d *driver) UseCloudInit() bool {
 
 // Networking returns the virtualization network sub-system
 func (d *driver) Networking() (virtnet.Net, error) {
-	return libvirtnet.NewController(d.logger, d), nil
+	return d.networking, nil
 }
 
 // Fingerprint generates the fingerprint attributes for this provider.
@@ -792,32 +832,128 @@ func (d *driver) Fingerprint() (map[string]*structs.Attribute, error) {
 	return attrs, nil
 }
 
+// GetCephSecret will return the ceph credential for the provided name
+// base64 encoded.
+func (d *driver) GetCephSecret(name string) (string, error) {
+	conn, err := d.connection()
+	if err != nil {
+		return "", err
+	}
+
+	secret, err := conn.LookupSecretByUsage(libvirt.SECRET_USAGE_TYPE_CEPH, name)
+	if err != nil {
+		return "", err
+	}
+	defer secret.Free()
+
+	val, err := secret.GetValue(libvirtNoFlags)
+	if err != nil {
+		return "", err
+	}
+
+	return base64.StdEncoding.EncodeToString(val), nil
+}
+
+// GetCephSecretID will return the secret UUID if it exists.
+func (d *driver) GetCephSecretID(name string) (string, error) {
+	conn, err := d.connection()
+	if err != nil {
+		return "", err
+	}
+
+	secret, err := conn.LookupSecretByUsage(libvirt.SECRET_USAGE_TYPE_CEPH, name)
+	if err != nil {
+		return "", err
+	}
+	defer secret.Free()
+
+	return secret.GetUUIDString()
+}
+
+// SetCephSecret will create or update a ceph credential returning the UUID
+// for referencing the secret.
+// NOTE: supplied credential is expected to be base64 encoded
+func (d *driver) SetCephSecret(name, credential string) (string, error) {
+	conn, err := d.connection()
+	if err != nil {
+		return "", err
+	}
+
+	decodedCred, err := base64.StdEncoding.DecodeString(credential)
+	if err != nil {
+		return "", err
+	}
+
+	// Attempt to locate the secret if it already exists
+	secret, err := conn.LookupSecretByUsage(libvirt.SECRET_USAGE_TYPE_CEPH, name)
+	if err != nil && !errors.Is(err, libvirt.ERR_NO_SECRET) {
+		return "", err
+	}
+
+	// Be sure to free the secret if set on the way out
+	defer func() {
+		if secret != nil {
+			secret.Free()
+		}
+	}()
+
+	// If the secret is already registered, check and update secret if required
+	// and return the identifier.
+	if err == nil {
+		value, err := secret.GetValue(libvirtNoFlags)
+		if err != nil {
+			return "", err
+		}
+
+		if !slices.Equal(value, decodedCred) {
+			if err := secret.SetValue(decodedCred, libvirtNoFlags); err != nil {
+				return "", err
+			}
+		}
+
+		return secret.GetUUIDString()
+	}
+
+	secretDef := &libvirtxml.Secret{
+		Ephemeral:   "no",
+		Private:     "no",
+		Description: "nomad-driver-virt storage pool credential",
+		Usage: &libvirtxml.SecretUsage{
+			Type: "ceph",
+			Name: name,
+		},
+	}
+	secretXml, err := secretDef.Marshal()
+	if err != nil {
+		return "", err
+	}
+
+	secret, err = conn.SecretDefineXML(secretXml, libvirt.SECRET_DEFINE_VALIDATE)
+	if err != nil {
+		return "", err
+	}
+
+	if err := secret.SetValue([]byte(credential), libvirtNoFlags); err != nil {
+		return "", err
+	}
+
+	return secret.GetUUIDString()
+}
+
 // getDomainVolumes collects the list of storage volumes attached to the domain
 func (d *driver) getDomainVolumes(dom *libvirt.Domain) ([]storage.Volume, error) {
 	info := new(libvirtxml.Domain)
-	if xmlDesc, err := dom.GetXMLDesc(0); err != nil {
+	if xmlDesc, err := dom.GetXMLDesc(libvirtNoFlags); err != nil {
 		return nil, err
 	} else if err := info.Unmarshal(xmlDesc); err != nil {
 		return nil, err
 	}
 
-	vols := []storage.Volume{}
-
 	if info.Devices == nil || len(info.Devices.Disks) == 0 {
-		return vols, nil
+		return []storage.Volume{}, nil
 	}
 
-	for _, disk := range info.Devices.Disks {
-		if disk.Source == nil || disk.Source.Volume == nil {
-			continue
-		}
-		vols = append(vols, storage.Volume{
-			Pool: disk.Source.Volume.Pool,
-			Name: disk.Source.Volume.Volume,
-		})
-	}
-
-	return vols, nil
+	return d.storage.DiscoverVolumes(info.Devices.Disks)
 }
 
 const (
