@@ -98,7 +98,7 @@ func findOrCreateParentVolume(s libvirtStorage, pool shims.StoragePool, handler 
 		if err != nil {
 			return "", "", err
 		}
-		v, err = pool.StorageVolCreateXML(volInfo, 0)
+		v, err = pool.StorageVolCreateXML(volInfo, libvirtNoFlags)
 		if err != nil {
 			return "", "", err
 		}
@@ -124,7 +124,7 @@ func findOrCreateParentVolume(s libvirtStorage, pool shims.StoragePool, handler 
 
 // getVolumeFormat gets the format of the given volume
 func getVolumeFormat(vol shims.StorageVol) (string, error) {
-	infoXml, err := vol.GetXMLDesc(0)
+	infoXml, err := vol.GetXMLDesc(libvirtNoFlags)
 	if err != nil {
 		return "", err
 	}
@@ -179,7 +179,7 @@ func uploadToVolume(l libvirtStorage, src string, vol shims.StorageVol, opts *st
 	}()
 
 	// Connect the stream to the volume for upload
-	if err = vol.Upload(stream, 0, uint64(info.Size()), 0); err != nil {
+	if err = vol.Upload(stream, 0, uint64(info.Size()), libvirtNoFlags); err != nil {
 		return err
 	}
 
@@ -217,6 +217,21 @@ func guessVolumeSize(pool shims.StoragePool, opts storage.Options) (uint64, erro
 		return opts.Size, nil
 	}
 
+	// If an identifier is provided look for the source volume and use its size.
+	if opts.Source.Identifier != "" {
+		v, err := pool.LookupStorageVolByName(opts.Source.Identifier)
+		if err == nil {
+			defer v.Free()
+			info, err := v.GetInfo()
+			if err != nil {
+				return 0, err
+			}
+			return info.Capacity, nil
+		} else if !errors.Is(err, ErrVolumeNotFound) {
+			return 0, err
+		}
+	}
+
 	// If a source path is available, use the size
 	// of the source image.
 	if opts.Source.Path != "" {
@@ -227,21 +242,33 @@ func guessVolumeSize(pool shims.StoragePool, opts storage.Options) (uint64, erro
 		return uint64(info.Size()), nil
 	}
 
-	// If an identifier is provided and the volume is chained,
-	// look for the parent volume and use its size.
-	if opts.Chained && opts.Source.Identifier != "" {
-		v, err := pool.LookupStorageVolByName(opts.Source.Identifier)
-		if err != nil {
-			return 0, err
-		}
-		defer v.Free()
-		info, err := v.GetInfo()
-		if err != nil {
-			return 0, err
-		}
-		return info.Capacity, nil
-	}
-
 	// Cannot guess a size, so just return a zero value
 	return 0, nil
+}
+
+// getPoolInfo returns the pool description information.
+func getPoolInfo(pool shims.StoragePool) (*libvirtxml.StoragePool, error) {
+	poolXml, err := pool.GetXMLDesc(libvirtNoFlags)
+	if err != nil {
+		return nil, err
+	}
+	poolInfo := new(libvirtxml.StoragePool)
+	if err := poolInfo.Unmarshal(poolXml); err != nil {
+		return nil, err
+	}
+
+	return poolInfo, nil
+}
+
+func getVolumeInfo(vol shims.StorageVol) (*libvirtxml.StorageVolume, error) {
+	volXml, err := vol.GetXMLDesc(libvirtNoFlags)
+	if err != nil {
+		return nil, err
+	}
+	volInfo := new(libvirtxml.StorageVolume)
+	if err := volInfo.Unmarshal(volXml); err != nil {
+		return nil, err
+	}
+
+	return volInfo, nil
 }

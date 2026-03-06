@@ -4,6 +4,7 @@
 package providers
 
 import (
+	"context"
 	"sync"
 
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
@@ -154,7 +155,7 @@ func (m *MockProviders) Setup(c *virt.Config) error {
 	return call.Err
 }
 
-func (m *MockProviders) Get(name string) (virt.Virtualizer, error) {
+func (m *MockProviders) Get(_ context.Context, name string) (virt.Virtualizer, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -170,7 +171,7 @@ func (m *MockProviders) Get(name string) (virt.Virtualizer, error) {
 	return call.Result, call.Err
 }
 
-func (m *MockProviders) Default() (virt.Virtualizer, error) {
+func (m *MockProviders) Default(context.Context) (virt.Virtualizer, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -200,7 +201,7 @@ func (m *MockProviders) GetVM(name string) (*vm.Info, error) {
 	return call.Result, call.Err
 }
 
-func (m *MockProviders) GetProviderForVM(name string) (virt.Virtualizer, error) {
+func (m *MockProviders) GetProviderForVM(_ context.Context, name string) (virt.Virtualizer, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 

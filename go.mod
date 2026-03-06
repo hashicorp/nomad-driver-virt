@@ -7,6 +7,7 @@ go 1.25.7
 replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.0.0-20230509193637-d9ca9af9f1f9
 
 require (
+	github.com/ceph/go-ceph v0.38.0
 	github.com/coreos/go-iptables v0.8.0
 	github.com/diskfs/go-diskfs v1.8.0
 	github.com/docker/distribution v2.8.3+incompatible

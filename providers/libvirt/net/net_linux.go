@@ -56,6 +56,20 @@ const (
 // initLock is used to prevent multiple controller.Init's running at once
 var initLock sync.Mutex
 
+// Copy returns a new copy of the controller.
+func (c *Controller) Copy(conn shims.Connect) *Controller {
+	return &Controller{
+		dhcpLeaseDiscoveryInterval: c.dhcpLeaseDiscoveryInterval,
+		dhcpLeaseDiscoveryTimeout:  c.dhcpLeaseDiscoveryTimeout,
+		interfaceByIPGetter:        c.interfaceByIPGetter,
+		ipByInterfaceGetter:        c.ipByInterfaceGetter,
+		iptablesInterfaceGetter:    c.iptablesInterfaceGetter,
+		logger:                     c.logger,
+		netConn:                    conn,
+	}
+
+}
+
 func (c *Controller) Fingerprint(attr map[string]*structs.Attribute) {
 
 	// List the network names. This is terminal to the fingerprint process, as

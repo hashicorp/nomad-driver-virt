@@ -23,9 +23,10 @@ func NewMockStorageVol(t must.T) *MockStorageVol {
 }
 
 type StaticStorageVol struct {
-	GetInfoResult    *libvirt.StorageVolInfo
-	GetPathResult    string
-	GetXMLDescResult string
+	GetInfoResult            *libvirt.StorageVolInfo
+	GetPathResult            string
+	GetXMLDescResult         string
+	LookupPoolByVolumeResult shims.StoragePool
 
 	counts map[string]int
 	m      sync.Mutex
@@ -59,6 +60,19 @@ func (s *StaticStorageVol) CallCount(fnName string) int {
 	}
 
 	return s.counts[fnName]
+}
+
+func (s *StaticStorageVol) LookupPoolByVolume() (shims.StoragePool, error) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	if s.LookupPoolByVolumeResult != nil {
+		return s.LookupPoolByVolumeResult, nil
+	}
+
+	s.LookupPoolByVolumeResult = &StaticStoragePool{}
+	return s.LookupPoolByVolumeResult, nil
 }
 
 func (s *StaticStorageVol) Delete(libvirt.StorageVolDeleteFlags) error {
@@ -140,9 +154,8 @@ type GetPath struct {
 	Err    error
 }
 
-type GetXMLDesc struct {
-	Flags  uint32
-	Result string
+type LookupPoolByVolume struct {
+	Result shims.StoragePool
 	Err    error
 }
 
@@ -163,14 +176,15 @@ type Upload struct {
 type MockStorageVol struct {
 	t must.T
 
-	delete     []Delete
-	free       []Free
-	getInfo    []GetInfo
-	getPath    []GetPath
-	getXmlDesc []GetXMLDesc
-	resize     []Resize
-	upload     []Upload
-	m          sync.Mutex
+	delete             []Delete
+	free               []Free
+	getInfo            []GetInfo
+	getPath            []GetPath
+	getXmlDesc         []GetXMLDesc
+	lookupPoolByVolume []LookupPoolByVolume
+	resize             []Resize
+	upload             []Upload
+	m                  sync.Mutex
 }
 
 func (m *MockStorageVol) Expect(calls ...any) *MockStorageVol {
@@ -186,6 +200,8 @@ func (m *MockStorageVol) Expect(calls ...any) *MockStorageVol {
 			m.ExpectGetPath(c)
 		case GetXMLDesc:
 			m.ExpectGetXMLDesc(c)
+		case LookupPoolByVolume:
+			m.ExpectLookupPoolByVolume(c)
 		case Resize:
 			m.ExpectResize(c)
 		case Upload:
@@ -235,6 +251,14 @@ func (m *MockStorageVol) ExpectGetXMLDesc(c GetXMLDesc) *MockStorageVol {
 	defer m.m.Unlock()
 
 	m.getXmlDesc = append(m.getXmlDesc, c)
+	return m
+}
+
+func (m *MockStorageVol) ExpectLookupPoolByVolume(c LookupPoolByVolume) *MockStorageVol {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.lookupPoolByVolume = append(m.lookupPoolByVolume, c)
 	return m
 }
 
@@ -327,6 +351,20 @@ func (m *MockStorageVol) GetXMLDesc(_ uint32) (string, error) {
 	return call.Result, call.Err
 }
 
+func (m *MockStorageVol) LookupPoolByVolume() (shims.StoragePool, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.lookupPoolByVolume,
+		must.Sprint("unexpected call to LookupPoolByVolume"))
+	call := m.lookupPoolByVolume[0]
+	m.lookupPoolByVolume = m.lookupPoolByVolume[1:]
+
+	return call.Result, call.Err
+}
+
 func (m *MockStorageVol) Resize(size uint64, flags libvirt.StorageVolResizeFlags) error {
 	m.m.Lock()
 	defer m.m.Unlock()
@@ -377,6 +415,8 @@ func (m *MockStorageVol) AssertExpectations() {
 		must.Sprintf("GetPath expecting %d more invocations", len(m.getPath)))
 	must.SliceEmpty(m.t, m.getXmlDesc,
 		must.Sprintf("GetXMLDesc expecting %d more invocations", len(m.getXmlDesc)))
+	must.SliceEmpty(m.t, m.lookupPoolByVolume,
+		must.Sprintf("LookupPoolByVolume expecting %d more invocations", len(m.lookupPoolByVolume)))
 	must.SliceEmpty(m.t, m.resize,
 		must.Sprintf("Resize expecting %d more invocations", len(m.resize)))
 	must.SliceEmpty(m.t, m.upload,

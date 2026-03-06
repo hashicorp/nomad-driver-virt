@@ -270,14 +270,17 @@ func (d *VirtDriverPlugin) WaitTask(ctx context.Context, taskID string) (<-chan 
 func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal string) error {
 	d.logger.Info("stopping task", "task_id", taskID)
 
-	_, ok := d.tasks.Get(taskID)
+	handle, ok := d.tasks.Get(taskID)
 	if !ok {
 		d.logger.Warn("task to stop not found", "task_id", taskID)
 		return nil
 	}
 
+	// Cancel the context for the task
+	handle.cancelFn()
+
 	vmname := vmNameFromTaskID(taskID)
-	virtualizer, err := d.providers.GetProviderForVM(vmname)
+	virtualizer, err := d.providers.GetProviderForVM(context.Background(), vmname)
 	if err != nil {
 		return fmt.Errorf("virt: unable to stop task %s: %w", taskID, err)
 	}
@@ -304,8 +307,11 @@ func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
 		return fmt.Errorf("virt: cannot destroy running task %s", taskID)
 	}
 
+	// Cancel the context for the task
+	handle.cancelFn()
+
 	vmname := vmNameFromTaskID(taskID)
-	virtualizer, err := d.providers.GetProviderForVM(vmname)
+	virtualizer, err := d.providers.GetProviderForVM(context.Background(), vmname)
 	if err != nil {
 		return fmt.Errorf("virt: unable to destroy task %s: %w", taskID, err)
 	}
@@ -368,6 +374,7 @@ func (d *VirtDriverPlugin) publishStats(ctx context.Context, interval time.Durat
 			stats, err := handle.GetStats()
 			if err != nil {
 				d.logger.Error("error while reading stats from the task", "task", handle.name, "error", err)
+				continue
 			}
 
 			d.logger.Trace("publishing stats", "values", fmt.Sprintf("%+v", stats.ResourceUsage.MemoryStats))
@@ -510,9 +517,15 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	cpuSet := idset.Parse[hw.CoreID](cfg.Resources.LinuxResources.CpusetCpus)
 
+	// Create context for this task
+	// NOTE: Be sure to cancel if any errors are encountered
+	// in this function.
+	ctx, cancel := context.WithCancel(context.Background())
+
 	// Fetch the virtualizer
-	virtualizer, err := d.providers.Default()
+	virtualizer, err := d.providers.Default(ctx)
 	if err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
@@ -548,12 +561,14 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	if virtualizer.UseCloudInit() && dc.CloudInitConfig() != nil {
 		isoPath := filepath.Join(cfg.AllocDir, "cloudinit.iso")
 		if err := d.ci.Apply(dc.CloudInitConfig(), isoPath); err != nil {
+			cancel()
 			return nil, nil, err
 		}
-		// the iso will be copied into the storage pool, so
+		// The iso will be copied into the storage pool, so
 		// this file does not need to persist.
 		defer os.RemoveAll(isoPath)
 
+		// Add the cloud-init iso to the disks
 		disks = disks.ApplyCloudInit(isoPath)
 	}
 
@@ -564,43 +579,35 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	// Run validation
 	if err := dc.Validate(allowedPaths); err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
 	}
 
 	// Prepare the disks to generate the storage pool volumes
 	if err := dc.Disks.Prepare(taskName, virtualizer.Storage()); err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to create storage volumes %s: %w", cfg.AllocID, err)
-	}
-
-	if err := dc.Validate(allowedPaths); err != nil {
-		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
 	}
 
 	networking, err := virtualizer.Networking()
 	if err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
 	if err := virtualizer.CreateVM(dc); err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
 	ifaces, err := virtualizer.GetNetworkInterfaces(dc.Name)
 	if err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to retrieve guest interfaces %s: %w", cfg.AllocID, err)
 	}
 	hwaddrs := make([]string, len(ifaces))
 	for i, iface := range ifaces {
 		hwaddrs[i] = iface.MAC
-	}
-
-	h := &taskHandle{
-		taskConfig: cfg,
-		procState:  drivers.TaskStateRunning,
-		startedAt:  time.Now().Round(time.Millisecond),
-		logger:     d.logger.Named("handle").With("alloc-id", cfg.AllocID),
-		taskGetter: d.providers,
-		name:       taskName,
 	}
 
 	// Build our network request to send now that the VM has been started. The
@@ -628,7 +635,34 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 			d.logger.Error("virt: failed to destroy virtual machine, manual cleanup needed",
 				"task_name", taskName, "error", destroyDomainErr)
 		}
+
+		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to build task network: %w", err)
+	}
+
+	// At this point everything is ready to start setting up and running
+	// the VM. Create and set the task handle and set the driver state.
+	// The rest of the startup process is performed in a goroutine which
+	// allows it to be stopped/destroyed while being started.
+	h := &taskHandle{
+		taskConfig: cfg,
+		procState:  drivers.TaskStateRunning,
+		startedAt:  time.Now().Round(time.Millisecond),
+		logger:     d.logger.Named("handle").With("alloc-id", cfg.AllocID),
+		taskGetter: d.providers,
+		name:       taskName,
+		ctx:        ctx,
+		cancelFn:   cancel,
+	}
+
+	d.tasks.Set(cfg.ID, h)
+
+	// Generate our driver state and send this to Nomad. It stores critical
+	// information the driver will need to recover from failure and reattach
+	// to running VMs.
+	driverState := TaskState{
+		StartedAt:  h.startedAt,
+		TaskConfig: cfg,
 	}
 
 	// If the VM did not include any network configuration, there will not be a
@@ -637,26 +671,16 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		h.netTeardown = netBuildResp.TeardownSpec
 	}
 
-	d.logger.Info("task started successfully", "task_name", taskName)
-
-	// Generate our driver state and send this to Nomad. It stores critical
-	// information the driver will need to recover from failure and reattach
-	// to running VMs.
-	driverState := TaskState{
-		NetTeardown: netBuildResp.TeardownSpec,
-		StartedAt:   h.startedAt,
-		TaskConfig:  cfg,
-	}
-
 	handle := drivers.NewTaskHandle(taskHandleVersion)
 	handle.Config = cfg
 
 	if err := handle.SetDriverState(&driverState); err != nil {
+		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to set driver state for %s: %v",
 			cfg.AllocID, err)
 	}
 
-	d.tasks.Set(cfg.ID, h)
+	d.logger.Info("task started successfully", "task_name", taskName)
 
 	return handle, nil, nil
 }
@@ -677,6 +701,7 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 			handle.Config.ID, err)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	h := &taskHandle{
 		name:        vmNameFromTaskID(handle.Config.ID),
 		logger:      d.logger.Named("handle").With("alloc-id", handle.Config.AllocID),
@@ -684,10 +709,13 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 		startedAt:   taskState.StartedAt,
 		taskGetter:  d.providers,
 		netTeardown: taskState.NetTeardown,
+		ctx:         ctx,
+		cancelFn:    cancel,
 	}
 
 	taskVm, err := h.taskGetter.GetVM(h.name)
 	if err != nil {
+		defer cancel()
 		if errors.Is(err, vm.ErrNotFound) {
 			return drivers.ErrTaskNotFound
 		}
