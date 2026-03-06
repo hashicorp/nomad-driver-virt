@@ -7,6 +7,7 @@ go 1.25.3
 replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.0.0-20230509193637-d9ca9af9f1f9
 
 require (
+	github.com/ceph/go-ceph v0.38.0
 	github.com/coreos/go-iptables v0.8.0
 	github.com/diskfs/go-diskfs v1.7.0
 	github.com/docker/distribution v2.8.3+incompatible
@@ -138,7 +139,7 @@ require (
 	golang.org/x/mod v0.30.0 // indirect
 	golang.org/x/net v0.47.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
-	golang.org/x/sys v0.38.0 // indirect
+	golang.org/x/sys v0.40.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
 	golang.org/x/time v0.14.0 // indirect
 	golang.org/x/tools v0.38.0 // indirect

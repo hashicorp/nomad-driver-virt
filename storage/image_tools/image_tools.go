@@ -21,8 +21,13 @@ var (
 
 // ImageHandler is the interface handling image files directly.
 type ImageHandler interface {
+	// GetImageFormat gets the format of a given image
 	GetImageFormat(path string) (string, error)
+	// ConvertImage makes a copy of the image in a new format
+	ConvertImage(src, srcFmt, dst, dstFmt string) error
+	// CreateCopy creates a full copy from the src image
 	CreateCopy(src, dst string, sizeM int64) error
+	// CreateChainedCopy creates a copy chained copy from src image
 	CreateChainedCopy(src, dst string, sizeM int64) error
 }
 
@@ -36,7 +41,32 @@ func NewQemuHandler(logger hclog.Logger) *QemuTools {
 	}
 }
 
-// GetImageFormat runs `qemu-img info` to get the format of a disk image.
+// ConvertImage implements ImageHandler
+func (q *QemuTools) ConvertImage(src, srcFmt, dst, dstFmt string) error {
+	var err error
+	if srcFmt == "" {
+		srcFmt, err = q.GetImageFormat(src)
+		if err != nil {
+			return err
+		}
+	}
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+
+	cmd := exec.Command("qemu-img", "convert", "-f", srcFmt, "-O", dstFmt, src, dst)
+	cmd.Stdout = &stdoutBuf
+	cmd.Stderr = &stderrBuf
+
+	if err := cmd.Run(); err != nil {
+		q.logger.Error("qemu-img convert image", "stderr", stderrBuf.String())
+		q.logger.Debug("qemu-img convert image", "stdout", stdoutBuf.String())
+		return err
+	}
+
+	return nil
+}
+
+// GetImageFormat implements ImageHandler
 func (q *QemuTools) GetImageFormat(basePath string) (string, error) {
 	q.logger.Debug("reading the disk format", "base", basePath)
 
@@ -69,7 +99,7 @@ func (q *QemuTools) GetImageFormat(basePath string) (string, error) {
 	return output.Format, nil
 }
 
-// CreateCopy creates a full copy from the src image
+// CreateCopy implements ImageHandler
 func (q *QemuTools) CreateCopy(src, dst string, sizeM int64) error {
 	q.logger.Debug("creating copy", "base", src, "dest", dst)
 	if err := os.MkdirAll(filepath.Base(dst), 0755); err != nil {
@@ -104,14 +134,14 @@ func (q *QemuTools) CreateCopy(src, dst string, sizeM int64) error {
 	err = cmd.Run()
 	if err != nil {
 		q.logger.Error("qemu-img dd output", "stderr", stderrBuf.String())
-		q.logger.Debug("qemu-img dd  output", "stdout", stdoutBuf.String())
+		q.logger.Debug("qemu-img dd output", "stdout", stdoutBuf.String())
 		return err
 	}
 
 	return nil
 }
 
-// CreateChainedCopy creates a copy chained copy from src image
+// CreateChainedCopy implements ImageHandler
 func (q *QemuTools) CreateChainedCopy(src string, destination string, sizeM int64) error {
 	q.logger.Debug("creating chained copy", "base", src, "dest", destination)
 
