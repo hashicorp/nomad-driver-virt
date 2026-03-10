@@ -112,22 +112,9 @@ func (s *Storage) Copy(ctx context.Context, l libvirtStorage) *Storage {
 	for name, p := range s.pools {
 		switch pool := p.(type) {
 		case *ceph:
-			newS.pools[name] = &ceph{
-				ctx:      ctx,
-				poolName: name,
-				logger:   pool.logger,
-				uploader: pool.uploader,
-				l:        l,
-				s:        newS,
-			}
-
+			newS.pools[name] = pool.copy(ctx, newS, l)
 		case *directory:
-			newS.pools[name] = &directory{
-				poolName: name,
-				logger:   pool.logger,
-				l:        l,
-				s:        newS,
-			}
+			newS.pools[name] = pool.copy(ctx, newS, l)
 		default:
 			// NOTE: This should never happen
 			panic(fmt.Sprintf("cannot copy unknown storage pool type - %T", p))
