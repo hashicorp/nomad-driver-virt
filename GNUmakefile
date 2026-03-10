@@ -34,6 +34,7 @@ SUPPORTED_OSES := Linux
 clean: ## Remove build artifacts
 	@echo "==> Removing build artifact..."
 	@rm -rf build/${PLUGIN_BINARY}
+	@rm -f providers/libvirt/storage/plugins/ceph*.so
 	@echo "==> Done"
 
 .PHONY: -docker-prep-linux
@@ -93,7 +94,7 @@ test-tools: ## Install the tools used to run tests
 .PHONY: test
 test: ## Test the source code
 	@echo "==> Testing source code..."
-	@$(GO_TEST_CMD) -v -race -cover ./...
+	@$(GO_TEST_CMD) -race -trimpath -cover ./... -run=1
 	@echo "==> Done"
 
 .PHONY: check-go-mod
@@ -123,8 +124,14 @@ deps: ## Install build dependencies
 	go install gotest.tools/gotestsum@v1.10.0
 	go install github.com/hashicorp/hcl/v2/cmd/hclfmt@d0c4fa8b0bbc2e4eeccd1ed2a32c2089ed8c5cf1
 
+.PHONY: build-plugin
+build-plugin: ## Build any plugins within the driver codebase
+	@echo "==> Compiling libvirt storage ceph plugin..."
+	@go build -C providers/libvirt/storage/plugin/ceph -race -trimpath -buildmode=plugin -o ../../plugins/ceph.so .
+	@echo "==> Done"
+
 .PHONY: build
-build: ## Compile the current driver codebase
+build: build-plugin ## Compile the current driver codebase
 	@echo "==> Compiling binary..."
 	@go build -race -trimpath -o build/${PLUGIN_BINARY} .
 	@echo "==> Done"
@@ -145,6 +152,11 @@ ifeq (,$(findstring $(THIS_OS),$(SUPPORTED_OSES)))
 	$(warning WARNING: Building Nomad Driver Virt is only supported on $(SUPPORTED_OSES); not $(THIS_OS))
 endif
 	@echo "==> Building $@ with tags $(GO_TAGS)..."
+	@CGO_ENABLED=$(CGO_ENABLED) \
+		GOOS=$(firstword $(subst _, ,$*)) \
+		GOARCH=$(lastword $(subst _, ,$*)) \
+		CC=$(CC) \
+		go build -C providers/libvirt/storage/plugin/ceph -trimpath -ldflags "$(GO_LDFLAGS)" -tags "$(GO_TAGS)" -buildmode=plugin -o ../../plugins/ceph.so
 	@CGO_ENABLED=$(CGO_ENABLED) \
 		GOOS=$(firstword $(subst _, ,$*)) \
 		GOARCH=$(lastword $(subst _, ,$*)) \
