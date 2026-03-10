@@ -212,3 +212,15 @@ func (d *directory) GetVolume(name string) (*storage.Volume, error) {
 
 	return findVolume(pool, name)
 }
+
+// copy creates a new copy of this pool with updated context
+// and storage.
+func (d *directory) copy(ctx context.Context, s *Storage, l libvirtStorage) *directory {
+	return &directory{
+		ctx:      ctx,
+		l:        l,
+		s:        s,
+		poolName: d.poolName,
+		logger:   d.logger,
+	}
+}

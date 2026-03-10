@@ -7,16 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"net/url"
 	"os"
+	"plugin"
 	"slices"
 	"strings"
 
-	"github.com/ceph/go-ceph/rados"
-	"github.com/ceph/go-ceph/rbd"
 	"github.com/hashicorp/go-hclog"
-	"github.com/hashicorp/nomad-driver-virt/internal/ctxio"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
@@ -27,13 +24,18 @@ import (
 const (
 	// default format used for ceph based volumes
 	defaultCephImageFormat = "raw"
-
-	// timeout for operations handled by monitors
-	radosMonOpTimeout = "30"
-	// timeout for operations handled by osds
-	radosOsdOpTimeout = "30"
 )
 
+// cephPlugin holds the plugin for direct volume uploads.
+var cephPlugin *plugin.Plugin
+
+type CephConnect struct {
+	Username string
+	Key      string
+	Hosts    []string
+}
+
+// volUploadFn is the signature for uploading a volume.
 type volUploadFn func(v shims.StorageVol, path string) error
 
 type ceph struct {
@@ -52,6 +54,14 @@ type ceph struct {
 // newCephPool loads the ceph backed storage pool, creating or updating it if needed.
 func newCephPool(ctx context.Context, logger hclog.Logger, l libvirtStorage, poolName string, config storage.Ceph, s storage.Storage) (*ceph, error) {
 	logger = logger.Named("storage-pool").With("pool", poolName)
+
+	// Ensure the ceph plugin is loaded
+	if err := loadPlugin("ceph", cephPlugin); err != nil {
+		logger.Error("failed to load ceph storage plugin, ensure librados and rdb libraries are available",
+			"error", err)
+		return nil, err
+	}
+
 	p, err := l.FindStoragePool(poolName)
 	if err != nil && !errors.Is(err, vm.ErrNotFound) {
 		logger.Debug("unexpected error during pool lookup", "error", err)
@@ -172,6 +182,11 @@ func (c *ceph) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 		return nil, err
 	}
 	defer pool.Free()
+
+	// Always start with refreshing the pool.
+	if err := pool.Refresh(libvirtNoFlags); err != nil {
+		return nil, err
+	}
 
 	// If the target format is specified, warn and modify if not raw.
 	if opts.Target.Format != defaultCephImageFormat {
@@ -411,6 +426,37 @@ func (c *ceph) createVolumeFromImage(pool shims.StoragePool, name, image, srcFmt
 func (c *ceph) uploadToVolume(v shims.StorageVol, path string) error {
 	c.logger.Debug("uploading content to volume", "path", path)
 
+	pool, err := c.l.FindStoragePool(c.poolName)
+	if err != nil {
+		return err
+	}
+	defer pool.Free()
+
+	// Grab the pool information to get the configured hosts
+	info, err := getPoolInfo(pool)
+	if err != nil {
+		return err
+	}
+
+	// Pull the stored key. The value will be provided base64
+	// encoded which is what the connection will want.
+	key, err := c.l.GetCephSecret(c.poolName)
+	if err != nil {
+		return err
+	}
+
+	// Collect all the monitor hosts
+	// TODO: Need to check for IPv6 and wrap with brackets if port is set
+	hosts := make([]string, len(info.Source.Host))
+	for i := range len(info.Source.Host) {
+		h := info.Source.Host[i]
+		if h.Port != "" {
+			hosts[i] = fmt.Sprintf("%s:%s", h.Name, h.Port)
+		} else {
+			hosts[i] = h.Name
+		}
+	}
+
 	// The path of the volume is the ceph pool name
 	// and the volume name.
 	volPath, err := v.GetPath()
@@ -426,137 +472,34 @@ func (c *ceph) uploadToVolume(v shims.StorageVol, path string) error {
 	poolName := pathParts[0]
 	name := pathParts[1]
 
-	conn, err := c.cephConnect()
-	if err != nil {
-		return err
-	}
-	defer conn.Shutdown()
-
-	// Disable writethrough caching. If this is not disabled
-	// uploads will be extremely slow.
-	if err := conn.SetConfigOption("rbd_cache_writethrough_until_flush", "false"); err != nil {
-		return err
+	connOpts := &CephConnect{
+		Username: info.Source.Auth.Username,
+		Key:      key,
+		Hosts:    hosts,
 	}
 
-	// Open a new IO context on the connection which can
-	// be used for interacting with the volume.
-	ioctx, err := conn.OpenIOContext(poolName)
-	if err != nil {
-		return err
-	}
-	defer ioctx.Destroy()
-
-	// Open the remote volume.
-	img, err := rbd.OpenImage(ioctx, name, rbd.NoSnapshot)
-	if err != nil {
-		return err
-	}
-	defer img.Close()
-
-	// Open the local file to upload.
-	f, err := os.Open(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	// Stat the file so the size can be verified
-	// after upload
-	fInfo, err := f.Stat()
+	fn, err := cephPlugin.Lookup("VolumeUpload")
 	if err != nil {
 		return err
 	}
 
-	// Grab an exclusive lock on the image to prevent anything
-	// being done to it while it is being used.
-	if err := img.LockAcquire(rbd.LockModeExclusive); err != nil {
-		return err
-	}
-	defer img.LockRelease()
-
-	// Copy the source image into the volume. The reader and writer
-	// are wrapped with a context to allow the copy to be interrupted
-	// if the task has been stopped.
-	wrote, err := io.Copy(
-		ctxio.NewWriterAt(c.ctx, img),
-		ctxio.NewReaderAt(c.ctx, f),
-	)
+	err = fn.(func(ctx context.Context, connInfo *CephConnect, pool, volume, path string) error)(c.ctx, connOpts, poolName, name, path)
 	if err != nil {
 		return err
-	}
-
-	// Check that everything was uploaded.
-	if wrote != fInfo.Size() {
-		return fmt.Errorf("upload to volume failed, missing %d bytes", fInfo.Size()-wrote)
 	}
 
 	return nil
 }
 
-// cephConnect establishes a connection to the ceph cluster the
-// pool is located on.
-func (c *ceph) cephConnect() (*rados.Conn, error) {
-	pool, err := c.l.FindStoragePool(c.poolName)
-	if err != nil {
-		return nil, err
+// copy creates a new copy of this pool with updated context
+// and storage.
+func (c *ceph) copy(ctx context.Context, s *Storage, l libvirtStorage) *ceph {
+	return &ceph{
+		ctx:      ctx,
+		l:        l,
+		s:        s,
+		logger:   c.logger,
+		uploader: c.uploader,
+		poolName: c.poolName,
 	}
-	defer pool.Free()
-
-	// Grab the pool information to get the configured hosts
-	info, err := getPoolInfo(pool)
-	if err != nil {
-		return nil, err
-	}
-
-	// Pull the stored key. The value will be provided base64
-	// encoded which is what the connection will want.
-	key, err := c.l.GetCephSecret(c.poolName)
-	if err != nil {
-		return nil, err
-	}
-
-	// Collect all the monitor hosts
-	// TODO: Need to check for IPv6 and wrap with brackets if port is set
-	hosts := make([]string, len(info.Source.Host))
-	for i := range len(info.Source.Host) {
-		h := info.Source.Host[i]
-		if h.Port != "" {
-			hosts[i] = fmt.Sprintf("%s:%s", h.Name, h.Port)
-		} else {
-			hosts[i] = h.Name
-		}
-	}
-
-	// Setup a new connection using the configured username
-	conn, err := rados.NewConnWithUser(info.Source.Auth.Username)
-	if err != nil {
-		return nil, err
-	}
-
-	// Set timeout options on the connection
-	if err := conn.SetConfigOption("rados_mon_op_timeout", radosMonOpTimeout); err != nil {
-		return nil, err
-	}
-
-	if err := conn.SetConfigOption("rados_osd_op_timeout", radosOsdOpTimeout); err != nil {
-		return nil, err
-	}
-
-	// Set the key credential
-	if err := conn.SetConfigOption("key", key); err != nil {
-		return nil, err
-	}
-
-	// Set the collection of monitor hosts
-	if err := conn.SetConfigOption("mon_host", strings.Join(hosts, ",")); err != nil {
-		return nil, err
-	}
-
-	// Attempt to make the connection
-	if err := conn.Connect(); err != nil {
-		return nil, err
-	}
-
-	// Looks like it's working \o/
-	return conn, nil
 }
