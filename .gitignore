@@ -5,3 +5,4 @@ nomad-driver-virt
 .idea/
 .vscode/
 *.code-workspace
+*.so
