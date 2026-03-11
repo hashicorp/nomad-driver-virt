@@ -710,6 +710,8 @@ func TestVirtDriver_Libvirt(t *testing.T) {
 	virtcfg := testVirtTaskConfig(t, filepath.Join(dir, "images"))
 	task := testTaskConfig()
 
+	virtcfg.Disks[0].Size = "0"
+	virtcfg.Disks[0].Source.Format = "qcow2"
 	virtcfg.OS = &virt.OS{
 		Arch:    "x86_64",
 		Machine: "pc-i440fx-jammy",
