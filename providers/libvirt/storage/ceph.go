@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"plugin"
 	"slices"
 	"strings"
@@ -35,20 +34,8 @@ type CephConnect struct {
 	Hosts    []string
 }
 
-// volUploadFn is the signature for uploading a volume.
-type volUploadFn func(v shims.StorageVol, path string) error
-
 type ceph struct {
-	ctx      context.Context
-	poolName string
-	logger   hclog.Logger
-
-	// This defines the function to use for uploading an image to
-	// the volume, isolated so it can be swapped during testing.
-	uploader volUploadFn
-
-	l libvirtStorage
-	s storage.Storage
+	*pool
 }
 
 // newCephPool loads the ceph backed storage pool, creating or updating it if needed.
@@ -56,7 +43,7 @@ func newCephPool(ctx context.Context, logger hclog.Logger, l libvirtStorage, poo
 	logger = logger.Named("storage-pool").With("pool", poolName)
 
 	// Ensure the ceph plugin is loaded
-	if err := loadPlugin("ceph", cephPlugin); err != nil {
+	if err := pluginLoader("ceph", cephPlugin); err != nil {
 		logger.Error("failed to load ceph storage plugin, ensure librados and rdb libraries are available",
 			"error", err)
 		return nil, err
@@ -153,15 +140,21 @@ func newCephPool(ctx context.Context, logger hclog.Logger, l libvirtStorage, poo
 		}
 	}
 
-	c := &ceph{logger: logger, poolName: poolName, l: l, s: s, ctx: ctx}
-	c.uploader = c.uploadToVolume
+	// Build the base pool
+	basePool := &pool{
+		ctx:    ctx,
+		logger: logger,
+		name:   poolName,
+		l:      l,
+		s:      s,
+	}
+	// Build the ceph wrapper
+	c := &ceph{pool: basePool}
+	// Set customized functions for this pool type.
+	basePool.uploader = c.uploadToVolume
+	basePool.resizer = c.resizeVol
 
 	return c, nil
-}
-
-// Name implements storage.Pool
-func (c *ceph) Name() string {
-	return c.poolName
 }
 
 // Type implements storage.Pool
@@ -176,18 +169,6 @@ func (c *ceph) DefaultImageFormat() string {
 
 // AddVolume implements storage.Pool
 func (c *ceph) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {
-	c.logger.Debug("adding a new volume to storage pool", "name", name, "sfmt", opts.Source.Format, "tfmt", opts.Target.Format)
-	pool, err := c.l.FindStoragePool(c.poolName)
-	if err != nil {
-		return nil, err
-	}
-	defer pool.Free()
-
-	// Always start with refreshing the pool.
-	if err := pool.Refresh(libvirtNoFlags); err != nil {
-		return nil, err
-	}
-
 	// If the target format is specified, warn and modify if not raw.
 	if opts.Target.Format != defaultCephImageFormat {
 		c.logger.Warn("only raw format is allowed for target, modifying to raw", "name", name,
@@ -195,229 +176,27 @@ func (c *ceph) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 		opts.Target.Format = defaultCephImageFormat
 	}
 
-	// Check if the volume already exists
-	volume, err := findVolume(pool, name)
-	if err == nil {
-		return volume, nil
-	}
-
-	if !errors.Is(err, ErrVolumeNotFound) {
-		return nil, err
-	}
-
-	// Attempt to set the size if not set
-	if opts.Size, err = guessVolumeSize(pool, opts); err != nil {
-		c.logger.Debug("failed to determine volume size via guess", "error", err)
-		return nil, err
-	}
-
-	// Start configuring the new volume
-	// NOTE: Allocation is not configured because it is ignored
-	// when libvirt creates the volume.
-	newVolume := libvirtxml.StorageVolume{
-		Name: name,
-		Target: &libvirtxml.StorageVolumeTarget{
-			Format: &libvirtxml.StorageVolumeTargetFormat{
-				Type: opts.Target.Format,
-			},
-		},
-		Capacity: &libvirtxml.StorageVolumeSize{
-			Unit:  "B",
-			Value: opts.Size,
-		},
-	}
-
-	// A source volume will be set if the new volume is
-	// being chained.
-	var srcVol shims.StorageVol
-
-	// If a source volume is defined, find it.
-	if opts.Source.Volume != "" {
-		srcVol, err = findRawVolume(pool, opts.Source.Volume)
-		if err != nil {
-			return nil, err
-		}
-		defer srcVol.Free()
-	}
-
-	// If the volume is chained, locate the existing source
-	// volume or create the source volume.
-	if opts.Chained {
-		srcVol, err = findRawVolume(pool, opts.Source.Identifier)
-		if err != nil && !errors.Is(err, ErrVolumeNotFound) {
-			return nil, err
-		}
-
-		if srcVol == nil {
-			srcVol, err = c.createVolumeFromImage(pool, opts.Source.Identifier,
-				opts.Source.Path, opts.Source.Format, opts.Target.Format)
-			if err != nil {
-				return nil, err
-			}
-		}
-		defer srcVol.Free()
-	}
-
-	// Generate the volume definition
-	volData, err := newVolume.Marshal()
-	if err != nil {
-		return nil, err
-	}
-
-	var vol shims.StorageVol
-	var resize bool
-
-	// If a source volume is defined then create the new volume.
-	if srcVol != nil {
-		c.logger.Trace("creating new volume from existing volume", "name", name)
-		vol, err = pool.StorageVolCreateXMLFrom(volData, srcVol, libvirtNoFlags)
-		if err != nil {
-			return nil, err
-		}
-		defer vol.Free()
-		resize = true
-	} else {
-		// If no image is provided, just create an empty volume.
-		if opts.Source.Path == "" {
-			vol, err = pool.StorageVolCreateXML(volData, libvirtNoFlags)
-			if err != nil {
-				return nil, err
-			}
-			defer vol.Free()
-		} else {
-			// Otherwise, create the volume from the image
-			vol, err = c.createVolumeFromImage(pool, name, opts.Source.Path,
-				opts.Source.Format, opts.Target.Format)
-			if err != nil {
-				return nil, err
-			}
-			defer vol.Free()
-			resize = true
-		}
-	}
-
-	// If flagged, resize the volume to the correct size
-	if resize {
-		info, err := vol.GetInfo()
-		if err != nil {
-			return nil, err
-		}
-
-		if info.Capacity < opts.Size {
-			c.logger.Debug("volume has shrunk from expected capacity, resizing", "expected", opts.Size, "actual", info.Capacity)
-
-			// NOTE: Volumes in the ceph pool do not support allocating on resize so
-			// the sparse setting is ignored.
-			if err := vol.Resize(opts.Size, libvirtNoFlags); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	return &storage.Volume{
-		Name:   name,
-		Pool:   c.poolName,
-		Format: opts.Target.Format,
-	}, nil
+	return c.pool.AddVolume(name, opts)
 }
 
-// DeleteVolume implements storage.Pool
-func (c *ceph) DeleteVolume(name string) error {
-	c.logger.Debug("deleting volume from storage pool", "name", name)
-
-	pool, err := c.l.FindStoragePool(c.poolName)
+// resizeVol is a custom volume resizer for rbd volumes that ignores sparseness
+// since rbd volumes do not support immediate allocation.
+func (c *ceph) resizeVol(vol shims.StorageVol, sizeBytes uint64, _ bool) error {
+	info, err := vol.GetInfo()
 	if err != nil {
 		return err
 	}
-	defer pool.Free()
 
-	// Refresh the pool to ensure volume list is up-to-date
-	if err := pool.Refresh(libvirtNoFlags); err != nil {
+	// If the size hasn't changed, there is nothing to do.
+	if info.Capacity == sizeBytes {
+		return nil
+	}
+
+	if err := vol.Resize(sizeBytes, libvirtNoFlags); err != nil {
 		return err
 	}
 
-	vol, err := findRawVolume(pool, name)
-	if err != nil {
-		if errors.Is(err, ErrVolumeNotFound) {
-			return nil
-		}
-		return err
-	}
-	defer vol.Free()
-
-	return vol.Delete(libvirt.STORAGE_VOL_DELETE_NORMAL)
-}
-
-// GetVolume implements storage.Pool
-func (c *ceph) GetVolume(name string) (*storage.Volume, error) {
-	pool, err := c.l.FindStoragePool(c.poolName)
-	if err != nil {
-		return nil, err
-	}
-	defer pool.Free()
-
-	return findVolume(pool, name)
-}
-
-// createVolumeFromImage creates a new volume and uploads the image into
-// the volume.
-// NOTE: caller is responsible to free result
-func (c *ceph) createVolumeFromImage(pool shims.StoragePool, name, image, srcFmt, targetFmt string) (shims.StorageVol, error) {
-	var err error
-	// If the source format isn't set, get it.
-	if srcFmt == "" {
-		if srcFmt, err = c.s.ImageHandler().GetImageFormat(image); err != nil {
-			return nil, err
-		}
-	}
-
-	// If the image isn't in the target format, convert it.
-	if srcFmt != targetFmt {
-		c.logger.Debug("converting image", "source-format", srcFmt, "target-format", targetFmt, "image", image)
-		dst := image + ".converted"
-		if err := c.s.ImageHandler().ConvertImage(image, srcFmt, dst, targetFmt); err != nil {
-			return nil, err
-		}
-		defer os.RemoveAll(dst)
-		image = dst
-	}
-
-	// Stat the file to get the size
-	info, err := os.Stat(image)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create the volume definition.
-	vol := libvirtxml.StorageVolume{
-		Name: name,
-		Target: &libvirtxml.StorageVolumeTarget{
-			Format: &libvirtxml.StorageVolumeTargetFormat{
-				Type: targetFmt,
-			},
-		},
-		Capacity: &libvirtxml.StorageVolumeSize{
-			Unit:  "B",
-			Value: uint64(info.Size()),
-		},
-	}
-	volInfo, err := vol.Marshal()
-	if err != nil {
-		return nil, err
-	}
-
-	// Create the actual volume.
-	v, err := pool.StorageVolCreateXML(volInfo, libvirtNoFlags)
-	if err != nil {
-		return nil, err
-	}
-
-	// Upload the image into the volume.
-	if err := c.uploader(v, image); err != nil {
-		return nil, err
-	}
-
-	return v, nil
+	return nil
 }
 
 // uploadToVolume will upload the content at the given path to the volume.
@@ -426,7 +205,7 @@ func (c *ceph) createVolumeFromImage(pool shims.StoragePool, name, image, srcFmt
 func (c *ceph) uploadToVolume(v shims.StorageVol, path string) error {
 	c.logger.Debug("uploading content to volume", "path", path)
 
-	pool, err := c.l.FindStoragePool(c.poolName)
+	pool, err := c.l.FindStoragePool(c.name)
 	if err != nil {
 		return err
 	}
@@ -440,7 +219,7 @@ func (c *ceph) uploadToVolume(v shims.StorageVol, path string) error {
 
 	// Pull the stored key. The value will be provided base64
 	// encoded which is what the connection will want.
-	key, err := c.l.GetCephSecret(c.poolName)
+	key, err := c.l.GetCephSecret(c.name)
 	if err != nil {
 		return err
 	}
@@ -483,7 +262,7 @@ func (c *ceph) uploadToVolume(v shims.StorageVol, path string) error {
 		return err
 	}
 
-	err = fn.(func(ctx context.Context, connInfo *CephConnect, pool, volume, path string) error)(c.ctx, connOpts, poolName, name, path)
+	err = fn.(func(ctx context.Context, connInfo *CephConnect, pool, volume, path string) error)(c.pool.ctx, connOpts, poolName, name, path)
 	if err != nil {
 		return err
 	}
@@ -494,12 +273,5 @@ func (c *ceph) uploadToVolume(v shims.StorageVol, path string) error {
 // copy creates a new copy of this pool with updated context
 // and storage.
 func (c *ceph) copy(ctx context.Context, s *Storage, l libvirtStorage) *ceph {
-	return &ceph{
-		ctx:      ctx,
-		l:        l,
-		s:        s,
-		logger:   c.logger,
-		uploader: c.uploader,
-		poolName: c.poolName,
-	}
+	return &ceph{pool: c.pool.copy(ctx, s, l)}
 }
