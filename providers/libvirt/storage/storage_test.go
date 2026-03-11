@@ -5,6 +5,7 @@ package storage
 
 import (
 	"path/filepath"
+	"plugin"
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
@@ -86,6 +87,9 @@ func TestStorage_New(t *testing.T) {
 	})
 
 	t.Run("creates ceph pools", func(t *testing.T) {
+		// Stub the plugin loader to prevent loading the ceph plugin
+		pluginLoader = func(string, *plugin.Plugin) error { return nil }
+		t.Cleanup(func() { pluginLoader = loadPlugin })
 		config := &storage.Config{
 			Ceph: map[string]storage.Ceph{
 				"main-pool": {

@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
-	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_libvirt "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt"
 	mock_libvirt_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt/storage"
@@ -34,35 +33,17 @@ func TestDirectory_AddVolume(t *testing.T) {
 	testPoolName := "test-pool"
 	mkDirPool := func() *directory {
 		return &directory{
-			poolName: testPoolName,
-			logger:   hclog.NewNullLogger(),
-			l:        mock_libvirt.NewStaticLibvirt(),
-			s:        mock_storage.NewStaticStorage(),
-			ctx:      t.Context(),
+			pool: &pool{
+				name:   testPoolName,
+				logger: hclog.NewNullLogger(),
+				l:      mock_libvirt.NewStaticLibvirt(),
+				s:      mock_storage.NewStaticStorage(),
+				ctx:    t.Context(),
+			},
 		}
 	}
 
 	t.Run("errors", func(t *testing.T) {
-		t.Run("unsupported source", func(t *testing.T) {
-			t.Run("volume", func(t *testing.T) {
-				dirPool := mkDirPool()
-				_, err := dirPool.AddVolume("test-volume", storage.Options{
-					Source: storage.Source{
-						Volume: "unsupported-volume",
-					}})
-				must.ErrorIs(t, err, vm.ErrNotSupported)
-			})
-
-			t.Run("snapshot", func(t *testing.T) {
-				dirPool := mkDirPool()
-				_, err := dirPool.AddVolume("test-volume", storage.Options{
-					Source: storage.Source{
-						Snapshot: "unsupported-snapshot",
-					}})
-				must.ErrorIs(t, err, vm.ErrNotSupported)
-			})
-		})
-
 		t.Run("storage pool is not found", func(t *testing.T) {
 			l := mock_libvirt.NewMockLibvirt(t)
 			defer l.AssertExpectations()
@@ -83,6 +64,7 @@ func TestDirectory_AddVolume(t *testing.T) {
 
 			lv.Expect(mock_libvirt.FindStoragePool{Name: testPoolName, Result: lvPool})
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{
 					Name: "test-volume",
 					Err:  errTest,
@@ -108,6 +90,7 @@ func TestDirectory_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Result: parentVol},
 				mock_libvirt_storage.Free{},
@@ -136,6 +119,7 @@ func TestDirectory_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Err: errTest},
 				mock_libvirt_storage.Free{},
@@ -169,6 +153,7 @@ func TestDirectory_AddVolume(t *testing.T) {
 
 			lv.Expect(mock_libvirt.FindStoragePool{Name: testPoolName, Result: lvPool})
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.GetName{Result: testPoolName},
 				mock_libvirt_storage.LookupStorageVolByName{
 					Name:   "test-volume",
@@ -207,6 +192,7 @@ func TestDirectory_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedVolCreateXml, Result: vol},
 				mock_libvirt_storage.Free{},
@@ -233,9 +219,13 @@ func TestDirectory_AddVolume(t *testing.T) {
 						Type: "test-format",
 					},
 				},
+				Allocation: &libvirtxml.StorageVolumeSize{
+					Unit:  "B",
+					Value: 0,
+				},
 				Capacity: &libvirtxml.StorageVolumeSize{
 					Unit:  "B",
-					Value: 200,
+					Value: uint64(len(testImageContent)),
 				},
 			}
 			expectedVolCreateXml, err := expectedVolCreate.Marshal()
@@ -245,6 +235,7 @@ func TestDirectory_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedVolCreateXml, Result: vol},
 				mock_libvirt_storage.Free{},
@@ -294,7 +285,7 @@ func TestDirectory_AddVolume(t *testing.T) {
 				},
 				Capacity: &libvirtxml.StorageVolumeSize{
 					Unit:  "B",
-					Value: 200,
+					Value: uint64(len(testImageContent)),
 				},
 				Allocation: &libvirtxml.StorageVolumeSize{
 					Unit:  "B",
@@ -303,11 +294,19 @@ func TestDirectory_AddVolume(t *testing.T) {
 			}
 			expectedVolCreateXml, err := expectedVolCreate.Marshal()
 			must.NoError(t, err)
-			vol := mock_libvirt_storage.NewStaticStorageVol()
+			vol := mock_libvirt_storage.NewMockStorageVol(t)
+			defer vol.AssertExpectations()
 			lvStream := mock_libvirt.NewStaticStream()
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
+			vol.Expect(
+				mock_libvirt_storage.Resize{Size: 200, Flags: libvirtNoFlags},
+				mock_libvirt_storage.Upload{Stream: lvStream, Size: uint64(len(testImageContent))},
+				mock_libvirt_storage.GetInfo{Result: &libvirt.StorageVolInfo{}},
+				mock_libvirt_storage.Free{},
+			)
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedVolCreateXml, Result: vol},
 				mock_libvirt_storage.Free{},
@@ -342,6 +341,10 @@ func TestDirectory_AddVolume(t *testing.T) {
 						Type: "test-format",
 					},
 				},
+				Allocation: &libvirtxml.StorageVolumeSize{
+					Unit:  "B",
+					Value: 0,
+				},
 				Capacity: &libvirtxml.StorageVolumeSize{
 					Unit:  "B",
 					Value: uint64(len(testImageContent)),
@@ -354,6 +357,7 @@ func TestDirectory_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedVolCreateXml, Result: vol},
 				mock_libvirt_storage.Free{},
@@ -390,19 +394,13 @@ func TestDirectory_AddVolume(t *testing.T) {
 					Unit:  "B",
 					Value: uint64(len(testImageContent)),
 				},
-				BackingStore: &libvirtxml.StorageVolumeBackingStore{
-					Path: "/dev/null/parent.img",
-					Format: &libvirtxml.StorageVolumeTargetFormat{
-						Type: "parent-volume-format",
-					},
-				},
 			}
 			expectedVolCreateXml, err := expectedVolCreate.Marshal()
 			must.NoError(t, err)
 			parentVolDesc := libvirtxml.StorageVolume{
 				Target: &libvirtxml.StorageVolumeTarget{
 					Format: &libvirtxml.StorageVolumeTargetFormat{
-						Type: "parent-volume-format",
+						Type: "test-format",
 					},
 				},
 			}
@@ -421,10 +419,11 @@ func TestDirectory_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Result: parentVol},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Result: parentVol},
-				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedVolCreateXml, Result: vol},
+				mock_libvirt_storage.StorageVolCreateXMLFrom{CloneVol: parentVol, Desc: expectedVolCreateXml, Result: vol},
 				mock_libvirt_storage.Free{},
 			)
 			lv := &mock_libvirt.StaticLibvirt{
@@ -458,7 +457,7 @@ func TestDirectory_AddVolume(t *testing.T) {
 				Name: "parent.img",
 				Target: &libvirtxml.StorageVolumeTarget{
 					Format: &libvirtxml.StorageVolumeTargetFormat{
-						Type: "custom-source-format",
+						Type: "test-format",
 					},
 				},
 				Capacity: &libvirtxml.StorageVolumeSize{
@@ -483,12 +482,6 @@ func TestDirectory_AddVolume(t *testing.T) {
 					Unit:  "B",
 					Value: uint64(len(testImageContent)),
 				},
-				BackingStore: &libvirtxml.StorageVolumeBackingStore{
-					Path: "/dev/null/parent.img",
-					Format: &libvirtxml.StorageVolumeTargetFormat{
-						Type: "custom-source-format",
-					},
-				},
 			}
 			expectedVolCreateXml, err := expectedVolCreate.Marshal()
 			must.NoError(t, err)
@@ -501,11 +494,12 @@ func TestDirectory_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Err: ErrVolumeNotFound},
 				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedParentCreateXml, Result: parentVol},
-				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedVolCreateXml, Result: vol},
+				mock_libvirt_storage.StorageVolCreateXMLFrom{CloneVol: parentVol, Desc: expectedVolCreateXml, Result: vol},
 				mock_libvirt_storage.Free{},
 			)
 			lv := &mock_libvirt.StaticLibvirt{
@@ -521,7 +515,7 @@ func TestDirectory_AddVolume(t *testing.T) {
 				Source: storage.Source{
 					Path:       testImagePath,
 					Identifier: "parent.img",
-					Format:     "custom-source-format",
+					Format:     "test-format",
 				},
 				Target: storage.Target{Format: "test-format"},
 			}
@@ -543,10 +537,12 @@ func TestDirectory_DeleteVolume(t *testing.T) {
 	testPoolName := "test-pool"
 	mkDirPool := func() *directory {
 		return &directory{
-			poolName: testPoolName,
-			logger:   hclog.NewNullLogger(),
-			l:        mock_libvirt.NewStaticLibvirt(),
-			s:        mock_storage.NewStaticStorage(),
+			pool: &pool{
+				name:   testPoolName,
+				logger: hclog.NewNullLogger(),
+				l:      mock_libvirt.NewStaticLibvirt(),
+				s:      mock_storage.NewStaticStorage(),
+			},
 		}
 	}
 
@@ -556,6 +552,7 @@ func TestDirectory_DeleteVolume(t *testing.T) {
 		vol := mock_libvirt_storage.NewStaticStorageVol()
 		defer lvPool.AssertExpectations()
 		lvPool.Expect(
+			mock_libvirt_storage.Refresh{},
 			mock_libvirt_storage.LookupStorageVolByName{Name: volName, Result: vol},
 			mock_libvirt_storage.Free{},
 		)
@@ -576,6 +573,7 @@ func TestDirectory_DeleteVolume(t *testing.T) {
 		lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 		defer lvPool.AssertExpectations()
 		lvPool.Expect(
+			mock_libvirt_storage.Refresh{},
 			mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 			mock_libvirt_storage.Free{},
 		)
@@ -592,6 +590,7 @@ func TestDirectory_DeleteVolume(t *testing.T) {
 		lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 		defer lvPool.AssertExpectations()
 		lvPool.Expect(
+			mock_libvirt_storage.Refresh{},
 			mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: errTest},
 			mock_libvirt_storage.Free{},
 		)
@@ -611,10 +610,12 @@ func TestDirectory_GetVolume(t *testing.T) {
 	testPoolName := "test-pool"
 	mkDirPool := func() *directory {
 		return &directory{
-			poolName: testPoolName,
-			logger:   hclog.NewNullLogger(),
-			l:        mock_libvirt.NewStaticLibvirt(),
-			s:        mock_storage.NewStaticStorage(),
+			pool: &pool{
+				name:   testPoolName,
+				logger: hclog.NewNullLogger(),
+				l:      mock_libvirt.NewStaticLibvirt(),
+				s:      mock_storage.NewStaticStorage(),
+			},
 		}
 	}
 
