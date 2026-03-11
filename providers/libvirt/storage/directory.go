@@ -6,13 +6,11 @@ package storage
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 
 	"github.com/hashicorp/go-hclog"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/storage"
-	"libvirt.org/go/libvirt"
 	"libvirt.org/go/libvirtxml"
 )
 
@@ -21,11 +19,7 @@ const defaultDirectoryImageFormat = "qcow2"
 // directory provides a local directory based implementation
 // of a storage pool.
 type directory struct {
-	ctx      context.Context
-	poolName string
-	logger   hclog.Logger
-	l        libvirtStorage
-	s        storage.Storage
+	*pool
 }
 
 // newDirectoryPool creates a new directory based storage pool.
@@ -61,12 +55,7 @@ func newDirectoryPool(ctx context.Context, logger hclog.Logger, l libvirtStorage
 		}
 	}
 
-	return &directory{ctx: ctx, logger: logger, poolName: poolName, l: l, s: s}, nil
-}
-
-// Name implements storage.Pool
-func (d *directory) Name() string {
-	return d.poolName
+	return &directory{pool: &pool{ctx: ctx, logger: logger, name: poolName, l: l, s: s}}, nil
 }
 
 // Type implements storage.Pool
@@ -79,148 +68,8 @@ func (d *directory) DefaultImageFormat() string {
 	return defaultDirectoryImageFormat
 }
 
-// AddVolume implements storage.Pool
-func (d *directory) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {
-	// The directory pool does not support cloning volumes or snapshots
-	if opts.Source.Volume != "" || opts.Source.Snapshot != "" {
-		return nil, fmt.Errorf("cannot clone volumes or snapshots - %w", vm.ErrNotSupported)
-	}
-
-	pool, err := d.l.FindStoragePool(d.poolName)
-	if err != nil {
-		return nil, err
-	}
-	defer pool.Free()
-
-	// First check if the volume already exists
-	volume, err := findVolume(pool, name)
-	if err == nil {
-		return volume, nil
-	}
-
-	if !errors.Is(err, ErrVolumeNotFound) {
-		return nil, err
-	}
-
-	// Attempt to set the size if not set
-	// NOTE: We don't generate an error when the size is unset. The config validation
-	// should prevent it. A zero size is allowed so tests against libvirt testing
-	// endpoint are successful.
-	if opts.Size, err = guessVolumeSize(pool, opts); err != nil {
-		return nil, err
-	}
-
-	// If the options don't specify a target format,
-	// use the default format
-	if opts.Target.Format == "" {
-		opts.Target.Format = defaultDirectoryImageFormat
-	}
-
-	newVolume := libvirtxml.StorageVolume{Name: name}
-
-	var srcFmt string
-	// If the volume is chained, find the parent volume or
-	// create it, and then set the volume modifier
-	if opts.Chained {
-		var path string
-		path, srcFmt, err = findOrCreateParentVolume(d.l, pool, d.s.ImageHandler(), opts)
-		if err != nil {
-			return nil, err
-		}
-
-		newVolume.BackingStore = &libvirtxml.StorageVolumeBackingStore{
-			Path: path,
-			Format: &libvirtxml.StorageVolumeTargetFormat{
-				Type: srcFmt,
-			},
-		}
-	}
-
-	newVolume.Target = &libvirtxml.StorageVolumeTarget{
-		Format: &libvirtxml.StorageVolumeTargetFormat{
-			Type: opts.Target.Format,
-		},
-	}
-
-	// Set the capacity for the new volume
-	newVolume.Capacity = &libvirtxml.StorageVolumeSize{
-		Unit:  "B",
-		Value: opts.Size,
-	}
-
-	// If the volume should be sparse, do not allocate anything. only allocate a single byte and
-	if opts.Sparse {
-		newVolume.Allocation = &libvirtxml.StorageVolumeSize{
-			Unit:  "B",
-			Value: 0,
-		}
-	}
-
-	volData, err := newVolume.Marshal()
-	if err != nil {
-		return nil, err
-	}
-
-	vol, err := pool.StorageVolCreateXML(volData, libvirtNoFlags)
-	if err != nil {
-		return nil, err
-	}
-	defer vol.Free()
-
-	if !opts.Chained && opts.Source.Path != "" {
-		// If this isn't a chained volume and an image is defined
-		// then upload the image into the volume
-		if err := uploadToVolume(d.l, opts.Source.Path, vol, &opts); err != nil {
-			return nil, err
-		}
-	}
-
-	return &storage.Volume{
-		Name:   name,
-		Pool:   d.poolName,
-		Format: opts.Target.Format,
-	}, nil
-}
-
-// DeleteVolume implements storage.Pool
-func (d *directory) DeleteVolume(name string) error {
-	pool, err := d.l.FindStoragePool(d.poolName)
-	if err != nil {
-		return err
-	}
-	defer pool.Free()
-
-	vol, err := findRawVolume(pool, name)
-	if err != nil {
-		if errors.Is(err, ErrVolumeNotFound) {
-			return nil
-		}
-		return err
-	}
-	defer vol.Free()
-
-	return vol.Delete(libvirt.STORAGE_VOL_DELETE_NORMAL)
-}
-
-// GetVolume implements storage.Pool
-func (d *directory) GetVolume(name string) (*storage.Volume, error) {
-	pool, err := d.l.FindStoragePool(d.poolName)
-	if err != nil {
-		return nil, err
-	}
-	defer pool.Free()
-
-	return findVolume(pool, name)
-}
-
 // copy creates a new copy of this pool with updated context
 // and storage.
 func (d *directory) copy(ctx context.Context, s *Storage, l libvirtStorage) *directory {
-	return &directory{
-		ctx:      ctx,
-		l:        l,
-		s:        s,
-		poolName: d.poolName,
-		logger:   d.logger,
-	}
+	return &directory{pool: d.pool.copy(ctx, s, l)}
 }

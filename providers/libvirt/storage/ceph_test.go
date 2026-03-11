@@ -45,12 +45,14 @@ func TestCeph_AddVolume(t *testing.T) {
 	testPoolName := "test-pool"
 	mkCephPool := func() *ceph {
 		return &ceph{
-			poolName: testPoolName,
-			logger:   hclog.NewNullLogger(),
-			l:        mock_libvirt.NewStaticLibvirt(),
-			s:        mock_storage.NewStaticStorage(),
-			ctx:      t.Context(),
-			uploader: func(shims.StorageVol, string) error { return nil },
+			pool: &pool{
+				name:     testPoolName,
+				logger:   hclog.NewNullLogger(),
+				l:        mock_libvirt.NewStaticLibvirt(),
+				s:        mock_storage.NewStaticStorage(),
+				ctx:      t.Context(),
+				uploader: func(shims.StorageVol, string) error { return nil },
+			},
 		}
 	}
 
@@ -75,6 +77,7 @@ func TestCeph_AddVolume(t *testing.T) {
 
 			lv.Expect(mock_libvirt.FindStoragePool{Name: testPoolName, Result: lvPool})
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{
 					Name: "test-volume",
 					Err:  errTest,
@@ -100,6 +103,7 @@ func TestCeph_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Result: parentVol},
 				mock_libvirt_storage.Free{},
@@ -128,6 +132,7 @@ func TestCeph_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Err: errTest},
 				mock_libvirt_storage.Free{},
@@ -161,6 +166,7 @@ func TestCeph_AddVolume(t *testing.T) {
 
 			lv.Expect(mock_libvirt.FindStoragePool{Name: testPoolName, Result: lvPool})
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.GetName{Result: testPoolName},
 				mock_libvirt_storage.LookupStorageVolByName{
 					Name:   "test-volume",
@@ -199,6 +205,7 @@ func TestCeph_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedVolCreateXml, Result: vol},
 				mock_libvirt_storage.Free{},
@@ -225,6 +232,10 @@ func TestCeph_AddVolume(t *testing.T) {
 						Type: "raw",
 					},
 				},
+				Allocation: &libvirtxml.StorageVolumeSize{
+					Unit:  "B",
+					Value: 0,
+				},
 				Capacity: &libvirtxml.StorageVolumeSize{
 					Unit:  "B",
 					Value: uint64(len(testImageConvertedContent)),
@@ -236,6 +247,7 @@ func TestCeph_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedVolCreateXml, Result: vol},
 				mock_libvirt_storage.Free{},
@@ -272,6 +284,10 @@ func TestCeph_AddVolume(t *testing.T) {
 						Type: "raw",
 					},
 				},
+				Allocation: &libvirtxml.StorageVolumeSize{
+					Unit:  "B",
+					Value: 0,
+				},
 				Capacity: &libvirtxml.StorageVolumeSize{
 					Unit:  "B",
 					Value: uint64(len(testImageConvertedContent)),
@@ -284,6 +300,7 @@ func TestCeph_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedVolCreateXml, Result: vol},
 				mock_libvirt_storage.Free{},
@@ -344,6 +361,7 @@ func TestCeph_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Result: parentVol},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Result: parentVol},
@@ -382,6 +400,10 @@ func TestCeph_AddVolume(t *testing.T) {
 						Type: "raw",
 					},
 				},
+				Allocation: &libvirtxml.StorageVolumeSize{
+					Unit:  "B",
+					Value: 0,
+				},
 				Capacity: &libvirtxml.StorageVolumeSize{
 					Unit:  "B",
 					Value: uint64(len(testImageContent)),
@@ -411,6 +433,7 @@ func TestCeph_AddVolume(t *testing.T) {
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
+				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Err: ErrVolumeNotFound},
