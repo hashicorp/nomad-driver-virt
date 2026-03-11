@@ -20,10 +20,16 @@ import (
 // as a plugin and embeded, only to be loaded if a ceph storage
 // pool has been configured.
 
+// pluginLoaderFn is the function signature for plugin loading functions
+type pluginLoaderFn func(string, *plugin.Plugin) error
+
 //go:embed plugins/*.so
 var pluginsDir embed.FS
 
-var pluginLoadLock sync.Mutex
+var (
+	pluginLoadLock sync.Mutex
+	pluginLoader   pluginLoaderFn = loadPlugin
+)
 
 func loadPlugin(name string, holder *plugin.Plugin) error {
 	pluginLoadLock.Lock()
