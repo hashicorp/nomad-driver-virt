@@ -44,6 +44,12 @@ type GetInfo struct {
 	Err    error
 }
 
+type GenerateMountCommands struct {
+	Mounts []*vm.MountFileConfig
+	Result []string
+	Err    error
+}
+
 type GetNetworkInterfaces struct {
 	Name   string
 	Result []vm.NetworkInterface
@@ -80,19 +86,20 @@ func NewMock(t must.T) *MockVirt {
 type MockVirt struct {
 	t must.T
 
-	init                 []Init
-	createVm             []CreateVM
-	stopVm               []StopVM
-	destroyVm            []DestroyVM
-	getVm                []GetVM
-	getInfo              []GetInfo
-	getNetworkInterfaces []GetNetworkInterfaces
-	useCloudInit         []UseCloudInit
-	networking           []Networking
-	fingerprint          []Fingerprint
-	setupStorage         []SetupStorage
-	storage              []Storage
-	m                    sync.Mutex
+	init                  []Init
+	createVm              []CreateVM
+	stopVm                []StopVM
+	destroyVm             []DestroyVM
+	getVm                 []GetVM
+	getInfo               []GetInfo
+	getNetworkInterfaces  []GetNetworkInterfaces
+	generateMountCommands []GenerateMountCommands
+	useCloudInit          []UseCloudInit
+	networking            []Networking
+	fingerprint           []Fingerprint
+	setupStorage          []SetupStorage
+	storage               []Storage
+	m                     sync.Mutex
 }
 
 func (m *MockVirt) Expect(calls ...any) *MockVirt {
@@ -112,6 +119,8 @@ func (m *MockVirt) Expect(calls ...any) *MockVirt {
 			m.ExpectGetInfo(c)
 		case GetNetworkInterfaces:
 			m.ExpectGetNetworkInterfaces(c)
+		case GenerateMountCommands:
+			m.ExpectGenerateMountCommands(c)
 		case UseCloudInit:
 			m.ExpectUseCloudInit(c)
 		case Networking:
@@ -183,6 +192,14 @@ func (m *MockVirt) ExpectGetNetworkInterfaces(c GetNetworkInterfaces) *MockVirt 
 	defer m.m.Unlock()
 
 	m.getNetworkInterfaces = append(m.getNetworkInterfaces, c)
+	return m
+}
+
+func (m *MockVirt) ExpectGenerateMountCommands(c GenerateMountCommands) *MockVirt {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.generateMountCommands = append(m.generateMountCommands, c)
 	return m
 }
 
@@ -343,6 +360,25 @@ func (m *MockVirt) GetNetworkInterfaces(name string) ([]vm.NetworkInterface, err
 	return call.Result, call.Err
 }
 
+func (m *MockVirt) GenerateMountCommands(mounts []*vm.MountFileConfig) ([]string, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.generateMountCommands,
+		must.Sprint("Unexpected call to GenerateMountCommands"))
+	call := m.generateMountCommands[0]
+	m.generateMountCommands = m.generateMountCommands[1:]
+
+	if call.Mounts != nil {
+		must.Eq(m.t, call, GenerateMountCommands{Mounts: mounts, Result: call.Result, Err: call.Err},
+			must.Sprint("GenerateMountCommands received incorrect argument"))
+	}
+
+	return call.Result, call.Err
+}
+
 func (m *MockVirt) UseCloudInit() bool {
 	m.m.Lock()
 	defer m.m.Unlock()
@@ -438,6 +474,8 @@ func (m *MockVirt) AssertExpectations() {
 		must.Sprintf("GetInfo expecting %d more invocations", len(m.getInfo)))
 	must.SliceEmpty(m.t, m.getNetworkInterfaces,
 		must.Sprintf("GetNetworkInterfaces expecting %d more invocations", len(m.getNetworkInterfaces)))
+	must.SliceEmpty(m.t, m.generateMountCommands,
+		must.Sprintf("GenerateMountCommands expecting %d more invocations", len(m.generateMountCommands)))
 	must.SliceEmpty(m.t, m.useCloudInit,
 		must.Sprintf("UseCloudInit expecting %d more invocations", len(m.useCloudInit)))
 	must.SliceEmpty(m.t, m.networking,
