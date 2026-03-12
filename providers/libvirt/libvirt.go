@@ -4,12 +4,17 @@
 package libvirt
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/netip"
+	"os/exec"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
@@ -33,6 +38,10 @@ const (
 	defaultInterfaceModel     = "virtio"
 	libvirtVirtioChannel      = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
 	libvirtNoFlags            = 0
+	mountFsVirtiofs           = "vhost-user-fs-pci"
+	mountFs9p                 = "virtio-9p-pci"
+	virtiofsQueueSize         = 1024
+	virtiofsSecurityMode      = "passthrough"
 
 	// URI for running in test mode
 	TestURI = "test:///default"
@@ -80,18 +89,22 @@ var (
 )
 
 type driver struct {
-	ctx        context.Context
-	uri        string
-	conn       *libvirt.Connect
-	logger     hclog.Logger
-	user       string
-	password   string
-	opts       []Option
-	closed     bool
-	storage    *libvirt_storage.Storage
-	networking *libvirtnet.Controller
-	cancel     context.CancelFunc
-	m          sync.Mutex
+	ctx              context.Context
+	uri              string
+	conn             *libvirt.Connect
+	logger           hclog.Logger
+	user             string
+	password         string
+	opts             []Option
+	closed           bool
+	storage          *libvirt_storage.Storage
+	networking       *libvirtnet.Controller
+	cancel           context.CancelFunc
+	availableMountFs map[string]struct{}
+	libvirtVersion   uint32
+	m                sync.Mutex
+
+	availableMountFsOverride map[string]struct{} // used for testing
 }
 
 // Copy creates a copy of this driver.
@@ -99,13 +112,17 @@ func (d *driver) Copy(ctx context.Context) *driver {
 	d.m.Lock()
 	defer d.m.Unlock()
 
+	ctx, cancel := context.WithCancel(ctx)
 	dCopy := &driver{
-		ctx:      ctx,
-		closed:   d.closed,
-		uri:      d.uri,
-		logger:   d.logger,
-		user:     d.user,
-		password: d.password,
+		ctx:              ctx,
+		cancel:           cancel,
+		closed:           d.closed,
+		uri:              d.uri,
+		logger:           d.logger,
+		user:             d.user,
+		password:         d.password,
+		availableMountFs: d.availableMountFs,
+		libvirtVersion:   d.libvirtVersion,
 	}
 	dCopy.storage = d.storage.Copy(ctx, dCopy)
 	dCopy.networking = d.networking.Copy(dCopy)
@@ -244,10 +261,22 @@ func New(ctx context.Context, logger hclog.Logger, opt ...Option) *driver {
 	return d
 }
 
-// Init initializes the driver. For libvirt, this just verifies it can connect.
+// Init initializes the driver.
 func (d *driver) Init() error {
-	_, err := d.connection()
+	c, err := d.connection()
 	if err != nil {
+		return err
+	}
+
+	d.libvirtVersion, err = c.GetVersion()
+	if err != nil {
+		d.logger.Debug("unable to get libvirt version", "error", err)
+		return err
+	}
+
+	// Determine what filesystems are supported for mounting within
+	// the guest.
+	if d.availableMountFs, err = d.findAvailableMountFs(); err != nil {
 		return err
 	}
 
@@ -832,6 +861,41 @@ func (d *driver) Fingerprint() (map[string]*structs.Attribute, error) {
 	return attrs, nil
 }
 
+// GenerateMountCommands implements virt.Virtualizer
+func (d *driver) GenerateMountCommands(mounts []*vm.MountFileConfig) ([]string, error) {
+	cmds := []string{}
+	// read-only volumes are not supported in libvirt until 11.0.0
+	virtiofsRO := d.requiresLibvirtVersion("11.0.0")
+	for _, m := range mounts {
+		// if the mount is read-only, only 9p is supported.
+		if m.ReadOnly && !virtiofsRO {
+			if !d.mountFsAvailable(mountFs9p) {
+				return nil, fmt.Errorf("read-only virtiofs mount %w - libvirt version 11.0.0 or greater required", vm.ErrNotSupported)
+			}
+
+			cmds = append(cmds, d.generate9pMountCmds(m)...)
+			continue
+		}
+
+		// Prefer using virtiofs if available
+		if d.mountFsAvailable(mountFsVirtiofs) {
+			cmds = append(cmds, d.generateVirtiofsMountCmds(m)...)
+			continue
+		}
+
+		// Use 9pfs if virtiofs was not avaialble
+		if d.mountFsAvailable(mountFs9p) {
+			cmds = append(cmds, d.generate9pMountCmds(m)...)
+			continue
+		}
+
+		// If here then no support filesystem detected
+		return nil, fmt.Errorf("mounting %w - no supported filesystems available", vm.ErrNotSupported)
+	}
+
+	return cmds, nil
+}
+
 // GetCephSecret will return the ceph credential for the provided name
 // base64 encoded.
 func (d *driver) GetCephSecret(name string) (string, error) {
@@ -956,18 +1020,147 @@ func (d *driver) getDomainVolumes(dom *libvirt.Domain) ([]storage.Volume, error)
 	return d.storage.DiscoverVolumes(info.Devices.Disks)
 }
 
+// mountFsAvailable returns if the requested filesystems support is available.
+func (d *driver) mountFsAvailable(name string) bool {
+	_, ok := d.availableMountFs[name]
+	return ok
+}
+
+// generateVirtiofsMountCmds generates mounts commands for virtiofs.
+func (d *driver) generateVirtiofsMountCmds(m *vm.MountFileConfig) []string {
+	m.Driver = mountFsVirtiofs
+
+	return []string{
+		fmt.Sprintf(`mkdir -p "%s"`, m.Destination),
+		fmt.Sprintf(`mountpoint -q "%s" || mount -t virtiofs %s "%s"`, m.Destination, m.Tag, m.Destination),
+	}
+}
+
+// generate9pMountCmds generates mount commands for 9pfs.
+func (d *driver) generate9pMountCmds(m *vm.MountFileConfig) []string {
+	m.Driver = mountFs9p
+
+	return []string{
+		fmt.Sprintf(`mkdir -p "%s"`, m.Destination),
+		fmt.Sprintf(`mountpoint -q "%s" || mount -t 9p -o trans=virtio %s "%s"`, m.Destination, m.Tag, m.Destination),
+	}
+}
+
+// findAvailableMountFs will check for available guest filesystem device
+// support in the qemu emulator. It allows for overrides to be set which
+// are used in testing.
+func (d *driver) findAvailableMountFs() (map[string]struct{}, error) {
+	// If direct override values are set, return those.
+	if d.availableMountFsOverride != nil {
+		return d.availableMountFsOverride, nil
+	}
+
+	// If a function override is set, call that.
+	if mountFsAvailabilityOverride != nil {
+		return mountFsAvailabilityOverride()
+	}
+
+	c, err := d.connection()
+	if err != nil {
+		return nil, err
+	}
+
+	capsRaw, err := c.GetCapabilities()
+	if err != nil {
+		return nil, err
+	}
+
+	caps := &libvirtxml.Caps{}
+	if err := caps.Unmarshal(capsRaw); err != nil {
+		return nil, err
+	}
+
+	avail := map[string]struct{}{}
+
+	for _, guest := range caps.Guests {
+		var stdout, stderr bytes.Buffer
+		cmd := exec.Command(guest.Arch.Emulator, "-device", "?")
+		cmd.Stdout = &stdout
+		cmd.Stderr = &stderr
+		if err := cmd.Run(); err != nil {
+			d.logger.Error("qemu device list failure", "stderr", stderr.String())
+			return nil, err
+		}
+
+		scanner := bufio.NewScanner(&stdout)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if strings.HasPrefix(line, fmt.Sprintf(`name "%s"`, mountFs9p)) {
+				avail[mountFs9p] = struct{}{}
+			}
+			if strings.HasPrefix(line, fmt.Sprintf(`name "%s"`, mountFsVirtiofs)) {
+				avail[mountFsVirtiofs] = struct{}{}
+			}
+		}
+	}
+
+	return avail, nil
+}
+
+// requiresLibvirtVersion returns true if the version of libvirt
+// is the same or newer than the provided version.
+func (d *driver) requiresLibvirtVersion(version string) bool {
+	return d.libvirtVersion >= genVersion(version)
+}
+
 const (
 	majorDivisor = 1_000_000
 	minorDivisor = 1_000
 )
 
+// genVersion will generate the version integer from
+// the provided value. Requires version in format of
+// MAJOR.MINOR.PATCH
+func genVersion(version string) uint32 {
+	var v uint32
+	parts := strings.Split(version, ".")
+	if len(parts) != 3 {
+		return 0
+	}
+
+	for i, div := range []int{majorDivisor, minorDivisor, 1} {
+		p, err := strconv.Atoi(parts[i])
+		if err != nil {
+			return 0
+		}
+		v += uint32(p * div)
+	}
+
+	return v
+}
+
 // computeVersion will compute the version string from the
 // integer value provided by libvirt.
 func computeVersion(version uint32) string {
 	major := version / majorDivisor
-	version -= version % majorDivisor
+	version = version % majorDivisor
 	minor := version / minorDivisor
-	version -= version % minorDivisor
+	version = version % minorDivisor
 
 	return fmt.Sprintf("%d.%d.%d", major, minor, version)
 }
+
+// ModifyMountFsAvailability is provided for testing to override the
+// available filesystems for guest mounts.
+func ModifyMountFsAvailability(fn mountFsAvailabilityFn) {
+	logger := hclog.L()
+	if fn != nil {
+		logger.Warn("mount filesystem availability function override set")
+	} else {
+		logger.Warn("mount filesystem availability function override removed")
+	}
+
+	mountFsAvailabilityOverride = fn
+}
+
+type mountFsAvailabilityFn func() (map[string]struct{}, error)
+
+// mountFsAvailabilityOverride is an override to manually set available guest
+// filesystem support. It is used for testing and can be set outside of the
+// package using the [ModifyMountFsAvailability] function.
+var mountFsAvailabilityOverride mountFsAvailabilityFn

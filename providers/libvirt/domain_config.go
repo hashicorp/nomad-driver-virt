@@ -43,7 +43,7 @@ func (d *driver) parseConfiguration(config *vm.Config) (string, error) {
 			ro = &libvirtxml.DomainFilesystemReadOnly{}
 		}
 
-		m := libvirtxml.DomainFilesystem{
+		mnt := libvirtxml.DomainFilesystem{
 			AccessMode: defaultSecurityMode,
 			ReadOnly:   ro,
 			Source: &libvirtxml.DomainFilesystemSource{
@@ -55,7 +55,16 @@ func (d *driver) parseConfiguration(config *vm.Config) (string, error) {
 				Dir: m.Tag,
 			},
 		}
-		mounts = append(mounts, m)
+
+		if m.Driver == mountFsVirtiofs {
+			mnt.AccessMode = virtiofsSecurityMode
+			mnt.Driver = &libvirtxml.DomainFilesystemDriver{
+				Type:  mountFsVirtiofs,
+				Queue: virtiofsQueueSize,
+			}
+		}
+
+		mounts = append(mounts, mnt)
 	}
 
 	osType := &libvirtxml.DomainOSType{
