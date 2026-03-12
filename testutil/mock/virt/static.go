@@ -21,13 +21,14 @@ func NewStatic() *StaticVirt {
 }
 
 type StaticVirt struct {
-	GetInfoResult              vm.VirtualizerInfo
-	GetVMResult                *vm.Info
-	GetNetworkInterfacesResult []vm.NetworkInterface
-	FingerprintResult          map[string]*structs.Attribute
-	NetworkingResult           net.Net
-	UseCloudInitResult         bool
-	StorageResult              storage.Storage
+	GetInfoResult               vm.VirtualizerInfo
+	GetVMResult                 *vm.Info
+	GetNetworkInterfacesResult  []vm.NetworkInterface
+	GenerateMountCommandsResult []string
+	FingerprintResult           map[string]*structs.Attribute
+	NetworkingResult            net.Net
+	UseCloudInitResult          bool
+	StorageResult               storage.Storage
 
 	counts map[string]int
 	m      sync.Mutex
@@ -117,6 +118,18 @@ func (s *StaticVirt) GetNetworkInterfaces(string) ([]vm.NetworkInterface, error)
 	}
 
 	return []vm.NetworkInterface{}, nil
+}
+
+func (s *StaticVirt) GenerateMountCommands([]*vm.MountFileConfig) ([]string, error) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	if s.GenerateMountCommandsResult != nil {
+		return s.GenerateMountCommandsResult, nil
+	}
+
+	return []string{}, nil
 }
 
 func (s *StaticVirt) UseCloudInit() bool {
