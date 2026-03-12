@@ -28,7 +28,19 @@ import (
 // validate the driver implements the connect interface
 var _ shims.Connect = (*driver)(nil)
 
-func testNew(t *testing.T) (*driver, string) {
+type libvirtModifier func(l *driver)
+
+func overrideFs(avail ...string) libvirtModifier {
+	return func(l *driver) {
+		m := map[string]struct{}{}
+		for _, a := range avail {
+			m[a] = struct{}{}
+		}
+		l.availableMountFsOverride = m
+	}
+}
+
+func testNew(t *testing.T, modifiers ...libvirtModifier) (*driver, string) {
 	t.Helper()
 	poolName := strings.ReplaceAll(t.Name(), "/", "_")
 
@@ -38,6 +50,9 @@ func testNew(t *testing.T) (*driver, string) {
 		WithConnectionURI(TestURI),
 	)
 	t.Cleanup(func() { l.Close() })
+	for _, m := range modifiers {
+		m(l)
+	}
 	must.NoError(t, l.Init())
 	must.NoError(t, l.SetupStorage(&storage.Config{
 		Directory: map[string]storage.Directory{
@@ -65,7 +80,7 @@ func TestStorage(t *testing.T) {
 		poolName, poolDir := mkPoolDir(t)
 		mainName := fmt.Sprintf("%s-%s", poolName, "main-pool")
 		secondName := fmt.Sprintf("%s-%s", poolName, "secondary-pool")
-		l, _ := testNew(t)
+		l, _ := testNew(t, overrideFs(mountFs9p))
 		pools := &storage.Config{
 			Directory: map[string]storage.Directory{
 				mainName: {
@@ -100,7 +115,7 @@ func TestStorage(t *testing.T) {
 	t.Run("Volumes", func(t *testing.T) {
 		t.Run("create-retrieve-delete", func(t *testing.T) {
 			poolName, poolDir := mkPoolDir(t)
-			l, _ := testNew(t)
+			l, _ := testNew(t, overrideFs(mountFs9p))
 			pools := &storage.Config{
 				Directory: map[string]storage.Directory{
 					poolName: {Path: filepath.Join(poolDir, "pool")}}}
@@ -136,7 +151,7 @@ func TestStorage(t *testing.T) {
 func TestGetInfo(t *testing.T) {
 	t.Parallel()
 
-	ld, _ := testNew(t)
+	ld, _ := testNew(t, overrideFs(mountFs9p))
 
 	i, err := ld.GetInfo()
 	must.NoError(t, err)
@@ -203,7 +218,7 @@ func TestStartDomain(t *testing.T) {
 	}
 
 	t.Run("domain created successfully", func(t *testing.T) {
-		ld, poolName := testNew(t)
+		ld, poolName := testNew(t, overrideFs(mountFs9p))
 
 		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
@@ -217,7 +232,7 @@ func TestStartDomain(t *testing.T) {
 	})
 
 	t.Run("duplicated domain error", func(t *testing.T) {
-		ld, poolName := testNew(t)
+		ld, poolName := testNew(t, overrideFs(mountFs9p))
 
 		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
@@ -229,7 +244,7 @@ func TestStartDomain(t *testing.T) {
 	})
 
 	t.Run("includes volume information", func(t *testing.T) {
-		ld, poolName := testNew(t)
+		ld, poolName := testNew(t, overrideFs(mountFs9p))
 
 		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
@@ -247,7 +262,7 @@ func TestStartDomain(t *testing.T) {
 	})
 
 	t.Run("includes additional volumes", func(t *testing.T) {
-		ld, poolName := testNew(t)
+		ld, poolName := testNew(t, overrideFs(mountFs9p))
 
 		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
@@ -281,7 +296,7 @@ func TestStartDomain(t *testing.T) {
 func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	t.Parallel()
 
-	ld, _ := testNew(t)
+	ld, _ := testNew(t, overrideFs(mountFs9p))
 
 	domainName := vmName(t)
 	err := ld.CreateVM(&vm.Config{
@@ -317,7 +332,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 func Test_GetNetworkInterfaces(t *testing.T) {
 	t.Parallel()
 
-	ld, _ := testNew(t)
+	ld, _ := testNew(t, overrideFs(mountFs9p))
 	domainName := vmName(t)
 	err := ld.CreateVM(&vm.Config{
 		RemoveConfigFiles: true,
@@ -338,4 +353,89 @@ func Test_GetNetworkInterfaces(t *testing.T) {
 	must.NoError(t, err)
 	must.Len(t, 1, interfaces)
 	must.StrContains(t, interfaces[0].MAC, ":")
+}
+
+func Test_GenerateMountCommands(t *testing.T) {
+	t.Parallel()
+	mounts := func() []*vm.MountFileConfig {
+		return []*vm.MountFileConfig{
+			{
+				Source:      "/dev/null",
+				Destination: "/test",
+				ReadOnly:    false,
+				Tag:         "test-tag",
+			},
+		}
+	}
+
+	t.Run("not available", func(t *testing.T) {
+		ld, _ := testNew(t, overrideFs())
+		_, err := ld.GenerateMountCommands(mounts())
+		must.ErrorIs(t, err, vm.ErrNotSupported)
+	})
+
+	t.Run("9p available", func(t *testing.T) {
+		ld, _ := testNew(t, overrideFs(mountFs9p))
+
+		mnts := mounts()
+		result, err := ld.GenerateMountCommands(mnts)
+		must.NoError(t, err)
+		must.Eq(t, []string{
+			`mkdir -p "/test"`,
+			`mountpoint -q "/test" || mount -t 9p -o trans=virtio test-tag "/test"`,
+		}, result)
+		must.Eq(t, mountFs9p, mnts[0].Driver)
+	})
+
+	t.Run("virtiofs available", func(t *testing.T) {
+		ld, _ := testNew(t, overrideFs(mountFsVirtiofs))
+
+		mnts := mounts()
+		result, err := ld.GenerateMountCommands(mnts)
+		must.NoError(t, err)
+		must.Eq(t, []string{
+			`mkdir -p "/test"`,
+			`mountpoint -q "/test" || mount -t virtiofs test-tag "/test"`,
+		}, result)
+		must.Eq(t, mountFsVirtiofs, mnts[0].Driver)
+	})
+
+	t.Run("virtiofs and 9p available", func(t *testing.T) {
+		ld, _ := testNew(t, overrideFs(mountFs9p, mountFsVirtiofs))
+
+		result, err := ld.GenerateMountCommands(mounts())
+		must.NoError(t, err)
+		must.Eq(t, []string{
+			`mkdir -p "/test"`,
+			`mountpoint -q "/test" || mount -t virtiofs test-tag "/test"`,
+		}, result)
+	})
+
+	t.Run("read-only mount without virtiofs support", func(t *testing.T) {
+		// Make mount read-only
+		mnts := mounts()
+		mnts[0].ReadOnly = true
+
+		t.Run("9p and virtiofs available", func(t *testing.T) {
+			ld, _ := testNew(t, overrideFs(mountFs9p, mountFsVirtiofs))
+			// Force low version of libvirt
+			ld.libvirtVersion = 1
+
+			result, err := ld.GenerateMountCommands(mnts)
+			must.NoError(t, err)
+			must.Eq(t, []string{
+				`mkdir -p "/test"`,
+				`mountpoint -q "/test" || mount -t 9p -o trans=virtio test-tag "/test"`,
+			}, result)
+		})
+
+		t.Run("virtiofs only available", func(t *testing.T) {
+			ld, _ := testNew(t, overrideFs(mountFsVirtiofs))
+			// Force low version of libvirt
+			ld.libvirtVersion = 1
+
+			_, err := ld.GenerateMountCommands(mnts)
+			must.ErrorIs(t, err, vm.ErrNotSupported)
+		})
+	})
 }

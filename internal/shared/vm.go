@@ -85,6 +85,7 @@ type MountFileConfig struct {
 	Destination string
 	ReadOnly    bool
 	Tag         string
+	Driver      string
 }
 
 type OSVariant struct {
