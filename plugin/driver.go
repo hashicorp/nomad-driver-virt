@@ -413,8 +413,11 @@ func vmNameFromTaskID(taskID string) string {
 	return strings.Join(ids[1:], "-")
 }
 
-func createAllocFileMounts(task *drivers.TaskConfig) []vm.MountFileConfig {
-	mounts := []vm.MountFileConfig{
+// createAllocFileMounts creates the mount configurations for the
+// alloc related directories on the host to make available within
+// the guest machine.
+func createAllocFileMounts(task *drivers.TaskConfig) []*vm.MountFileConfig {
+	mounts := []*vm.MountFileConfig{
 		{
 			Source:      task.TaskDir().SharedAllocDir,
 			Tag:         "allocDir",
@@ -455,26 +458,12 @@ func createEnvsFile(envs map[string]string) vm.File {
 	}
 }
 
-func addCMDsForMounts(mounts []vm.MountFileConfig) []string {
-	cmds := []string{}
-	for _, m := range mounts {
-		c := []string{
-			fmt.Sprintf("mkdir -p %s", m.Destination),
-			fmt.Sprintf("mountpoint -q %s || mount -t 9p -o trans=virtio %s %s", m.Destination, m.Tag, m.Destination),
-		}
-
-		cmds = append(cmds, c...)
-	}
-
-	return cmds
-}
-
 func buildHostname(taskName string) string {
 	return fmt.Sprintf("nomad-%s", taskName)
 }
 
 // StartTask returns a task handle and a driver network if necessary.
-func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHandle, *drivers.DriverNetwork, error) {
+func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHandle, _ *drivers.DriverNetwork, err error) {
 	if _, ok := d.tasks.Get(cfg.ID); ok {
 		return nil, nil, fmt.Errorf("task with ID %q already started", cfg.ID)
 	}
@@ -489,13 +478,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	taskName := vmNameFromTaskID(cfg.ID)
 
 	d.logger.Info("starting task", "name", taskName)
-
-	// The process to have directories mounted on the VM consists on two steps,
-	// one is declaring them as backing storage in the VM and the second is to
-	// create the directory inside the VM and executing the mount using 9P.
-	// These commands are added here to execute at bootime.
-	allocFSMounts := createAllocFileMounts(cfg)
-	bootCMDs := addCMDsForMounts(allocFSMounts)
 
 	var osVariant *vm.OSVariant
 	if driverConfig.OS != nil {
@@ -518,15 +500,31 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	cpuSet := idset.Parse[hw.CoreID](cfg.Resources.LinuxResources.CpusetCpus)
 
 	// Create context for this task
-	// NOTE: Be sure to cancel if any errors are encountered
-	// in this function.
 	ctx, cancel := context.WithCancel(context.Background())
+	defer func() {
+		if err != nil {
+			cancel()
+		}
+	}()
 
 	// Fetch the virtualizer
 	virtualizer, err := d.providers.Default(ctx)
 	if err != nil {
-		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
+	}
+
+	// The process to have directories mounted on the VM consists of two steps,
+	// one is declaring them in the virtual machine configuration and the second
+	// is the commands to for mounting them.
+	allocFSMounts := createAllocFileMounts(cfg)
+	bootCMDs, err := virtualizer.GenerateMountCommands(allocFSMounts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
+	}
+
+	mounts := make([]vm.MountFileConfig, len(allocFSMounts))
+	for i := range len(allocFSMounts) {
+		mounts[i] = *allocFSMounts[i]
 	}
 
 	dc := &vm.Config{
@@ -537,7 +535,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 		CPUset:            cfg.Resources.LinuxResources.CpusetCpus,
 		OsVariant:         osVariant,
 		HostName:          hostname,
-		Mounts:            allocFSMounts,
+		Mounts:            mounts,
 		CMDs:              driverConfig.CMDs,
 		BOOTCMDs:          bootCMDs,
 		CIUserData:        driverConfig.UserData,
@@ -561,7 +559,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 	if virtualizer.UseCloudInit() && dc.CloudInitConfig() != nil {
 		isoPath := filepath.Join(cfg.AllocDir, "cloudinit.iso")
 		if err := d.ci.Apply(dc.CloudInitConfig(), isoPath); err != nil {
-			cancel()
 			return nil, nil, err
 		}
 		// The iso will be copied into the storage pool, so
@@ -579,30 +576,25 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (*drivers.TaskHand
 
 	// Run validation
 	if err := dc.Validate(allowedPaths); err != nil {
-		cancel()
 		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
 	}
 
 	// Prepare the disks to generate the storage pool volumes
 	if err := dc.Disks.Prepare(taskName, virtualizer.Storage()); err != nil {
-		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to create storage volumes %s: %w", cfg.AllocID, err)
 	}
 
 	networking, err := virtualizer.Networking()
 	if err != nil {
-		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
 	if err := virtualizer.CreateVM(dc); err != nil {
-		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
 	ifaces, err := virtualizer.GetNetworkInterfaces(dc.Name)
 	if err != nil {
-		cancel()
 		return nil, nil, fmt.Errorf("virt: failed to retrieve guest interfaces %s: %w", cfg.AllocID, err)
 	}
 	hwaddrs := make([]string, len(ifaces))
