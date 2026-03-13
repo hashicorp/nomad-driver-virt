@@ -517,6 +517,18 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 	// one is declaring them in the virtual machine configuration and the second
 	// is the commands to for mounting them.
 	allocFSMounts := createAllocFileMounts(cfg)
+
+	// Add any host mounts that have been defined
+	// NOTE: selinux and propagation settings currently ignored
+	for _, m := range cfg.Mounts {
+		allocFSMounts = append(allocFSMounts, &vm.MountFileConfig{
+			Source:      m.HostPath,
+			Destination: m.TaskPath,
+			ReadOnly:    m.Readonly,
+			Tag:         strings.ReplaceAll(m.TaskPath, string(filepath.Separator), "_"),
+		})
+	}
+
 	bootCMDs, err := virtualizer.GenerateMountCommands(allocFSMounts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
