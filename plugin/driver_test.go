@@ -167,6 +167,14 @@ func TestVirtDriver(t *testing.T) {
 		dir := t.TempDir()
 		virtcfg := testVirtTaskConfig(t, filepath.Join(dir, "images"))
 		task := testTaskConfig()
+		// Add a mount to test
+		task.Mounts = []*drivers.MountConfig{
+			{
+				HostPath: "/testing/path/host",
+				TaskPath: "/testing/path/guest",
+				Readonly: false,
+			},
+		}
 		must.NoError(t, task.EncodeConcreteDriverConfig(virtcfg))
 		vmName := vmNameFromTaskID(task.ID)
 
@@ -195,6 +203,8 @@ func TestVirtDriver(t *testing.T) {
 					"mountpoint -q /local || mount -t 9p -o trans=virtio localDir /local",
 					"mkdir -p /secrets",
 					"mountpoint -q /secrets || mount -t 9p -o trans=virtio secretsDir /secrets",
+					"mkdir -p /testing/path/guest",
+					"mountpoint -q /testing/path/guest || mount -t 9p -o trans=virtio _testing_path_guest /testing/path/guest",
 				},
 			},
 		)
@@ -246,6 +256,11 @@ func TestVirtDriver(t *testing.T) {
 							ReadOnly:    true,
 							Tag:         "secretsDir",
 						},
+						{
+							Source:      "/testing/path/host",
+							Destination: "/testing/path/guest",
+							Tag:         "_testing_path_guest",
+						},
 					},
 					Files: []vm.File{
 						{
@@ -264,6 +279,8 @@ func TestVirtDriver(t *testing.T) {
 						"mountpoint -q /local || mount -t 9p -o trans=virtio localDir /local",
 						"mkdir -p /secrets",
 						"mountpoint -q /secrets || mount -t 9p -o trans=virtio secretsDir /secrets",
+						"mkdir -p /testing/path/guest",
+						"mountpoint -q /testing/path/guest || mount -t 9p -o trans=virtio _testing_path_guest /testing/path/guest",
 					},
 					CIUserData: "/path/to/user/data",
 					Disks: disks.Disks{
