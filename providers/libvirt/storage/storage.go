@@ -202,11 +202,6 @@ func (s *Storage) Fingerprint(attrs map[string]*structs.Attribute) {
 // however, some pools don't support volumes backing disks which is a sad
 // state of affairs.
 func (s *Storage) VolumeToDisk(vol storage.Volume) (*libvirtxml.DomainDisk, error) {
-	pool, err := s.GetPool(vol.Pool)
-	if err != nil {
-		return nil, err
-	}
-
 	disk := &libvirtxml.DomainDisk{
 		Device: vol.Kind,
 		Driver: &libvirtxml.DomainDiskDriver{
@@ -217,6 +212,22 @@ func (s *Storage) VolumeToDisk(vol storage.Volume) (*libvirtxml.DomainDisk, erro
 			Dev: vol.DeviceName,
 			Bus: vol.BusType,
 		},
+	}
+
+	// If volume is a nomad volume, set the source and return.
+	if vol.Block != "" {
+		disk.Source = &libvirtxml.DomainDiskSource{
+			Block: &libvirtxml.DomainDiskSourceBlock{
+				Dev: vol.Block,
+			},
+		}
+
+		return disk, nil
+	}
+
+	pool, err := s.GetPool(vol.Pool)
+	if err != nil {
+		return nil, err
 	}
 
 	switch pool.Type() {
@@ -266,7 +277,7 @@ func (s *Storage) VolumeToDisk(vol storage.Volume) (*libvirtxml.DomainDisk, erro
 			},
 		}
 	default:
-		return nil, fmt.Errorf("unknown storage type - %s", pool.Type())
+		return nil, fmt.Errorf("%w: unknown storage type - %s", vm.ErrNotImplemented, pool.Type())
 	}
 
 	return disk, nil
