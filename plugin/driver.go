@@ -520,7 +520,15 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 
 	// Add any host mounts that have been defined
 	// NOTE: selinux and propagation settings currently ignored
+	// TODO: selinux settings look to be supported in domain config
 	for _, m := range cfg.Mounts {
+		// If the task path has a /dev/ prefix, it signals that it is a
+		// block device so it is ignored here and processed below when
+		// applied to the disks collection.
+		if strings.HasPrefix(m.TaskPath, "/dev/") {
+			continue
+		}
+
 		allocFSMounts = append(allocFSMounts, &vm.MountFileConfig{
 			Source:      m.HostPath,
 			Destination: m.TaskPath,
@@ -558,6 +566,11 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 	}
 
 	disks := driverConfig.Disks
+
+	// Apply any mount configurations needed for disks
+	// using nomad volumes
+	disks.ApplyMounts(cfg.Mounts)
+
 	// Compat to add old config into disks
 	if driverConfig.ImagePath != "" {
 		disks = disks.CompatAddImage(driverConfig.ImagePath, int64(driverConfig.PrimaryDiskSize),
