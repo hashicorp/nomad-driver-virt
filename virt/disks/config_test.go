@@ -4,13 +4,16 @@
 package disks
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage"
+	mock_image_tools "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage/image_tools"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
+	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/shoenig/test/must"
 )
 
@@ -104,6 +107,72 @@ func TestDisk(t *testing.T) {
 			d = d.CompatAddImage("/dev/null/img.iso", 25, false)
 			must.NotNil(t, d)
 			must.Len(t, 1, d)
+		})
+	})
+
+	t.Run("ApplyMounts", func(t *testing.T) {
+		t.Run("it sets device name on disk", func(t *testing.T) {
+			// TODO: This can be uncommented once https://github.com/hashicorp/nomad/pull/27710
+			// has been merged and released.
+			// t.Run("using request name", func(t *testing.T) {
+			// 	d := Disks{{VolumeName: "nomad-volume"}}
+			// 	m := []*drivers.MountConfig{
+			// 		{
+			// 			RequestName: "nomad-volume",
+			// 			HostPath:    "/dev/null/volume/device",
+			// 			TaskPath:    "/dev/sda",
+			// 		},
+			// 	}
+			// 	err := d.ApplyMounts(m)
+			// 	must.NoError(t, err)
+			// 	must.Eq(t, "sda", d[0].Devname)
+			// 	must.Eq(t, "/dev/null/volume/device", d[0].blockDevicePath)
+			// })
+
+			// t.Run("does not override device name", func(t *testing.T) {
+			// 	d := Disks{{VolumeName: "nomad-volume", Devname: "sdc"}}
+			// 	m := []*drivers.MountConfig{
+			// 		{
+			// 			RequestName: "nomad-volume",
+			// 			HostPath:    "/dev/null/volume/device",
+			// 			TaskPath:    "/dev/sda",
+			// 		},
+			// 	}
+			// 	err := d.ApplyMounts(m)
+			// 	must.NoError(t, err)
+			// 	must.Eq(t, "sdc", d[0].Devname)
+			// 	must.Eq(t, "/dev/null/volume/device", d[0].blockDevicePath)
+			// })
+
+			t.Run("using task path", func(t *testing.T) {
+				d := Disks{{VolumeName: "/dev/sda"}}
+				m := []*drivers.MountConfig{
+					{
+						// RequestName: "nomad-volume",
+						HostPath: "/dev/null/volume/device",
+						TaskPath: "/dev/sda",
+					},
+				}
+				err := d.ApplyMounts(m)
+				must.NoError(t, err)
+				must.Eq(t, "sda", d[0].Devname)
+				must.Eq(t, "/dev/null/volume/device", d[0].blockDevicePath)
+			})
+
+			t.Run("does not override device name using task path", func(t *testing.T) {
+				d := Disks{{VolumeName: "/dev/sda", Devname: "sdc"}}
+				m := []*drivers.MountConfig{
+					{
+						// RequestName: "nomad-volume",
+						HostPath: "/dev/null/volume/device",
+						TaskPath: "/dev/sda",
+					},
+				}
+				err := d.ApplyMounts(m)
+				must.NoError(t, err)
+				must.Eq(t, "sdc", d[0].Devname)
+				must.Eq(t, "/dev/null/volume/device", d[0].blockDevicePath)
+			})
 		})
 	})
 
@@ -318,6 +387,111 @@ func TestDisk(t *testing.T) {
 			}
 
 			must.Eq(t, expectedVolume, d[0].Volume)
+		})
+
+		t.Run("nomad volumes", func(t *testing.T) {
+			srcContent := "test source content for volume"
+			src, err := os.Create(filepath.Join(t.TempDir(), "source"))
+			must.NoError(t, err)
+			_, err = src.WriteString(srcContent)
+			must.NoError(t, err)
+			src.Close()
+			srcPath := src.Name()
+
+			t.Run("does not create block volumes", func(t *testing.T) {
+				d := Disks{{Kind: DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: DiskFormatRaw,
+					Devname: "test-device", BusType: BusTypeSata, blockDevicePath: "/dev/null"}}
+
+				pool := mock_storage.NewStaticPool()
+				store := &mock_storage.StaticStorage{
+					DefaultPoolResult: pool,
+				}
+
+				must.NoError(t, d.Prepare("task", store))
+				must.NotNil(t, d[0].Volume, must.Sprint("expected volume to be set"))
+
+				expectedVolume := &storage.Volume{
+					Block:      "/dev/null",
+					Name:       "task_test-device.img",
+					Kind:       DiskKindDisk,
+					Driver:     "test-driver",
+					Format:     DiskFormatRaw,
+					DeviceName: "test-device",
+					BusType:    BusTypeSata,
+					Primary:    false,
+				}
+
+				must.Eq(t, expectedVolume, d[0].Volume)
+				must.Zero(t, pool.CallCount("AddVolume"))
+			})
+
+			t.Run("errors if no block device path is set", func(t *testing.T) {
+				d := Disks{{Kind: DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: DiskFormatRaw,
+					Devname: "test-device", BusType: BusTypeSata}}
+
+				pool := mock_storage.NewStaticPool()
+				store := &mock_storage.StaticStorage{
+					DefaultPoolResult: pool,
+				}
+
+				err := d.Prepare("task", store)
+				must.ErrorContains(t, err, "not backed by Nomad volume")
+			})
+
+			t.Run("it prepares the volume", func(t *testing.T) {
+				device, err := os.Create(filepath.Join(t.TempDir(), "device"))
+				must.NoError(t, err)
+				device.Close()
+
+				d := Disks{{Kind: DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: DiskFormatRaw,
+					Devname: "test-device", BusType: BusTypeSata, blockDevicePath: device.Name(), Source: &Source{Image: srcPath,
+						Format: DiskFormatRaw}}}
+				pool := mock_storage.NewStaticPool()
+				store := &mock_storage.StaticStorage{
+					DefaultPoolResult: pool,
+				}
+
+				err = d.Prepare("task", store)
+				must.NoError(t, err)
+
+				device, err = os.Open(device.Name())
+				must.NoError(t, err)
+				dstContent, err := io.ReadAll(device)
+				must.NoError(t, err)
+				must.Eq(t, srcContent, string(dstContent))
+			})
+
+			t.Run("it converts the source image if needed", func(t *testing.T) {
+				device, err := os.Create(filepath.Join(t.TempDir(), "device"))
+				must.NoError(t, err)
+				device.Close()
+
+				// It will use a source file with the format appended to the suffix
+				src, err := os.Create(srcPath + ".raw")
+				_, err = src.WriteString(srcContent)
+				must.NoError(t, err)
+
+				d := Disks{{Kind: DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: DiskFormatRaw,
+					Devname: "test-device", BusType: BusTypeSata, blockDevicePath: device.Name(), Source: &Source{Image: srcPath}}}
+				pool := mock_storage.NewStaticPool()
+				imageHandler := mock_image_tools.NewStaticImageHandler()
+				store := &mock_storage.StaticStorage{
+					ImageHandlerResult: imageHandler,
+					DefaultPoolResult:  pool,
+				}
+
+				err = d.Prepare("task", store)
+				must.NoError(t, err)
+
+				device, err = os.Open(device.Name())
+				must.NoError(t, err)
+				dstContent, err := io.ReadAll(device)
+				must.NoError(t, err)
+				must.Eq(t, srcContent, string(dstContent))
+
+				// Check image handler converted the image
+				must.One(t, imageHandler.CallCount("ConvertImage"))
+			})
 		})
 	})
 
