@@ -42,7 +42,7 @@ var (
 	ErrInvalidHostName      = fmt.Errorf("a resource name must consist of lower case alphanumeric characters or '-', must start and end with an alphanumeric character and be less than %d characters", maxNameLength+1)
 	ErrPathNotAllowed       = disks.ErrDisallowedPath
 	ErrNotFound             = errors.New("not found")
-	ErrNotImplemented       = errors.New("not impleneted")
+	ErrNotImplemented       = errors.New("not implemented")
 	ErrNotSupported         = errors.New("feature is not supported")
 	ErrInvalidConfiguration = errors.New("invalid configuration")
 )

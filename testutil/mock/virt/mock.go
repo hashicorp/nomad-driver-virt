@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/storage"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
 	"github.com/shoenig/test/must"
@@ -273,6 +274,7 @@ func (m *MockVirt) CreateVM(config *vm.Config) error {
 	// can be handled better.
 	must.Eq(m.t, call.Config, config,
 		must.Sprint("CreateVM received incorrect argument"),
+		must.Cmp(cmpopts.IgnoreUnexported(disks.Disk{})),
 		must.Cmp(cmpopts.IgnoreFields(vm.File{}, "Content")))
 
 	return call.Err
