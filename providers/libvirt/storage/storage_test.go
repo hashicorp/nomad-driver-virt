@@ -4,6 +4,7 @@
 package storage
 
 import (
+	"errors"
 	"path/filepath"
 	"plugin"
 	"testing"
@@ -12,7 +13,8 @@ import (
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_libvirt "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt"
-	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt/storage"
+	mock_libvirt_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt/storage"
+	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage"
 	"github.com/hashicorp/nomad/plugins/shared/structs"
 	"github.com/shoenig/test/must"
 	"libvirt.org/go/libvirtxml"
@@ -37,7 +39,7 @@ func TestStorage_New(t *testing.T) {
 
 	t.Run("creates directory pools", func(t *testing.T) {
 		poolDir := t.TempDir()
-		staticPool := mock_storage.NewStaticStoragePool()
+		staticPool := mock_libvirt_storage.NewStaticStoragePool()
 		l := mock_libvirt.NewMockLibvirt(t)
 		l.Expect(
 			mock_libvirt.FindStoragePool{Name: "aux-pool", Err: ErrPoolNotFound},
@@ -118,7 +120,7 @@ func TestStorage_New(t *testing.T) {
 				},
 			},
 		}
-		staticPool := mock_storage.NewStaticStoragePool()
+		staticPool := mock_libvirt_storage.NewStaticStoragePool()
 		l := mock_libvirt.NewMockLibvirt(t)
 		l.Expect(
 			mock_libvirt.FindStoragePool{Name: "aux-pool", Err: ErrPoolNotFound},
@@ -195,7 +197,7 @@ func TestStorage_New(t *testing.T) {
 		poolDir := t.TempDir()
 		l := mock_libvirt.NewMockLibvirt(t)
 		l.Expect(
-			mock_libvirt.FindStoragePool{Name: "main-pool", Result: mock_storage.NewStaticStoragePool()},
+			mock_libvirt.FindStoragePool{Name: "main-pool", Result: mock_libvirt_storage.NewStaticStoragePool()},
 			mock_libvirt.FindStoragePool{Name: "aux-pool", Err: ErrPoolNotFound},
 			mock_libvirt.CreateStoragePool{
 				Desc: &libvirtxml.StoragePool{
@@ -204,7 +206,7 @@ func TestStorage_New(t *testing.T) {
 						Path: filepath.Join(poolDir, "aux-pool")},
 					Type: "dir",
 				},
-				Result: mock_storage.NewStaticStoragePool(),
+				Result: mock_libvirt_storage.NewStaticStoragePool(),
 			},
 		)
 
@@ -284,4 +286,213 @@ func TestStorage_Fingerprint(t *testing.T) {
 		expected := make(map[string]*structs.Attribute)
 		must.Eq(t, expected, attrs)
 	})
+}
+
+func TestStorage_VolumeToDisk(t *testing.T) {
+	testErr := errors.New("test error")
+
+	testCases := []struct {
+		name     string
+		volume   storage.Volume
+		expected *libvirtxml.DomainDisk
+		pool     storage.Pool
+		mock     *mock_libvirt.MockLibvirt
+		err      error
+	}{
+		{
+			name: "block volume",
+			volume: storage.Volume{
+				Block:      "/dev/null",
+				Kind:       "disk",
+				Driver:     "test",
+				Format:     "raw",
+				DeviceName: "/dev/sda",
+				BusType:    "sata",
+			},
+			expected: &libvirtxml.DomainDisk{
+				Device: "disk",
+				Driver: &libvirtxml.DomainDiskDriver{
+					Name: "test",
+					Type: "raw",
+				},
+				Target: &libvirtxml.DomainDiskTarget{
+					Dev: "/dev/sda",
+					Bus: "sata",
+				},
+				Source: &libvirtxml.DomainDiskSource{
+					Block: &libvirtxml.DomainDiskSourceBlock{
+						Dev: "/dev/null",
+					},
+				},
+			},
+		},
+		{
+			name: "directory pool volume",
+			volume: storage.Volume{
+				Pool:       "test-pool",
+				Name:       "test-vol",
+				Kind:       "disk",
+				Driver:     "test",
+				Format:     "raw",
+				DeviceName: "/dev/sda",
+				BusType:    "sata",
+			},
+			expected: &libvirtxml.DomainDisk{
+				Device: "disk",
+				Driver: &libvirtxml.DomainDiskDriver{
+					Name: "test",
+					Type: "raw",
+				},
+				Target: &libvirtxml.DomainDiskTarget{
+					Dev: "/dev/sda",
+					Bus: "sata",
+				},
+				Source: &libvirtxml.DomainDiskSource{
+					Volume: &libvirtxml.DomainDiskSourceVolume{
+						Pool:   "test-pool",
+						Volume: "test-vol",
+					},
+				},
+			},
+			pool: &mock_storage.StaticPool{
+				TypeResult: storage.PoolTypeDirectory,
+				NameResult: "test-pool",
+			},
+		},
+		{
+			name: "ceph pool volume",
+			volume: storage.Volume{
+				Pool:       "test-pool",
+				Name:       "test-vol",
+				Kind:       "disk",
+				Driver:     "test",
+				Format:     "raw",
+				DeviceName: "/dev/sda",
+				BusType:    "sata",
+			},
+			expected: &libvirtxml.DomainDisk{
+				Device: "disk",
+				Driver: &libvirtxml.DomainDiskDriver{
+					Name: "test",
+					Type: "raw",
+				},
+				Target: &libvirtxml.DomainDiskTarget{
+					Dev: "/dev/sda",
+					Bus: "sata",
+				},
+				Source: &libvirtxml.DomainDiskSource{
+					Network: &libvirtxml.DomainDiskSourceNetwork{
+						Protocol: "rbd",
+						Name:     "ceph-pool/test-vol",
+						Hosts: []libvirtxml.DomainDiskSourceHost{
+							{
+								Name: "localhost",
+								Port: "6789",
+							},
+						},
+						Auth: &libvirtxml.DomainDiskAuth{
+							Username: "test-user",
+							Secret: &libvirtxml.DomainDiskSecret{
+								Type: "ceph",
+								UUID: "test-secret",
+							},
+						},
+					},
+				},
+			},
+			pool: &mock_storage.StaticPool{
+				TypeResult: storage.PoolTypeCeph,
+				NameResult: "test-pool",
+			},
+			mock: mock_libvirt.NewMockLibvirt(t).Expect(
+				mock_libvirt.FindStoragePool{
+					Name: "test-pool",
+					Result: &mock_libvirt_storage.StaticStoragePool{
+						GetXMLDescResult: `<pool><source><name>ceph-pool</name><host name="localhost" port="6789"></host><auth username="test-user"></auth></source></pool>`,
+					},
+				},
+				mock_libvirt.GetCephSecretID{
+					Name:   "test-pool",
+					Result: "test-secret",
+				},
+			),
+		},
+		{
+			name: "ceph pool volume - pool lookup error",
+			volume: storage.Volume{
+				Pool: "test-pool",
+				Name: "test-vol",
+			},
+			pool: &mock_storage.StaticPool{
+				TypeResult: storage.PoolTypeCeph,
+				NameResult: "test-pool",
+			},
+			mock: mock_libvirt.NewMockLibvirt(t).Expect(
+				mock_libvirt.FindStoragePool{
+					Name: "test-pool",
+					Err:  testErr,
+				},
+			),
+			err: testErr,
+		},
+		{
+			name: "ceph pool volume - secretlookup error",
+			volume: storage.Volume{
+				Pool: "test-pool",
+				Name: "test-vol",
+			},
+			pool: &mock_storage.StaticPool{
+				TypeResult: storage.PoolTypeCeph,
+				NameResult: "test-pool",
+			},
+			mock: mock_libvirt.NewMockLibvirt(t).Expect(
+				mock_libvirt.FindStoragePool{
+					Name: "test-pool",
+					Result: &mock_libvirt_storage.StaticStoragePool{
+						GetXMLDescResult: "<pool></pool>",
+					},
+				},
+				mock_libvirt.GetCephSecretID{
+					Name: "test-pool",
+					Err:  testErr,
+				},
+			),
+			err: testErr,
+		},
+		{
+			name: "unknown pool type",
+			volume: storage.Volume{
+				Pool: "test-pool",
+				Name: "test-vol",
+			},
+			pool: &mock_storage.StaticPool{
+				TypeResult: "unknown",
+				NameResult: "test-pool",
+			},
+			err: vm.ErrNotImplemented,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var l libvirtStorage
+			if tc.mock != nil {
+				l = tc.mock
+			} else {
+				l = mock_libvirt.NewStaticLibvirt()
+			}
+			s, err := New(t.Context(), hclog.NewNullLogger(), l, &storage.Config{})
+			must.NoError(t, err)
+
+			if tc.pool != nil {
+				s.pools[tc.pool.Name()] = tc.pool
+			}
+
+			result, err := s.VolumeToDisk(tc.volume)
+			must.Eq(t, tc.expected, result)
+			if tc.err != nil {
+				must.ErrorIs(t, err, tc.err)
+			}
+		})
+	}
 }
