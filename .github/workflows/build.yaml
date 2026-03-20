@@ -13,11 +13,10 @@ jobs:
       go-version: ${{ steps.get-go-version.outputs.go-version }}
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-      - name: Determine Go version
+      - uses: hashicorp/setup-golang@v3
         id: get-go-version
-        run: |
-          echo "Building with Go $(cat .go-version)"
-          echo "go-version=$(cat .go-version)" >> "$GITHUB_OUTPUT"
+        with:
+          version-file: go.mod
 
   get-product-version:
     name: "get product version"
@@ -76,6 +75,8 @@ jobs:
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: hashicorp/setup-golang@v3
+        with:
+          version-file: go.mod
       - uses: ./.github/actions/install-libvirt-dev
       - uses: ./.github/actions/install-librados-dev        
 
