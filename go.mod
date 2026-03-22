@@ -1,6 +1,6 @@
 module github.com/hashicorp/nomad-driver-virt
 
-go 1.25.5
+go 1.25.7
 
 // Fix error tidying due to Nomad downstream dependencies and the recent
 // migration of the metrics library and maintain the version required by Nomad.
@@ -8,7 +8,7 @@ replace github.com/armon/go-metrics => github.com/hashicorp/go-metrics v0.0.0-20
 
 require (
 	github.com/coreos/go-iptables v0.8.0
-	github.com/diskfs/go-diskfs v1.7.0
+	github.com/diskfs/go-diskfs v1.8.0
 	github.com/docker/distribution v2.8.3+incompatible
 	github.com/gopacket/gopacket v1.5.0
 	github.com/hashicorp/go-hclog v1.6.3
