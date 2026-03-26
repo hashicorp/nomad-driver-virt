@@ -77,6 +77,7 @@ func TestConfig_Plugin(t *testing.T) {
 			ImagePaths: []string{"/path/one", "/path/two"},
 			DataDir:    "/path/to/blah",
 			StoragePools: &storage.Config{
+				Default: "test-pool",
 				Directory: map[string]storage.Directory{
 					"test-pool": {Path: "/test/pool/path"},
 				},
@@ -102,7 +103,9 @@ config {
 		user = "test-user"
 		password = "test-password"
 	}
-	storage_pool {
+	storage_pools {
+        default = "test-pool"
+
 		directory "test-pool" {
 			path = "/test/pool/path"
 		}
