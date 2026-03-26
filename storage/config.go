@@ -6,9 +6,9 @@ package storage
 import "github.com/hashicorp/nomad/plugins/shared/hclspec"
 
 var configSpec = hclspec.NewObject(map[string]*hclspec.Spec{
+	"default": hclspec.NewAttr("default", "string", false),
 	"directory": hclspec.NewBlockMap("directory", []string{"name"}, hclspec.NewObject(map[string]*hclspec.Spec{
-		"path":    hclspec.NewAttr("path", "string", true),
-		"default": hclspec.NewAttr("default", "bool", false),
+		"path": hclspec.NewAttr("path", "string", true),
 	})),
 	"ceph": hclspec.NewBlockMap("ceph", []string{"name"}, hclspec.NewObject(map[string]*hclspec.Spec{
 		"pool":  hclspec.NewAttr("pool", "string", true),
@@ -17,12 +17,13 @@ var configSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 			"username": hclspec.NewAttr("username", "string", true),
 			"secret":   hclspec.NewAttr("secret", "string", true),
 		})),
-		"default": hclspec.NewAttr("default", "bool", false),
 	})),
 })
 
 // Config provides configuration for storage pools
 type Config struct {
+	// Default is the name of the storage pool that is the default
+	Default string `codec:"default"`
 	// Directory provides directory storage pool configuration
 	Directory map[string]Directory `codec:"directory"`
 	// Ceph provides ceph storage pool configuration
@@ -31,8 +32,7 @@ type Config struct {
 
 // Directory provides configuration for local directory storage pools
 type Directory struct {
-	Path    string `codec:"path"`    // Local path of the storage pool
-	Default bool   `codec:"default"` // Pool is the default storage pool
+	Path string `codec:"path"` // Local path of the storage pool
 }
 
 // Ceph provides configuration for ceph rbd storage pools
@@ -40,7 +40,6 @@ type Ceph struct {
 	Pool           string         `codec:"pool"`           // Name of the ceph storage pool
 	Hosts          []string       `codec:"hosts"`          // List of ceph hosts
 	Authentication Authentication `codec:"authentication"` // Autentication for ceph connection
-	Default        bool           `codec:"default"`        // Pool is the default storage pool
 }
 
 // Authentication provides credentials
