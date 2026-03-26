@@ -82,10 +82,10 @@ func TestStorage(t *testing.T) {
 		secondName := fmt.Sprintf("%s-%s", poolName, "secondary-pool")
 		l, _ := testNew(t, overrideFs(mountFs9p))
 		pools := &storage.Config{
+			Default: mainName,
 			Directory: map[string]storage.Directory{
 				mainName: {
-					Path:    filepath.Join(poolDir, "main-pool"),
-					Default: true,
+					Path: filepath.Join(poolDir, "main-pool"),
 				},
 				secondName: {
 					Path: filepath.Join(poolDir, "secondary-pool"),
