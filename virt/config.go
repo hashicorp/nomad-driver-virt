@@ -34,9 +34,9 @@ var (
 		"provider": hclspec.NewBlock("provider", false, hclspec.NewObject(map[string]*hclspec.Spec{
 			"libvirt": libvirt.ConfigSpec(),
 		})),
-		"data_dir":     hclspec.NewAttr("data_dir", "string", false),
-		"image_paths":  hclspec.NewAttr("image_paths", "list(string)", false),
-		"storage_pool": hclspec.NewBlock("storage_pool", false, storage.ConfigSpec()),
+		"data_dir":      hclspec.NewAttr("data_dir", "string", false),
+		"image_paths":   hclspec.NewAttr("image_paths", "list(string)", false),
+		"storage_pools": hclspec.NewBlock("storage_pools", false, storage.ConfigSpec()),
 	})
 
 	// taskConfigSpec is the specification of the plugin's configuration for
@@ -100,12 +100,11 @@ type Emulator struct {
 
 // Config contains configuration information for the plugin
 type Config struct {
-	Emulator *Emulator `codec:"emulator"`
-	Provider *Provider `codec:"provider"`
-	DataDir  string    `codec:"data_dir"`
-	// ImagePaths is an allow-list of paths qemu is allowed to load an image from
-	ImagePaths   []string        `codec:"image_paths"`
-	StoragePools *storage.Config `codec:"storage_pool"`
+	Emulator     *Emulator       `codec:"emulator"`
+	Provider     *Provider       `codec:"provider"`
+	DataDir      string          `codec:"data_dir"`
+	ImagePaths   []string        `codec:"image_paths"` // allow-list of host paths to load
+	StoragePools *storage.Config `codec:"storage_pools"`
 }
 
 func (c *Config) Compat() {
