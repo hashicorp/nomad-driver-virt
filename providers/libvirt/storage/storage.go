@@ -29,9 +29,10 @@ const (
 )
 
 var (
-	ErrInvalidVolumeConfiguration = fmt.Errorf("%w for volume", vm.ErrInvalidConfiguration)
-	ErrVolumeNotFound             = fmt.Errorf("volume %w", vm.ErrNotFound)
-	ErrPoolNotFound               = fmt.Errorf("pool %w", vm.ErrNotFound)
+	ErrInvalidStorageConfiguration = fmt.Errorf("%w for storage", vm.ErrInvalidConfiguration)
+	ErrInvalidVolumeConfiguration  = fmt.Errorf("%w for volume", vm.ErrInvalidConfiguration)
+	ErrVolumeNotFound              = fmt.Errorf("volume %w", vm.ErrNotFound)
+	ErrPoolNotFound                = fmt.Errorf("pool %w", vm.ErrNotFound)
 )
 
 // This interface defines what functions are needed from the driver
@@ -55,6 +56,8 @@ func New(ctx context.Context, logger hclog.Logger, l libvirtStorage, config *sto
 		l:            l,
 	}
 
+	// NOTE: the pools are sorted for iteration so pools are setup in a deterministic
+	// order which helps for properly testing setup with multiple pools.
 	for _, name := range slices.Sorted(maps.Keys(config.Directory)) {
 		d := config.Directory[name]
 		logger.Debug("adding new directory storage pool", "name", name, "path", d.Path)
@@ -63,16 +66,9 @@ func New(ctx context.Context, logger hclog.Logger, l libvirtStorage, config *sto
 			return nil, err
 		}
 		s.pools[name] = pool
-
-		if s.defaultPool == nil || d.Default {
-			logger.Info("default storage pool set", "name", name)
-			s.defaultPool = pool
-		}
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(config.Ceph)) {
-
-		//	for name, c := range config.Ceph {
 		c := config.Ceph[name]
 		logger.Debug("adding new ceph storage pool", "name", name)
 		pool, err := newCephPool(ctx, logger, l, name, c, s)
@@ -80,11 +76,26 @@ func New(ctx context.Context, logger hclog.Logger, l libvirtStorage, config *sto
 			return nil, err
 		}
 		s.pools[name] = pool
+	}
 
-		if s.defaultPool == nil || c.Default {
-			logger.Info("default storage pool set", "name", name)
-			s.defaultPool = pool
+	// If no default pool is defined, automatically set the default
+	// if there is only a single storage pool defined. If more than
+	// a single storage pool is defined, force an error.
+	if config.Default == "" {
+		if len(s.pools) == 1 {
+			for _, p := range s.pools {
+				s.defaultPool = p
+			}
+			return s, nil
 		}
+
+		return nil, fmt.Errorf("no default pool set %w", ErrInvalidStorageConfiguration)
+	}
+
+	if p, err := s.GetPool(config.Default); err != nil {
+		return nil, fmt.Errorf("cannot set default pool - %w", err)
+	} else {
+		s.defaultPool = p
 	}
 
 	return s, nil
