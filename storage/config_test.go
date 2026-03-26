@@ -17,8 +17,7 @@ func TestConfig(t *testing.T) {
 		expected := &Config{
 			Directory: map[string]Directory{
 				"dir-pool": {
-					Path:    "/dev/null",
-					Default: false,
+					Path: "/dev/null",
 				},
 			},
 			Ceph: map[string]Ceph{
@@ -29,16 +28,15 @@ func TestConfig(t *testing.T) {
 						Username: "test-user",
 						Secret:   "test-secret",
 					},
-					Default: true,
 				},
 			},
+			Default: "ceph-pool",
 		}
 		parser := hclutils.NewConfigParser(configSpec)
 		validHcl := `
 config {
   directory "dir-pool" {
     path = "/dev/null"
-    default = false
   }
 
   ceph "ceph-pool" {
@@ -48,8 +46,9 @@ config {
       username = "test-user"
       secret = "test-secret"
     }
-    default = true
   }
+
+  default = "ceph-pool"
 }
 `
 		var config *Config
@@ -61,12 +60,10 @@ config {
 		expected := &Config{
 			Directory: map[string]Directory{
 				"dir-pool": {
-					Path:    "/dev/null",
-					Default: false,
+					Path: "/dev/null",
 				},
 				"other-dir-pool": {
-					Path:    "/dev/null/other",
-					Default: false,
+					Path: "/dev/null/other",
 				},
 			},
 			Ceph: map[string]Ceph{
@@ -77,16 +74,15 @@ config {
 						Username: "test-user",
 						Secret:   "test-secret",
 					},
-					Default: true,
 				},
 			},
+			Default: "ceph-pool",
 		}
 		parser := hclutils.NewConfigParser(configSpec)
 		validHcl := `
 config {
   directory "dir-pool" {
     path = "/dev/null"
-    default = false
   }
 
   directory "other-dir-pool" {
@@ -100,8 +96,9 @@ config {
       username = "test-user"
       secret = "test-secret"
     }
-    default = true
   }
+
+  default = "ceph-pool"
 }
 `
 		var config *Config
