@@ -22,10 +22,10 @@ import (
 
 func mkconfig(dir string) *storage.Config {
 	return &storage.Config{
+		Default: "main-pool",
 		Directory: map[string]storage.Directory{
 			"main-pool": {
-				Path:    filepath.Join(dir, "main-pool"),
-				Default: true,
+				Path: filepath.Join(dir, "main-pool"),
 			},
 			"aux-pool": {
 				Path: filepath.Join(dir, "aux-pool"),
@@ -93,6 +93,7 @@ func TestStorage_New(t *testing.T) {
 		pluginLoader = func(string, *plugin.Plugin) error { return nil }
 		t.Cleanup(func() { pluginLoader = loadPlugin })
 		config := &storage.Config{
+			Default: "main-pool",
 			Ceph: map[string]storage.Ceph{
 				"main-pool": {
 					Pool: "ceph-pool",
@@ -106,7 +107,6 @@ func TestStorage_New(t *testing.T) {
 						Username: "test-user",
 						Secret:   "test-secret",
 					},
-					Default: true,
 				},
 				"aux-pool": {
 					Pool: "secondary",
@@ -276,9 +276,8 @@ func TestStorage_Fingerprint(t *testing.T) {
 
 	t.Run("no pools", func(t *testing.T) {
 		l := mock_libvirt.NewStaticLibvirt()
-		config := &storage.Config{}
-		s, err := New(t.Context(), hclog.NewNullLogger(), l, config)
-		must.NoError(t, err)
+		s := emptyStorage()
+		s.l = l
 
 		attrs := make(map[string]*structs.Attribute)
 		s.Fingerprint(attrs)
@@ -481,9 +480,9 @@ func TestStorage_VolumeToDisk(t *testing.T) {
 			} else {
 				l = mock_libvirt.NewStaticLibvirt()
 			}
-			s, err := New(t.Context(), hclog.NewNullLogger(), l, &storage.Config{})
-			must.NoError(t, err)
 
+			s := emptyStorage()
+			s.l = l
 			if tc.pool != nil {
 				s.pools[tc.pool.Name()] = tc.pool
 			}
@@ -494,5 +493,13 @@ func TestStorage_VolumeToDisk(t *testing.T) {
 				must.ErrorIs(t, err, tc.err)
 			}
 		})
+	}
+}
+
+func emptyStorage() *Storage {
+	return &Storage{
+		config: &storage.Config{},
+		logger: hclog.NewNullLogger(),
+		pools:  make(map[string]storage.Pool),
 	}
 }
