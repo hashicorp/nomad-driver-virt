@@ -4,6 +4,7 @@
 package disks
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage"
 	mock_image_tools "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage/image_tools"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
+	"github.com/hashicorp/nomad/helper/pointer"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/shoenig/test/must"
 )
@@ -229,6 +231,7 @@ func TestDisk(t *testing.T) {
 				Driver:  "test-driver",
 				BusType: BusTypeIde,
 				Devname: "test-device-name",
+				Format:  "testing-image-format",
 				Primary: false,
 			}
 
@@ -280,31 +283,32 @@ func TestDisk(t *testing.T) {
 		f, err := os.OpenFile(validImage, os.O_CREATE, 0644)
 		must.NoError(t, err)
 		f.Close()
+		mockStore := mock_storage.NewStaticStorage()
 
 		t.Run("valid", func(t *testing.T) {
-			d := Disks{{Kind: DiskKindDisk}}
+			d := Disks{{Kind: DiskKindDisk, Size: "1"}}
 			d.SetDefaults(mockStorage)
 
-			must.NoError(t, d.Validate(ValidationOptions{}))
+			must.NoError(t, d.Validate(mockStore, ValidationOptions{}))
 		})
 
 		t.Run("valid with source image", func(t *testing.T) {
 			d := Disks{{Kind: DiskKindDisk, Source: &Source{Image: validImage}}}
 			d.SetDefaults(mockStorage)
 
-			must.NoError(t, d.Validate(ValidationOptions{AllowedPaths: []string{imageDir}}))
+			must.NoError(t, d.Validate(mockStore, ValidationOptions{AllowedPaths: []string{imageDir}}))
 		})
 
 		t.Run("valid with invalid source image", func(t *testing.T) {
-			d := Disks{{Kind: DiskKindDisk, Source: &Source{Image: "unknown.img"}}}
+			d := Disks{{Kind: DiskKindDisk, Size: "1", Source: &Source{Image: "unknown.img"}}}
 			d.SetDefaults(mockStorage)
 
-			must.ErrorIs(t, d.Validate(ValidationOptions{AllowedPaths: []string{imageDir}}), ErrDisallowedPath)
+			must.ErrorIs(t, d.Validate(mockStore, ValidationOptions{AllowedPaths: []string{imageDir}}), ErrDisallowedPath)
 		})
 
 		t.Run("invalid", func(t *testing.T) {
 			d := Disks{{Kind: DiskKindDisk}}
-			must.ErrorIs(t, d.Validate(ValidationOptions{}), ErrMissingAttribute)
+			must.ErrorIs(t, d.Validate(mockStore, ValidationOptions{}), ErrMissingAttribute)
 		})
 
 		t.Run("missing bus type", func(t *testing.T) {
@@ -312,7 +316,7 @@ func TestDisk(t *testing.T) {
 			d.SetDefaults(mockStorage)
 			d[0].BusType = ""
 
-			must.ErrorContains(t, d.Validate(ValidationOptions{}), "BusType")
+			must.ErrorContains(t, d.Validate(mockStore, ValidationOptions{}), "bus_type")
 		})
 
 		t.Run("missing kind", func(t *testing.T) {
@@ -320,7 +324,7 @@ func TestDisk(t *testing.T) {
 			d.SetDefaults(mockStorage)
 			d[0].Kind = ""
 
-			must.ErrorContains(t, d.Validate(ValidationOptions{}), "Kind")
+			must.ErrorContains(t, d.Validate(mockStore, ValidationOptions{}), "kind")
 		})
 
 		t.Run("missing device name", func(t *testing.T) {
@@ -328,23 +332,116 @@ func TestDisk(t *testing.T) {
 			d.SetDefaults(mockStorage)
 			d[0].Devname = ""
 
-			must.ErrorContains(t, d.Validate(ValidationOptions{}), "Devname")
+			must.ErrorContains(t, d.Validate(mockStore, ValidationOptions{}), "devname")
 		})
 
-		t.Run("no primary defined", func(t *testing.T) {
-			d := Disks{{Kind: DiskKindDisk}, {Kind: DiskKindDisk}}
+		t.Run("missing size", func(t *testing.T) {
+			d := Disks{{Kind: DiskKindDisk}}
 			d.SetDefaults(mockStorage)
+			d[0].Size = ""
 
-			must.ErrorIs(t, d.Validate(ValidationOptions{}), ErrNoPrimary)
+			must.ErrorContains(t, d.Validate(mockStore, ValidationOptions{}), "size")
 		})
 
-		t.Run("multiple primaries defined", func(t *testing.T) {
-			d := Disks{{Kind: DiskKindDisk, Primary: true}, {Kind: DiskKindDisk}, {Kind: DiskKindDisk, Primary: true}}
+		t.Run("missing format", func(t *testing.T) {
+			d := Disks{{Kind: DiskKindDisk}}
+			d.SetDefaults(mockStorage)
+			d[0].Format = ""
+
+			must.ErrorContains(t, d.Validate(mockStore, ValidationOptions{}), "format")
+		})
+
+		t.Run("source volume and image set", func(t *testing.T) {
+			d := Disks{{Kind: DiskKindDisk, Source: &Source{Image: "image-path", Volume: "parent"}}}
 			d.SetDefaults(mockStorage)
 
-			err := d.Validate(ValidationOptions{})
-			must.ErrorIs(t, err, ErrMultiplePrimary)
-			must.ErrorContains(t, err, "disks: 1, 3")
+			err := d.Validate(mockStore, ValidationOptions{})
+			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorContains(t, err, "mutually exclusive")
+		})
+
+		t.Run("primaries", func(t *testing.T) {
+			t.Run("no primary defined", func(t *testing.T) {
+				d := Disks{{Kind: DiskKindDisk}, {Kind: DiskKindDisk}}
+				d.SetDefaults(mockStorage)
+
+				must.ErrorIs(t, d.Validate(mockStore, ValidationOptions{}), ErrNoPrimary)
+			})
+
+			t.Run("multiple primaries defined", func(t *testing.T) {
+				d := Disks{{Kind: DiskKindDisk, Primary: true}, {Kind: DiskKindDisk}, {Kind: DiskKindDisk, Primary: true}}
+				d.SetDefaults(mockStorage)
+
+				err := d.Validate(mockStore, ValidationOptions{})
+				must.ErrorIs(t, err, ErrMultiplePrimary)
+				must.ErrorContains(t, err, "disks: 1, 3")
+			})
+		})
+
+		t.Run("uses pool validator if available", func(t *testing.T) {
+			d := Disks{{Kind: DiskKindDisk}}
+			testErr := errors.New("test validation error")
+			pool := &poolValidator{StaticPool: mock_storage.NewStaticPool(), ValidateDiskResult: testErr}
+			s := &mock_storage.StaticStorage{DefaultPoolResult: pool}
+
+			err := d.Validate(s, ValidationOptions{})
+			must.ErrorIs(t, err, testErr)
+		})
+	})
+
+	t.Run("ValidateNomadVolume", func(t *testing.T) {
+		t.Run("ok", func(t *testing.T) {
+			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null"}
+			must.NoError(t, d.ValidateNomadVolume())
+		})
+
+		t.Run("set format", func(t *testing.T) {
+			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Format: "not-raw"}
+			err := d.ValidateNomadVolume()
+			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorContains(t, err, "format")
+		})
+
+		t.Run("set size", func(t *testing.T) {
+			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Size: "2GB"}
+			err := d.ValidateNomadVolume()
+			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorContains(t, err, "size")
+		})
+
+		t.Run("sparse enabled", func(t *testing.T) {
+			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Sparse: pointer.Of(true)}
+			err := d.ValidateNomadVolume()
+			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorContains(t, err, "sparse")
+		})
+
+		t.Run("set pool", func(t *testing.T) {
+			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Pool: "some-pool"}
+			err := d.ValidateNomadVolume()
+			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorContains(t, err, "pool")
+		})
+
+		t.Run("chained enabled", func(t *testing.T) {
+			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Chained: true}
+			err := d.ValidateNomadVolume()
+			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorContains(t, err, "chained")
+		})
+
+		t.Run("set source", func(t *testing.T) {
+			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Source: &Source{Volume: "other-volume"}}
+			err := d.ValidateNomadVolume()
+			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorContains(t, err, "source.volume")
+		})
+
+		t.Run("unset device path", func(t *testing.T) {
+			d := Disk{VolumeName: "nomad-volume"}
+			err := d.ValidateNomadVolume()
+			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorContains(t, err, "missing Nomad volume")
 		})
 	})
 
@@ -593,4 +690,13 @@ config {
 		parser.ParseHCL(t, validHcl, &disks)
 		must.Eq(t, expected, disks)
 	})
+}
+
+type poolValidator struct {
+	*mock_storage.StaticPool
+	ValidateDiskResult error
+}
+
+func (p *poolValidator) ValidateDisk(*Disk) error {
+	return p.ValidateDiskResult
 }
