@@ -30,7 +30,7 @@ func (d *driver) parseVolumes(vols []storage.Volume) ([]libvirtxml.DomainDisk, e
 func (d *driver) parseConfiguration(config *vm.Config) (string, error) {
 	zero := uint(0)
 
-	disks, err := d.parseVolumes(config.Disks.Volumes())
+	disks, err := d.parseVolumes(config.Volumes)
 	if err != nil {
 		return "", err
 	}
