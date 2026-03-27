@@ -13,16 +13,18 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-multierror"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"libvirt.org/go/libvirt"
 	"libvirt.org/go/libvirtxml"
 )
 
 const (
 	// default format used for ceph based volumes
-	defaultCephImageFormat = "raw"
+	defaultCephImageFormat = disks.DiskFormatRaw
 )
 
 // cephPlugin holds the plugin for direct volume uploads.
@@ -155,6 +157,28 @@ func newCephPool(ctx context.Context, logger hclog.Logger, l libvirtStorage, poo
 	basePool.resizer = c.resizeVol
 
 	return c, nil
+}
+
+// ValidateDisk validates the provided disk and returns any configuration errors found.
+func (c *ceph) ValidateDisk(disk *disks.Disk) error {
+	var mErr *multierror.Error
+
+	// Only raw format is supported for ceph volumes
+	if disk.Format != disks.DiskFormatRaw {
+		mErr = multierror.Append(mErr,
+			fmt.Errorf("%w: format can only be raw for ceph volumes", disks.ErrInvalidConfiguration))
+	}
+
+	if disk.Sparse != nil && *disk.Sparse {
+		mErr = multierror.Append(mErr,
+			fmt.Errorf("%w: sparse cannot be enabled for ceph volumes", disks.ErrInvalidConfiguration))
+	}
+
+	if mErr != nil {
+		return mErr
+	}
+
+	return nil
 }
 
 // Type implements storage.Pool
