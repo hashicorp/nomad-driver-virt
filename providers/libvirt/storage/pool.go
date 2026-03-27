@@ -77,12 +77,6 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 		return nil, err
 	}
 
-	// Attempt to set the size if not set
-	if opts.Size, err = guessVolumeSize(pool, opts); err != nil {
-		p.logger.Debug("failed to determine volume size via guess", "error", err)
-		return nil, err
-	}
-
 	// Start configuring the new volume
 	// NOTE: Allocation is not configured because it is ignored
 	// when libvirt creates the volume.
