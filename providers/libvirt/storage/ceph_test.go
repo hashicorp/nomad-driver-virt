@@ -10,16 +10,59 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
-	//	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_libvirt "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt"
 	mock_libvirt_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt/storage"
 	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
+	"github.com/hashicorp/nomad/helper/pointer"
 	"github.com/shoenig/test/must"
 	"libvirt.org/go/libvirt"
 	"libvirt.org/go/libvirtxml"
 )
+
+func TestCeph_ValidateDisk(t *testing.T) {
+	t.Parallel()
+	pool := &ceph{
+		pool: &pool{
+			name:     "test-pool",
+			logger:   hclog.NewNullLogger(),
+			l:        mock_libvirt.NewStaticLibvirt(),
+			s:        mock_storage.NewStaticStorage(),
+			ctx:      t.Context(),
+			uploader: func(shims.StorageVol, string) error { return nil },
+		},
+	}
+
+	t.Run("format support", func(t *testing.T) {
+		t.Run("raw", func(t *testing.T) {
+			disk := &disks.Disk{Format: disks.DiskFormatRaw}
+			must.NoError(t, pool.ValidateDisk(disk))
+		})
+
+		t.Run("qcow2", func(t *testing.T) {
+			disk := &disks.Disk{Format: disks.DiskFormatQcow2}
+			err := pool.ValidateDisk(disk)
+			must.ErrorIs(t, err, disks.ErrInvalidConfiguration)
+			must.ErrorContains(t, err, "format can only be raw")
+		})
+	})
+
+	t.Run("sparse support", func(t *testing.T) {
+		t.Run("disabled", func(t *testing.T) {
+			disk := &disks.Disk{Format: disks.DiskFormatRaw, Sparse: pointer.Of(false)}
+			must.NoError(t, pool.ValidateDisk(disk))
+		})
+
+		t.Run("enabled", func(t *testing.T) {
+			disk := &disks.Disk{Format: disks.DiskFormatRaw, Sparse: pointer.Of(true)}
+			err := pool.ValidateDisk(disk)
+			must.ErrorIs(t, err, disks.ErrInvalidConfiguration)
+			must.ErrorContains(t, err, "sparse cannot be enabled")
+		})
+	})
+}
 
 func TestCeph_AddVolume(t *testing.T) {
 	t.Parallel()
@@ -89,41 +132,6 @@ func TestCeph_AddVolume(t *testing.T) {
 			pool.l = lv
 
 			_, err := pool.AddVolume("test-volume", storage.Options{})
-			must.ErrorIs(t, err, errTest)
-		})
-
-		t.Run("failure guessing size", func(t *testing.T) {
-			volName := "test-volume"
-			parentVol := mock_libvirt_storage.NewMockStorageVol(t)
-			defer parentVol.AssertExpectations()
-			parentVol.Expect(
-				mock_libvirt_storage.GetInfo{Err: errTest},
-				mock_libvirt_storage.Free{},
-			)
-			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
-			defer lvPool.AssertExpectations()
-			lvPool.Expect(
-				mock_libvirt_storage.Refresh{},
-				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
-				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Result: parentVol},
-				mock_libvirt_storage.Free{},
-			)
-			lv := &mock_libvirt.StaticLibvirt{
-				FindStoragePoolResult: lvPool,
-			}
-
-			pool := mkCephPool()
-			pool.l = lv
-
-			volOptions := storage.Options{
-				Chained: true,
-				Source: storage.Source{
-					Identifier: "parent.img",
-					Format:     "test-source-format",
-				},
-				Target: storage.Target{Format: "test-format"},
-			}
-			_, err := pool.AddVolume(volName, volOptions)
 			must.ErrorIs(t, err, errTest)
 		})
 
@@ -364,7 +372,6 @@ func TestCeph_AddVolume(t *testing.T) {
 				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Result: parentVol},
-				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Result: parentVol},
 				mock_libvirt_storage.StorageVolCreateXMLFrom{Desc: expectedVolCreateXml, CloneVol: parentVol, Result: vol},
 				mock_libvirt_storage.Free{},
 			)
@@ -377,6 +384,7 @@ func TestCeph_AddVolume(t *testing.T) {
 
 			volOptions := storage.Options{
 				Chained: true,
+				Size:    uint64(len(testImageConvertedContent)),
 				Source: storage.Source{
 					Path:       testImagePath(),
 					Identifier: "parent.img",
@@ -387,8 +395,6 @@ func TestCeph_AddVolume(t *testing.T) {
 			result, err := pool.AddVolume(volName, volOptions)
 			must.NoError(t, err)
 			must.Eq(t, &storage.Volume{Name: volName, Pool: testPoolName, Format: "raw"}, result)
-			// Ensure parent volume is freed
-			must.Eq(t, 2, parentVol.CallCount("Free"), must.Sprint("expected parent volume Free call"))
 		})
 
 		t.Run("creates chained volume using image", func(t *testing.T) {
@@ -436,7 +442,6 @@ func TestCeph_AddVolume(t *testing.T) {
 				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Err: ErrVolumeNotFound},
-				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Err: ErrVolumeNotFound},
 				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedParentCreateXml, Result: parentVol},
 				mock_libvirt_storage.StorageVolCreateXMLFrom{Desc: expectedVolCreateXml, CloneVol: parentVol, Result: vol},
 				mock_libvirt_storage.Free{},
@@ -450,6 +455,7 @@ func TestCeph_AddVolume(t *testing.T) {
 
 			volOptions := storage.Options{
 				Chained: true,
+				Size:    uint64(len(testImageContent)),
 				Source: storage.Source{
 					Path:       testImagePath(),
 					Identifier: "parent.img",
