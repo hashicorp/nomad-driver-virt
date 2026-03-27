@@ -6,13 +6,10 @@ package vm
 import (
 	"testing"
 
-	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/shoenig/test/must"
 )
 
 func TestConfig_Validate(t *testing.T) {
-	allowedPath := "/allowed/path/"
-
 	validConfig := Config{
 		Name:   "test-vm",
 		CPUs:   2,
@@ -21,12 +18,6 @@ func TestConfig_Validate(t *testing.T) {
 			Arch:    "x86_64",
 			Machine: "pc-i440fx-2.9",
 		},
-		Disks: disks.Disks{{
-			Primary: true,
-			BusType: "sata",
-			Kind:    "disk",
-			Devname: "sda",
-		}},
 	}
 
 	tests := []struct {
@@ -40,48 +31,13 @@ func TestConfig_Validate(t *testing.T) {
 			wantErr: nil,
 		},
 		{
-			name: "Image_path_not_alloweds",
-			config: Config{
-				Name:      validConfig.Name,
-				Memory:    validConfig.Memory,
-				CPUs:      validConfig.CPUs,
-				OsVariant: validConfig.OsVariant,
-				Disks: disks.Disks{{
-					Primary: true,
-					BusType: "sata",
-					Kind:    "disk",
-					Devname: "sda",
-					Source: &disks.Source{
-						Image: "/path/not/allowed/image.qcow2",
-					},
-				}},
-			},
-			wantErr: []error{ErrPathNotAllowed},
-		},
-		{
 			name: "Missing_vm_name",
 			config: Config{
 				Memory:    validConfig.Memory,
 				CPUs:      validConfig.CPUs,
 				OsVariant: validConfig.OsVariant,
-				Disks: disks.Disks{{
-					Primary: true,
-					BusType: "sata",
-					Kind:    "disk",
-					Devname: "sda",
-				}},
 			},
 			wantErr: []error{ErrEmptyName},
-		},
-		{
-			name: "Missing_primary_disk",
-			config: Config{
-				Name:      validConfig.Name,
-				Memory:    validConfig.Memory,
-				CPUs:      validConfig.CPUs,
-				OsVariant: validConfig.OsVariant,
-			},
-			wantErr: []error{disks.ErrNoPrimary},
 		},
 		{
 			name: "Not_enough_memory",
@@ -90,12 +46,6 @@ func TestConfig_Validate(t *testing.T) {
 				Memory:    2,
 				CPUs:      validConfig.CPUs,
 				OsVariant: validConfig.OsVariant,
-				Disks: disks.Disks{{
-					Primary: true,
-					BusType: "sata",
-					Kind:    "disk",
-					Devname: "sda",
-				}},
 			},
 			wantErr: []error{ErrNotEnoughMemory},
 		},
@@ -106,12 +56,6 @@ func TestConfig_Validate(t *testing.T) {
 				Memory:    validConfig.Memory,
 				CPUs:      0,
 				OsVariant: validConfig.OsVariant,
-				Disks: disks.Disks{{
-					Primary: true,
-					BusType: "sata",
-					Kind:    "disk",
-					Devname: "sda",
-				}},
 			},
 			wantErr: []error{ErrNoCPUS},
 		},
@@ -125,12 +69,6 @@ func TestConfig_Validate(t *testing.T) {
 					Arch:    "",
 					Machine: "",
 				},
-				Disks: disks.Disks{{
-					Primary: true,
-					BusType: "sata",
-					Kind:    "disk",
-					Devname: "sda",
-				}},
 			},
 			wantErr: []error{ErrIncompleteOSVariant},
 		},
@@ -142,16 +80,15 @@ func TestConfig_Validate(t *testing.T) {
 					Machine: "",
 				},
 			},
-			wantErr: []error{ErrEmptyName, disks.ErrNoPrimary,
-				ErrNotEnoughMemory, ErrIncompleteOSVariant,
-				ErrNoCPUS},
+			wantErr: []error{ErrEmptyName, ErrNotEnoughMemory,
+				ErrIncompleteOSVariant, ErrNoCPUS},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 
-			err := tt.config.Validate([]string{allowedPath})
+			err := tt.config.Validate()
 			if err != nil && len(tt.wantErr) == 0 {
 				t.Errorf("expected no error, got %v", err)
 			} else if err == nil && len(tt.wantErr) != 0 {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
+	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
@@ -110,13 +111,12 @@ type Config struct {
 	CMDs              []string
 	BOOTCMDs          []string
 	CIUserData        string
-
-	Disks             disks.Disks
+	Volumes           []storage.Volume
 	NetworkInterfaces net.NetworkInterfacesConfig
 }
 
 // Validate validates the configuration.
-func (vm *Config) Validate(allowedPaths []string) error {
+func (vm *Config) Validate() error {
 	var mErr *multierror.Error
 	if vm.Name == "" {
 		mErr = multierror.Append(mErr, ErrEmptyName)
@@ -139,10 +139,6 @@ func (vm *Config) Validate(allowedPaths []string) error {
 
 	if vm.HostName != "" && !IsValidLabel(vm.HostName) {
 		mErr = multierror.Append(mErr, ErrInvalidHostName)
-	}
-
-	if err := vm.Disks.Validate(disks.ValidationOptions{AllowedPaths: allowedPaths}); err != nil {
-		mErr = multierror.Append(mErr, err)
 	}
 
 	if err := vm.NetworkInterfaces.Validate(); err != nil {
@@ -170,7 +166,6 @@ func (vm *Config) Copy() *Config {
 		CMDs:              slices.Clone(vm.CMDs),
 		BOOTCMDs:          slices.Clone(vm.BOOTCMDs),
 		CIUserData:        vm.CIUserData,
-		Disks:             vm.Disks.Copy(),
 	}
 
 	if vm.OsVariant != nil {

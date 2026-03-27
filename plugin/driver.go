@@ -17,6 +17,7 @@ import (
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers"
 	"github.com/hashicorp/nomad-driver-virt/virt"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/client/lib/idset"
 
@@ -565,20 +566,26 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 		NetworkInterfaces: driverConfig.NetworkInterfacesConfig,
 	}
 
-	disks := driverConfig.Disks
+	// Run validation
+	if err := dc.Validate(); err != nil {
+		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
+	}
+
+	// Setup the disks.
+	vdisks := driverConfig.Disks
 
 	// Apply any mount configurations needed for disks
 	// using nomad volumes
-	disks.ApplyMounts(cfg.Mounts)
+	vdisks.ApplyMounts(cfg.Mounts)
 
 	// Compat to add old config into disks
 	if driverConfig.ImagePath != "" {
-		disks = disks.CompatAddImage(driverConfig.ImagePath, int64(driverConfig.PrimaryDiskSize),
+		vdisks = vdisks.CompatAddImage(driverConfig.ImagePath, int64(driverConfig.PrimaryDiskSize),
 			driverConfig.UseThinCopy)
 	}
 
 	// Fix up the image paths
-	disks.ResolveImages(imagePaths)
+	vdisks.ResolveImages(imagePaths)
 
 	// If cloudinit configuration is available, add it
 	if virtualizer.UseCloudInit() && dc.CloudInitConfig() != nil {
@@ -591,23 +598,24 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 		defer os.RemoveAll(isoPath)
 
 		// Add the cloud-init iso to the disks
-		disks = disks.ApplyCloudInit(isoPath)
+		vdisks = vdisks.ApplyCloudInit(isoPath)
 	}
 
 	// Set defaults on the disks
-	disks.SetDefaults(virtualizer.Storage())
-	// And set the updated disks into the config
-	dc.Disks = disks
+	vdisks.SetDefaults(virtualizer.Storage())
 
-	// Run validation
-	if err := dc.Validate(allowedPaths); err != nil {
-		return nil, nil, fmt.Errorf("virt: invalid configuration %s: %w", cfg.AllocID, err)
+	// Validate the disks
+	if err := vdisks.Validate(virtualizer.Storage(), disks.ValidationOptions{AllowedPaths: allowedPaths}); err != nil {
+		return nil, nil, fmt.Errorf("virt: invalid disks configuration %s: %w", cfg.AllocID, err)
 	}
 
 	// Prepare the disks to generate the storage pool volumes
-	if err := dc.Disks.Prepare(taskName, virtualizer.Storage()); err != nil {
+	if err := vdisks.Prepare(taskName, virtualizer.Storage()); err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to create storage volumes %s: %w", cfg.AllocID, err)
 	}
+
+	// And set the updated disks into the config
+	dc.Volumes = vdisks.Volumes()
 
 	networking, err := virtualizer.Networking()
 	if err != nil {
