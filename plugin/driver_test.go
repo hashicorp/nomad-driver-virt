@@ -217,6 +217,9 @@ func TestVirtDriver(t *testing.T) {
 			mock_storage.ImageHandler{Result: ih},
 			mock_storage.DefaultPool{Result: pl},
 			mock_storage.DefaultPool{Result: pl},
+			mock_storage.DefaultPool{Result: pl},
+			mock_storage.DefaultPool{Result: pl},
+			mock_storage.DefaultPool{Result: pl},
 			mock_storage.GenerateDeviceName{BusType: "virtio", ExistingDevices: []string{}, Result: "sda"},
 			mock_storage.GenerateDeviceName{BusType: "ide", ExistingDevices: []string{"sda"}, Result: "hda"},
 			mock_storage.DefaultDiskDriver{Result: "test-driver"},
@@ -225,6 +228,7 @@ func TestVirtDriver(t *testing.T) {
 
 		vt.Expect(
 			mock_virt.UseCloudInit{Result: true},
+			mock_virt.Storage{Result: st},
 			mock_virt.Storage{Result: st},
 			mock_virt.Storage{Result: st},
 			mock_virt.Networking{Result: mock_virt_net.NewStatic()},
@@ -283,46 +287,21 @@ func TestVirtDriver(t *testing.T) {
 						"mountpoint -q /testing/path/guest || mount -t 9p -o trans=virtio _testing_path_guest /testing/path/guest",
 					},
 					CIUserData: "/path/to/user/data",
-					Disks: disks.Disks{
+					Volumes: []storage.Volume{
 						{
-							Devname: "sda",
-							Driver:  "test-driver",
-							Kind:    "disk",
-							BusType: "virtio",
-							Primary: true,
-							Format:  "tif",
-							Size:    "50MB",
-							Source: &disks.Source{
-								Image:  virtcfg.Disks[0].Source.Image,
-								Format: "tif",
-							},
-							Volume: &storage.Volume{
-								Kind:       "disk",
-								Driver:     "test-driver",
-								Format:     "tif",
-								DeviceName: "sda",
-								BusType:    "virtio",
-								Primary:    true},
+							Kind:       "disk",
+							Driver:     "test-driver",
+							Format:     "tif",
+							DeviceName: "sda",
+							BusType:    "virtio",
+							Primary:    true,
 						},
 						{
-							Devname:  "hda",
-							Driver:   "test-driver",
-							Kind:     "cdrom",
-							BusType:  "ide",
-							Format:   "raw",
-							Size:     "0",
-							ReadOnly: true,
-							Source: &disks.Source{
-								Format: "raw",
-								Image:  filepath.Join(task.AllocDir, "cloudinit.iso"),
-							},
-							Volume: &storage.Volume{
-								Kind:       "cdrom",
-								Driver:     "test-driver",
-								Format:     "raw",
-								DeviceName: "hda",
-								BusType:    "ide",
-							},
+							Kind:       "cdrom",
+							Driver:     "test-driver",
+							Format:     "raw",
+							DeviceName: "hda",
+							BusType:    "ide",
 						},
 					},
 				},
@@ -458,6 +437,8 @@ func TestVirtDriver(t *testing.T) {
 		st.Expect(
 			mock_storage.ImageHandler{Result: ih},
 			mock_storage.DefaultPool{Result: pl},
+			mock_storage.DefaultPool{Result: pl},
+			mock_storage.DefaultPool{Result: pl},
 			mock_storage.GenerateDeviceName{BusType: "virtio", ExistingDevices: []string{}, Result: "sda"},
 			mock_storage.DefaultDiskDriver{Result: "test-driver"},
 		)
@@ -465,6 +446,7 @@ func TestVirtDriver(t *testing.T) {
 		vt.Expect(
 			mock_virt.Init{},
 			mock_virt.UseCloudInit{Result: false},
+			mock_virt.Storage{Result: st},
 			mock_virt.Storage{Result: st},
 			mock_virt.Storage{Result: st},
 			mock_virt.Networking{Result: mock_virt_net.NewStatic()},
@@ -516,26 +498,14 @@ func TestVirtDriver(t *testing.T) {
 						"mountpoint -q /secrets || mount -t 9p -o trans=virtio secretsDir /secrets",
 					},
 					CIUserData: "/path/to/user/data",
-					Disks: disks.Disks{
+					Volumes: []storage.Volume{
 						{
-							Devname: "sda",
-							Driver:  "test-driver",
-							Kind:    "disk",
-							BusType: "virtio",
-							Primary: true,
-							Format:  "tif",
-							Size:    "50MB",
-							Source: &disks.Source{
-								Image:  virtcfg.Disks[0].Source.Image,
-								Format: "tif",
-							},
-							Volume: &storage.Volume{
-								Kind:       "disk",
-								Driver:     "test-driver",
-								Format:     "tif",
-								DeviceName: "sda",
-								BusType:    "virtio",
-								Primary:    true},
+							Kind:       "disk",
+							Driver:     "test-driver",
+							Format:     "tif",
+							DeviceName: "sda",
+							BusType:    "virtio",
+							Primary:    true,
 						},
 					},
 				},
@@ -628,12 +598,15 @@ func TestVirtDriver(t *testing.T) {
 		st.Expect(
 			mock_storage.ImageHandler{Result: ih},
 			mock_storage.DefaultPool{Result: pl},
+			mock_storage.DefaultPool{Result: pl},
+			mock_storage.DefaultPool{Result: pl},
 			mock_storage.GenerateDeviceName{BusType: "virtio", ExistingDevices: []string{}, Result: "sda"},
 			mock_storage.DefaultDiskDriver{Result: "test-driver"},
 		)
 
 		vt.Expect(
 			mock_virt.UseCloudInit{Result: false},
+			mock_virt.Storage{Result: st},
 			mock_virt.Storage{Result: st},
 			mock_virt.Storage{Result: st},
 			mock_virt.Networking{Result: mock_virt_net.NewStatic()},
@@ -685,26 +658,14 @@ func TestVirtDriver(t *testing.T) {
 						"mountpoint -q /secrets || mount -t 9p -o trans=virtio secretsDir /secrets",
 					},
 					CIUserData: "/path/to/user/data",
-					Disks: disks.Disks{
+					Volumes: []storage.Volume{
 						{
-							Devname: "sda",
-							Driver:  "test-driver",
-							Kind:    "disk",
-							BusType: "virtio",
-							Primary: true,
-							Format:  "tif",
-							Size:    "50MB",
-							Source: &disks.Source{
-								Image:  virtcfg.Disks[0].Source.Image,
-								Format: "tif",
-							},
-							Volume: &storage.Volume{
-								Kind:       "disk",
-								Driver:     "test-driver",
-								Format:     "tif",
-								DeviceName: "sda",
-								BusType:    "virtio",
-								Primary:    true},
+							Kind:       "disk",
+							Driver:     "test-driver",
+							Format:     "tif",
+							DeviceName: "sda",
+							BusType:    "virtio",
+							Primary:    true,
 						},
 					},
 				},
