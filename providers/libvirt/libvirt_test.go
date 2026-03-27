@@ -14,7 +14,6 @@ import (
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
-	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/helper/uuid"
 	"github.com/shoenig/test/must"
@@ -200,17 +199,15 @@ func TestStartDomain(t *testing.T) {
 					Permissions: "666",
 				},
 			},
-			Disks: disks.Disks{
+			Volumes: []storage.Volume{
 				{
-					Volume: &storage.Volume{
-						Pool:       poolName,
-						Name:       "vol-name",
-						Kind:       "disk",
-						Driver:     "qemu",
-						Format:     "qcow2",
-						DeviceName: "sda",
-						BusType:    "sata",
-					},
+					Pool:       poolName,
+					Name:       "vol-name",
+					Kind:       "disk",
+					Driver:     "qemu",
+					Format:     "qcow2",
+					DeviceName: "sda",
+					BusType:    "sata",
 				},
 			},
 		}
@@ -266,16 +263,14 @@ func TestStartDomain(t *testing.T) {
 
 		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
-		domConfig.Disks = append(domConfig.Disks, &disks.Disk{
-			Volume: &storage.Volume{
-				Pool:       poolName,
-				Name:       "vol-name",
-				Kind:       "cdrom",
-				Driver:     "qemu",
-				Format:     "raw",
-				DeviceName: "hda",
-				BusType:    "ide",
-			},
+		domConfig.Volumes = append(domConfig.Volumes, storage.Volume{
+			Pool:       poolName,
+			Name:       "vol-name",
+			Kind:       "cdrom",
+			Driver:     "qemu",
+			Format:     "raw",
+			DeviceName: "hda",
+			BusType:    "ide",
 		})
 		must.NoError(t, ld.CreateVM(domConfig))
 
