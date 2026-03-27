@@ -209,43 +209,6 @@ func uploadToVolume(l libvirtStorage, src string, vol shims.StorageVol, opts *st
 	return nil
 }
 
-// guessVolumeSize attempts to determine the appropriate size for a volume when
-// it is not provided.
-func guessVolumeSize(pool shims.StoragePool, opts storage.Options) (uint64, error) {
-	// If the value is set in the options, use it
-	if opts.Size != 0 {
-		return opts.Size, nil
-	}
-
-	// If an identifier is provided look for the source volume and use its size.
-	if opts.Source.Identifier != "" {
-		v, err := pool.LookupStorageVolByName(opts.Source.Identifier)
-		if err == nil {
-			defer v.Free()
-			info, err := v.GetInfo()
-			if err != nil {
-				return 0, err
-			}
-			return info.Capacity, nil
-		} else if !errors.Is(err, ErrVolumeNotFound) {
-			return 0, err
-		}
-	}
-
-	// If a source path is available, use the size
-	// of the source image.
-	if opts.Source.Path != "" {
-		info, err := os.Stat(opts.Source.Path)
-		if err != nil {
-			return 0, err
-		}
-		return uint64(info.Size()), nil
-	}
-
-	// Cannot guess a size, so just return a zero value
-	return 0, nil
-}
-
 // getPoolInfo returns the pool description information.
 func getPoolInfo(pool shims.StoragePool) (*libvirtxml.StoragePool, error) {
 	poolXml, err := pool.GetXMLDesc(libvirtNoFlags)
