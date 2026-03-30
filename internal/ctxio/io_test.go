@@ -54,7 +54,7 @@ func TestReaderAt(t *testing.T) {
 	completeCh := make(chan struct{}, 1)
 
 	go func() {
-		io.Copy(w, NewReaderAt(ctx, r))
+		io.Copy(w, NewReaderFrom(ctx, r))
 		completeCh <- struct{}{}
 	}()
 
@@ -112,7 +112,7 @@ func TestWriterAt(t *testing.T) {
 	completeCh := make(chan struct{}, 1)
 
 	go func() {
-		io.Copy(NewWriterAt(ctx, w), r)
+		io.Copy(NewWriterTo(ctx, w), r)
 		completeCh <- struct{}{}
 	}()
 
