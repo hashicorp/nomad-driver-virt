@@ -76,8 +76,8 @@ func VolumeUpload(ctx context.Context, con *storage.CephConnect, pool, volume, p
 	// are wrapped with a context to allow the copy to be interrupted
 	// if the task has been stopped.
 	wrote, err := io.Copy(
-		ctxio.NewWriterAt(ctx, img),
-		ctxio.NewReaderAt(ctx, f),
+		ctxio.NewWriter(ctx, img),
+		ctxio.NewReaderFrom(ctx, f),
 	)
 	if err != nil {
 		return err
