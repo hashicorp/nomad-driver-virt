@@ -160,6 +160,7 @@ func newCephPool(ctx context.Context, logger hclog.Logger, l libvirtStorage, poo
 }
 
 // ValidateDisk validates the provided disk and returns any configuration errors found.
+// implements disks.DiskValidator
 func (c *ceph) ValidateDisk(disk *disks.Disk) error {
 	var mErr *multierror.Error
 
@@ -181,17 +182,21 @@ func (c *ceph) ValidateDisk(disk *disks.Disk) error {
 	return nil
 }
 
-// Type implements storage.Pool
+// Type returns the type of the storage pool.
+// implements storage.Pool
 func (c *ceph) Type() string {
 	return storage.PoolTypeCeph
 }
 
-// DefaultImageFormat implements storage.Pool
+// DefaultImageFormat returns the default image format for the pool.
+// implements storage.Pool
 func (c *ceph) DefaultImageFormat() string {
 	return defaultCephImageFormat
 }
 
-// AddVolume implements storage.Pool
+// AddVolume adds a new volume to the storage pool. Forces a raw format for the target prior
+// to adding the volume.
+// implements storage.Pool
 func (c *ceph) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {
 	// If the target format is specified, warn and modify if not raw.
 	if opts.Target.Format != defaultCephImageFormat {
