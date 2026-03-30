@@ -1,6 +1,11 @@
 // Copyright IBM Corp. 2024, 2025
 // SPDX-License-Identifier: MPL-2.0
 
+// ctxio provides context aware io wrappers.
+//
+// NewReader, for example, returns an io.Reader that will error on Read()
+// if the initial context is done. However, canceling the context *during*
+// a Read() will not interrupt the ongoing read.
 package ctxio
 
 import (
@@ -16,9 +21,9 @@ func NewReader(ctx context.Context, r io.Reader) *reader {
 	}
 }
 
-// NewReaderAt returns a context aware io.ReaderAt.
-func NewReaderAt(ctx context.Context, r ReaderAt) *readerAt {
-	return &readerAt{
+// NewReaderFrom returns a context aware io.ReaderFrom.
+func NewReaderFrom(ctx context.Context, r ReaderFrom) *readerFrom {
+	return &readerFrom{
 		reader: &reader{
 			ctx: ctx,
 			src: r,
@@ -36,9 +41,9 @@ func NewWriter(ctx context.Context, w io.Writer) *writer {
 	}
 }
 
-// NewWriterAt returns a context aware io.WriterAt.
-func NewWriterAt(ctx context.Context, w WriterAt) *writerAt {
-	return &writerAt{
+// NewWriterTo returns a context aware io.WriterTo.
+func NewWriterTo(ctx context.Context, w WriterTo) *writerTo {
+	return &writerTo{
 		writer: &writer{
 			ctx: ctx,
 			dst: w,
