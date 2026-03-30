@@ -19,6 +19,7 @@ import (
 // volOverwriteFn is the signature for overwriting data into a volume.
 type volOverwriteFn func(v shims.StorageVol, path string) error
 
+// volResizeFn is the signature for resizing a volume.
 type volResizeFn func(v shims.StorageVol, sizeBytes uint64, sparse bool) error
 
 type pool struct {
@@ -31,12 +32,14 @@ type pool struct {
 	resizer    volResizeFn
 }
 
-// Name implements storage.Pool
+// Name returns the name of the storage pool.
+// implements storage.Pool
 func (p *pool) Name() string {
 	return p.name
 }
 
-// GetVolume implements storage.Pool
+// GetVolume retrieves a volume from the storage pool if it exists.
+// implements storage.Pool
 func (p *pool) GetVolume(name string) (*storage.Volume, error) {
 	pool, err := p.l.FindStoragePool(p.name)
 	if err != nil {
@@ -47,7 +50,8 @@ func (p *pool) GetVolume(name string) (*storage.Volume, error) {
 	return findVolume(pool, name)
 }
 
-// AddVolume implements storage.Pool
+// AddVolume adds a new volume to the storage pool.
+// implements storage.Pool
 func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {
 	p.logger.Debug("adding a new volume to storage pool", "name", name, "sfmt", opts.Source.Format, "tfmt", opts.Target.Format)
 	pool, err := p.l.FindStoragePool(p.name)
@@ -190,7 +194,8 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 	}, nil
 }
 
-// DeleteVolume implements storage.Pool
+// DeleteVolume deletes a volume from the storage pool.
+// implements storage.Pool
 func (p *pool) DeleteVolume(name string) error {
 	p.logger.Debug("deleting volume from storage pool", "name", name)
 
