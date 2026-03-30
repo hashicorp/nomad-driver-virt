@@ -153,7 +153,7 @@ func newCephPool(ctx context.Context, logger hclog.Logger, l libvirtStorage, poo
 	// Build the ceph wrapper
 	c := &ceph{pool: basePool}
 	// Set customized functions for this pool type.
-	basePool.uploader = c.uploadToVolume
+	basePool.overwriter = c.overwriteVolume
 	basePool.resizer = c.resizeVol
 
 	return c, nil
@@ -223,10 +223,10 @@ func (c *ceph) resizeVol(vol shims.StorageVol, sizeBytes uint64, _ bool) error {
 	return nil
 }
 
-// uploadToVolume will upload the content at the given path to the volume.
+// overwriteVolume overwrites the volume with the content at the path.
 // NOTE: libvirt does not support streams for rbd volumes, so direct
 // connection is used for uploads.
-func (c *ceph) uploadToVolume(v shims.StorageVol, path string) error {
+func (c *ceph) overwriteVolume(v shims.StorageVol, path string) error {
 	c.logger.Debug("uploading content to volume", "path", path)
 
 	pool, err := c.l.FindStoragePool(c.name)
