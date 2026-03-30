@@ -8,9 +8,9 @@ import (
 	"io"
 )
 
-type ReaderAt interface {
+type ReaderFrom interface {
 	io.Reader
-	io.ReaderAt
+	io.ReaderFrom
 }
 
 type reader struct {
@@ -26,17 +26,17 @@ func (r *reader) Read(p []byte) (int, error) {
 	return r.src.Read(p)
 }
 
-type readerAt struct {
+type readerFrom struct {
 	*reader
 
 	ctx context.Context
-	src io.ReaderAt
+	src io.ReaderFrom
 }
 
-func (r *readerAt) ReadAt(p []byte, off int64) (int, error) {
+func (r *readerFrom) ReadFrom(rd io.Reader) (int64, error) {
 	if r.ctx.Err() != nil {
 		return 0, r.ctx.Err()
 	}
 
-	return r.src.ReadAt(p, off)
+	return r.src.ReadFrom(rd)
 }
