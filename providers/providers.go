@@ -63,6 +63,7 @@ type providers struct {
 	l                sync.RWMutex
 }
 
+// Setup initializes any providers defined within the configuration.
 func (p *providers) Setup(config *virt.Config) error {
 	p.l.Lock()
 	defer p.l.Unlock()
@@ -124,6 +125,8 @@ func (p *providers) Setup(config *virt.Config) error {
 	return nil
 }
 
+// Fingerprint will generate node fingerprint information based
+// on available providers.
 func (p *providers) Fingerprint() (*drivers.Fingerprint, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
@@ -174,6 +177,7 @@ func (p *providers) Fingerprint() (*drivers.Fingerprint, error) {
 	}, nil
 }
 
+// Get will return the named provider if it is available.
 func (p *providers) Get(ctx context.Context, name string) (virt.Virtualizer, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
@@ -185,6 +189,7 @@ func (p *providers) Get(ctx context.Context, name string) (virt.Virtualizer, err
 	return dispense(ctx)
 }
 
+// Default will return the provider selected as the default.
 func (p *providers) Default(ctx context.Context) (virt.Virtualizer, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
@@ -196,6 +201,8 @@ func (p *providers) Default(ctx context.Context) (virt.Virtualizer, error) {
 	return p.defaultDispenser(ctx)
 }
 
+// GetVM will return the virtual machine information for the
+// named virtual machine.
 func (p *providers) GetVM(name string) (*vm.Info, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
@@ -224,6 +231,8 @@ func (p *providers) GetVM(name string) (*vm.Info, error) {
 	return nil, vm.ErrNotFound
 }
 
+// GetProviderForVM will return the virt.Virtualizer responsible
+// for the named virtual machine.
 func (p *providers) GetProviderForVM(ctx context.Context, name string) (virt.Virtualizer, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
