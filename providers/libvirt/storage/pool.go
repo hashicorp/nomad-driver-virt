@@ -16,19 +16,19 @@ import (
 	"libvirt.org/go/libvirtxml"
 )
 
-// volUploadFn is the signature for uploading a volume.
-type volUploadFn func(v shims.StorageVol, path string) error
+// volOverwriteFn is the signature for overwriting data into a volume.
+type volOverwriteFn func(v shims.StorageVol, path string) error
 
 type volResizeFn func(v shims.StorageVol, sizeBytes uint64, sparse bool) error
 
 type pool struct {
-	ctx      context.Context
-	logger   hclog.Logger
-	name     string
-	l        libvirtStorage
-	s        storage.Storage
-	uploader volUploadFn
-	resizer  volResizeFn
+	ctx        context.Context
+	logger     hclog.Logger
+	name       string
+	l          libvirtStorage
+	s          storage.Storage
+	overwriter volOverwriteFn
+	resizer    volResizeFn
 }
 
 // Name implements storage.Pool
@@ -276,20 +276,20 @@ func (p *pool) createVolumeFromImage(pool shims.StoragePool, name, image, srcFmt
 
 	// Upload the image into the volume. If a custom upload function
 	// is provided, use that.
-	uploadFn := p.defaultUploader
-	if p.uploader != nil {
-		uploadFn = p.uploader
+	overwriterFn := p.defaultOverwriter
+	if p.overwriter != nil {
+		overwriterFn = p.overwriter
 	}
 
-	if err := uploadFn(v, image); err != nil {
+	if err := overwriterFn(v, image); err != nil {
 		return nil, err
 	}
 
 	return v, nil
 }
 
-// defaultUploader uploads the content at the path to the volume.
-func (p *pool) defaultUploader(vol shims.StorageVol, path string) error {
+// defaultOverwriter overwrites the volume with the content at the path.
+func (p *pool) defaultOverwriter(vol shims.StorageVol, path string) error {
 	// Open the source file for uploading
 	file, err := os.Open(path)
 	if err != nil {
@@ -370,12 +370,12 @@ func (p *pool) defaultResizer(vol shims.StorageVol, sizeBytes uint64, sparse boo
 // and storage.
 func (p *pool) copy(ctx context.Context, s *Storage, l libvirtStorage) *pool {
 	return &pool{
-		logger:   p.logger,
-		name:     p.name,
-		uploader: p.uploader,
-		resizer:  p.resizer,
-		ctx:      ctx,
-		s:        s,
-		l:        l,
+		logger:     p.logger,
+		name:       p.name,
+		overwriter: p.overwriter,
+		resizer:    p.resizer,
+		ctx:        ctx,
+		s:          s,
+		l:          l,
 	}
 }
