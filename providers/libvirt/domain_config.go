@@ -9,10 +9,10 @@ import (
 	"libvirt.org/go/libvirtxml"
 )
 
-func (d *driver) parseVolumes(vols []storage.Volume) ([]libvirtxml.DomainDisk, error) {
+func (p *provider) parseVolumes(vols []storage.Volume) ([]libvirtxml.DomainDisk, error) {
 	result := make([]libvirtxml.DomainDisk, 0, len(vols))
 	for _, fd := range vols {
-		disk, err := d.storage.VolumeToDisk(fd)
+		disk, err := p.storage.VolumeToDisk(fd)
 		if err != nil {
 			return nil, err
 		}
@@ -27,10 +27,10 @@ func (d *driver) parseVolumes(vols []storage.Volume) ([]libvirtxml.DomainDisk, e
 	return result, nil
 }
 
-func (d *driver) parseConfiguration(config *vm.Config) (string, error) {
+func (p *provider) parseConfiguration(config *vm.Config) (string, error) {
 	zero := uint(0)
 
-	disks, err := d.parseVolumes(config.Volumes)
+	disks, err := p.parseVolumes(config.Volumes)
 	if err != nil {
 		return "", err
 	}
