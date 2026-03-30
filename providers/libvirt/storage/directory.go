@@ -62,6 +62,7 @@ func newDirectoryPool(ctx context.Context, logger hclog.Logger, l libvirtStorage
 }
 
 // ValidateDisk validates the provided disk and returns any configuration errors found.
+// implements disks.DiskValidator
 func (d *directory) ValidateDisk(disk *disks.Disk) error {
 	var mErr *multierror.Error
 
@@ -84,12 +85,14 @@ func (d *directory) ValidateDisk(disk *disks.Disk) error {
 	return nil
 }
 
-// Type implements storage.Pool
+// Type returns the type of the storage pool.
+// implements storage.Pool
 func (d *directory) Type() string {
 	return storage.PoolTypeDirectory
 }
 
-// DefaultImageFormat implements storage.Pool
+// DefaultImageFormat returns the default image format for the pool.
+// implements storage.Pool
 func (d *directory) DefaultImageFormat() string {
 	return defaultDirectoryImageFormat
 }
