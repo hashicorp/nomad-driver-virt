@@ -8,9 +8,9 @@ import (
 	"io"
 )
 
-type WriterAt interface {
+type WriterTo interface {
 	io.Writer
-	io.WriterAt
+	io.WriterTo
 }
 
 type writer struct {
@@ -26,17 +26,17 @@ func (w *writer) Write(p []byte) (int, error) {
 	return w.dst.Write(p)
 }
 
-type writerAt struct {
+type writerTo struct {
 	*writer
 
 	ctx context.Context
-	dst io.WriterAt
+	dst io.WriterTo
 }
 
-func (w *writerAt) WriteAt(p []byte, off int64) (int, error) {
+func (w *writerTo) WriteTo(wrt io.Writer) (int64, error) {
 	if w.ctx.Err() != nil {
 		return 0, w.ctx.Err()
 	}
 
-	return w.dst.WriteAt(p, off)
+	return w.dst.WriteTo(wrt)
 }
