@@ -281,7 +281,9 @@ func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal
 	handle.cancelFn()
 
 	vmname := vmNameFromTaskID(taskID)
-	virtualizer, err := d.providers.GetProviderForVM(context.Background(), vmname)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	virtualizer, err := d.providers.GetProviderForVM(ctx, vmname)
 	if err != nil {
 		return fmt.Errorf("virt: unable to stop task %s: %w", taskID, err)
 	}
@@ -312,7 +314,9 @@ func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
 	handle.cancelFn()
 
 	vmname := vmNameFromTaskID(taskID)
-	virtualizer, err := d.providers.GetProviderForVM(context.Background(), vmname)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	virtualizer, err := d.providers.GetProviderForVM(ctx, vmname)
 	if err != nil {
 		return fmt.Errorf("virt: unable to destroy task %s: %w", taskID, err)
 	}

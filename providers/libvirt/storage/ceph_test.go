@@ -26,12 +26,12 @@ func TestCeph_ValidateDisk(t *testing.T) {
 	t.Parallel()
 	pool := &ceph{
 		pool: &pool{
-			name:     "test-pool",
-			logger:   hclog.NewNullLogger(),
-			l:        mock_libvirt.NewStaticLibvirt(),
-			s:        mock_storage.NewStaticStorage(),
-			ctx:      t.Context(),
-			uploader: func(shims.StorageVol, string) error { return nil },
+			name:       "test-pool",
+			logger:     hclog.NewNullLogger(),
+			l:          mock_libvirt.NewStaticLibvirt(),
+			s:          mock_storage.NewStaticStorage(),
+			ctx:        t.Context(),
+			overwriter: func(shims.StorageVol, string) error { return nil },
 		},
 	}
 
@@ -89,12 +89,12 @@ func TestCeph_AddVolume(t *testing.T) {
 	mkCephPool := func() *ceph {
 		return &ceph{
 			pool: &pool{
-				name:     testPoolName,
-				logger:   hclog.NewNullLogger(),
-				l:        mock_libvirt.NewStaticLibvirt(),
-				s:        mock_storage.NewStaticStorage(),
-				ctx:      t.Context(),
-				uploader: func(shims.StorageVol, string) error { return nil },
+				name:       testPoolName,
+				logger:     hclog.NewNullLogger(),
+				l:          mock_libvirt.NewStaticLibvirt(),
+				s:          mock_storage.NewStaticStorage(),
+				ctx:        t.Context(),
+				overwriter: func(shims.StorageVol, string) error { return nil },
 			},
 		}
 	}
