@@ -35,7 +35,7 @@ var (
 	ErrPoolNotFound                = fmt.Errorf("pool %w", vm.ErrNotFound)
 )
 
-// This interface defines what functions are needed from the driver
+// This interface defines what functions are needed from the provider.
 type libvirtStorage interface {
 	CreateStoragePool(def *libvirtxml.StoragePool) (shims.StoragePool, error)
 	FindStoragePool(name string) (shims.StoragePool, error)
@@ -46,7 +46,7 @@ type libvirtStorage interface {
 	UpdateStoragePool(def *libvirtxml.StoragePool) error
 }
 
-// New creates a new storage instance
+// New creates a new storage instance.
 func New(ctx context.Context, logger hclog.Logger, l libvirtStorage, config *storage.Config) (*Storage, error) {
 	logger = logger.Named("storage")
 	s := &Storage{
@@ -139,7 +139,8 @@ func (s *Storage) Copy(ctx context.Context, l libvirtStorage) *Storage {
 	return newS
 }
 
-// DefaultPool implements storage.Storage
+// DefaultPool returns the default storage pool.
+// implements storage.Storage
 func (s *Storage) DefaultPool() (storage.Pool, error) {
 	if s.defaultPool == nil {
 		return nil, ErrPoolNotFound
@@ -148,7 +149,8 @@ func (s *Storage) DefaultPool() (storage.Pool, error) {
 	return s.defaultPool, nil
 }
 
-// GetPool implements storage.Storage
+// GetPool returns the requested storage pool by name.
+// implements storage.Storage
 func (s *Storage) GetPool(name string) (storage.Pool, error) {
 	if pool, ok := s.pools[name]; ok {
 		return pool, nil
@@ -157,17 +159,20 @@ func (s *Storage) GetPool(name string) (storage.Pool, error) {
 	return nil, ErrPoolNotFound
 }
 
-// DefaultDiskDriver implements storage.Storage
+// DefaultDiskDriver provides the name of the default disk driver.
+// implements storage.Storage
 func (s *Storage) DefaultDiskDriver() string {
 	return defaultDiskDriver
 }
 
-// ImageHandler implements storage.Storage
+// ImageHandler returns an image handler.
+// implements storage.Storage
 func (s *Storage) ImageHandler() image_tools.ImageHandler {
 	return s.imageHandler
 }
 
-// GenerateDeviceName implemenets storage.Storage
+// GenerateDeviceName generates a new device name for a disk.
+// implemenets storage.Storage
 func (s *Storage) GenerateDeviceName(busType string, existingNames []string) string {
 	var prefix string
 	switch busType {
@@ -194,7 +199,8 @@ func (s *Storage) GenerateDeviceName(busType string, existingNames []string) str
 	return prefix + string(max[len(max)-1]+1)
 }
 
-// Fingerprint implements storage.Storage
+// Fingerprint adds fingerprint information for available storage pools.
+// implements storage.Storage
 func (s *Storage) Fingerprint(attrs map[string]*structs.Attribute) {
 	for name, pool := range s.pools {
 		poolKey := fmt.Sprintf("%s.storage_pool.%s",

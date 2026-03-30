@@ -25,12 +25,12 @@ import (
 // not isolated
 
 // validate the driver implements the connect interface
-var _ shims.Connect = (*driver)(nil)
+var _ shims.Connect = (*provider)(nil)
 
-type libvirtModifier func(l *driver)
+type libvirtModifier func(l *provider)
 
 func overrideFs(avail ...string) libvirtModifier {
-	return func(l *driver) {
+	return func(l *provider) {
 		m := map[string]struct{}{}
 		for _, a := range avail {
 			m[a] = struct{}{}
@@ -39,7 +39,7 @@ func overrideFs(avail ...string) libvirtModifier {
 	}
 }
 
-func testNew(t *testing.T, modifiers ...libvirtModifier) (*driver, string) {
+func testNew(t *testing.T, modifiers ...libvirtModifier) (*provider, string) {
 	t.Helper()
 	poolName := strings.ReplaceAll(t.Name(), "/", "_")
 

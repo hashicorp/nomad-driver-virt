@@ -27,14 +27,11 @@ type Virtualizer interface {
 	// DestroyVM destroys the named virtual machine.
 	DestroyVM(name string) error
 
-	// GetVM gets information about the named virtual machine.
-	GetVM(name string) (*vm.Info, error)
-
 	// GetInfo returns information about the virtualization provider.
 	GetInfo() (vm.VirtualizerInfo, error)
 
 	// GetNetworkInterfaces returns the network interfaces for the
-	// name virtual machine.
+	// named virtual machine.
 	GetNetworkInterfaces(name string) ([]vm.NetworkInterface, error)
 
 	// UseCloudInit informs if the provider supports cloud-init.
