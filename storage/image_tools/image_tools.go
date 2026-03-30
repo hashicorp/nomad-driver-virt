@@ -41,7 +41,7 @@ func NewQemuHandler(logger hclog.Logger) *QemuTools {
 	}
 }
 
-// ConvertImage implements ImageHandler
+// ConvertImage makes a copy of the image in a new format
 func (q *QemuTools) ConvertImage(src, srcFmt, dst, dstFmt string) error {
 	var err error
 	if srcFmt == "" {
@@ -66,7 +66,7 @@ func (q *QemuTools) ConvertImage(src, srcFmt, dst, dstFmt string) error {
 	return nil
 }
 
-// GetImageFormat implements ImageHandler
+// GetImageFormat gets the format of a given image
 func (q *QemuTools) GetImageFormat(basePath string) (string, error) {
 	q.logger.Debug("reading the disk format", "base", basePath)
 
@@ -99,7 +99,7 @@ func (q *QemuTools) GetImageFormat(basePath string) (string, error) {
 	return output.Format, nil
 }
 
-// CreateCopy implements ImageHandler
+// CreateCopy creates a full copy from the src image
 func (q *QemuTools) CreateCopy(src, dst string, sizeM int64) error {
 	q.logger.Debug("creating copy", "base", src, "dest", dst)
 	if err := os.MkdirAll(filepath.Base(dst), 0755); err != nil {
@@ -141,7 +141,7 @@ func (q *QemuTools) CreateCopy(src, dst string, sizeM int64) error {
 	return nil
 }
 
-// CreateChainedCopy implements ImageHandler
+// CreateChainedCopy creates a copy chained copy from src image
 func (q *QemuTools) CreateChainedCopy(src string, destination string, sizeM int64) error {
 	q.logger.Debug("creating chained copy", "base", src, "dest", destination)
 
