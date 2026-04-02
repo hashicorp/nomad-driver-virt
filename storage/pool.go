@@ -35,9 +35,6 @@ type Target struct {
 
 // Source describes the source of the volume to create
 type Source struct {
-	Format     string // Format of the source
-	Path       string // Path to a source image file
-	Identifier string // Identifier for a source image file
-	Snapshot   string // Snapshot to clone
-	Volume     string // Volume to clone
+	Path   string // Path to a source image file
+	Volume string // Volume to clone
 }
