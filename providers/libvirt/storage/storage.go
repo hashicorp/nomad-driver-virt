@@ -219,11 +219,18 @@ func (s *Storage) Fingerprint(attrs map[string]*structs.Attribute) {
 // however, some pools don't support volumes backing disks which is a sad
 // state of affairs.
 func (s *Storage) VolumeToDisk(vol storage.Volume) (*libvirtxml.DomainDisk, error) {
+	// Sometimes after uploading an image into a volume, libvirt will overwrite
+	// the volume type from raw to iso. Check for that when setting the format.
+	diskFmt := vol.Format
+	if diskFmt == "iso" {
+		diskFmt = "raw"
+	}
+
 	disk := &libvirtxml.DomainDisk{
 		Device: vol.Kind,
 		Driver: &libvirtxml.DomainDiskDriver{
 			Name: vol.Driver,
-			Type: vol.Format,
+			Type: diskFmt,
 		},
 		Target: &libvirtxml.DomainDiskTarget{
 			Dev: vol.DeviceName,

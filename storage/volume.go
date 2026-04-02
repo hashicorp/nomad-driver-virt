@@ -13,4 +13,5 @@ type Volume struct {
 	BusType    string // Bus type used by the attachment (ide, sata, scsi, etc)
 	Primary    bool   // Primary disk for booting
 	Block      string // Block device to pass through as attachment
+	Size       uint64 // Size of the volume
 }

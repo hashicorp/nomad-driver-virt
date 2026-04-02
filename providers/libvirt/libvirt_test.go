@@ -125,7 +125,7 @@ func TestStorage(t *testing.T) {
 			// Add an empty volume
 			v, err := pool.AddVolume("test-vol", storage.Options{Size: 1024, Target: storage.Target{Format: "raw"}})
 			must.NoError(t, err)
-			must.Eq(t, &storage.Volume{Name: "test-vol", Pool: poolName, Format: "raw"}, v)
+			must.Eq(t, &storage.Volume{Name: "test-vol", Pool: poolName, Format: "raw", Kind: "file", Size: 1024}, v)
 
 			// Check that format is defaulted if unset
 			vf, err := pool.AddVolume("test-vol-2", storage.Options{})
@@ -135,7 +135,7 @@ func TestStorage(t *testing.T) {
 			// Get the volume
 			getV, err := pool.GetVolume("test-vol")
 			must.NoError(t, err)
-			must.Eq(t, &storage.Volume{Name: "test-vol", Pool: poolName}, getV)
+			must.Eq(t, &storage.Volume{Name: "test-vol", Pool: poolName, Kind: "file", Format: "raw", Size: 1024}, getV)
 
 			// Delete the volume
 			must.NoError(t, pool.DeleteVolume("test-vol"))
