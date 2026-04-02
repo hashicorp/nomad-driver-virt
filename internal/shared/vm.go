@@ -15,7 +15,6 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	"github.com/hashicorp/nomad-driver-virt/storage"
-	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
@@ -41,7 +40,6 @@ var (
 	ErrNotEnoughMemory      = errors.New("not enough memory assigned to task")
 	ErrIncompleteOSVariant  = errors.New("provided os information is incomplete: arch and machine are mandatory ")
 	ErrInvalidHostName      = fmt.Errorf("a resource name must consist of lower case alphanumeric characters or '-', must start and end with an alphanumeric character and be less than %d characters", maxNameLength+1)
-	ErrPathNotAllowed       = disks.ErrDisallowedPath
 	ErrNotFound             = errors.New("not found")
 	ErrNotImplemented       = errors.New("not implemented")
 	ErrNotSupported         = errors.New("feature is not supported")
