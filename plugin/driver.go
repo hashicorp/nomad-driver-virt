@@ -606,15 +606,17 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 	}
 
 	// Set defaults on the disks
-	vdisks.SetDefaults(virtualizer.Storage())
+	if err := vdisks.Prepare(virtualizer.Storage()); err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to prepare disks %s: %w", cfg.AllocID, err)
+	}
 
 	// Validate the disks
 	if err := vdisks.Validate(virtualizer.Storage(), disks.ValidationOptions{AllowedPaths: allowedPaths}); err != nil {
 		return nil, nil, fmt.Errorf("virt: invalid disks configuration %s: %w", cfg.AllocID, err)
 	}
 
-	// Prepare the disks to generate the storage pool volumes
-	if err := vdisks.Prepare(taskName, virtualizer.Storage()); err != nil {
+	// Generate the disks to generate the storage pool volumes
+	if err := vdisks.Generate(taskName, virtualizer.Storage()); err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to create storage volumes %s: %w", cfg.AllocID, err)
 	}
 
