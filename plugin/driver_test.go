@@ -220,6 +220,7 @@ func TestVirtDriver(t *testing.T) {
 			mock_storage.DefaultPool{Result: pl},
 			mock_storage.DefaultPool{Result: pl},
 			mock_storage.DefaultPool{Result: pl},
+			mock_storage.DefaultPool{Result: pl},
 			mock_storage.GenerateDeviceName{BusType: "virtio", ExistingDevices: []string{}, Result: "sda"},
 			mock_storage.GenerateDeviceName{BusType: "ide", ExistingDevices: []string{"sda"}, Result: "hda"},
 			mock_storage.DefaultDiskDriver{Result: "test-driver"},
@@ -314,6 +315,11 @@ func TestVirtDriver(t *testing.T) {
 			mock_virt.GetVM{Name: vmName, Result: &vm.Info{State: vm.VMStateRunning}},
 		)
 
+		// stub path that would be created by cloudinit
+		f, err := os.Create(filepath.Join(task.AllocDir, "cloudinit.iso"))
+		must.NoError(t, err)
+		f.Close()
+
 		pl.Expect(
 			mock_storage.DefaultImageFormat{Result: "tif"},
 			mock_storage.AddVolume{
@@ -324,8 +330,7 @@ func TestVirtDriver(t *testing.T) {
 						Format: "tif",
 					},
 					Source: storage.Source{
-						Path:   virtcfg.Disks[0].Source.Image,
-						Format: "tif",
+						Path: virtcfg.Disks[0].Source.Image,
 					},
 				},
 				Result: &storage.Volume{},
@@ -334,19 +339,11 @@ func TestVirtDriver(t *testing.T) {
 				Name: vmName + "_hda.img",
 				Opts: storage.Options{
 					Target: storage.Target{Format: "raw"},
-					Source: storage.Source{
-						Format: "raw",
-						Path:   filepath.Join(task.AllocDir, "cloudinit.iso"),
-					},
+					Source: storage.Source{Path: f.Name()},
 				},
 				Result: &storage.Volume{},
 			},
 		)
-
-		// stub path that would be created by cloudinit
-		f, err := os.Create(filepath.Join(task.AllocDir, "cloudinit.iso"))
-		must.NoError(t, err)
-		f.Close()
 
 		// start the task
 		taskHandle, _, err := driver.StartTask(task)
@@ -527,8 +524,7 @@ func TestVirtDriver(t *testing.T) {
 						Format: "tif",
 					},
 					Source: storage.Source{
-						Path:   virtcfg.Disks[0].Source.Image,
-						Format: "tif",
+						Path: virtcfg.Disks[0].Source.Image,
 					},
 				},
 				Result: &storage.Volume{},
@@ -685,8 +681,7 @@ func TestVirtDriver(t *testing.T) {
 						Format: "tif",
 					},
 					Source: storage.Source{
-						Path:   virtcfg.Disks[0].Source.Image,
-						Format: "tif",
+						Path: virtcfg.Disks[0].Source.Image,
 					},
 				},
 				Result: &storage.Volume{},
