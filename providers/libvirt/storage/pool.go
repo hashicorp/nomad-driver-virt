@@ -6,6 +6,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 
@@ -53,7 +54,6 @@ func (p *pool) GetVolume(name string) (*storage.Volume, error) {
 // AddVolume adds a new volume to the storage pool.
 // implements storage.Pool
 func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {
-	p.logger.Debug("adding a new volume to storage pool", "name", name, "sfmt", opts.Source.Format, "tfmt", opts.Target.Format)
 	pool, err := p.l.FindStoragePool(p.name)
 	if err != nil {
 		return nil, err
@@ -82,9 +82,7 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 	}
 
 	// Start configuring the new volume
-	// NOTE: Allocation is not configured because it is ignored
-	// when libvirt creates the volume.
-	newVolume := libvirtxml.StorageVolume{
+	newVolume := &libvirtxml.StorageVolume{
 		Name: name,
 		Target: &libvirtxml.StorageVolumeTarget{
 			Format: &libvirtxml.StorageVolumeTargetFormat{
@@ -95,22 +93,20 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 			Unit:  "B",
 			Value: opts.Size,
 		},
+		Allocation: &libvirtxml.StorageVolumeSize{
+			Unit:  "B",
+			Value: opts.Size,
+		},
 	}
 
 	// If this should be a sparse volume, do not allocate
 	// any space.
 	if opts.Sparse {
-		newVolume.Allocation = &libvirtxml.StorageVolumeSize{
-			Unit:  "B",
-			Value: 0,
-		}
+		newVolume.Allocation.Value = 0
 	}
 
-	// A source volume will be set if the new volume is
-	// being chained.
+	// If a source volume is defined, load it
 	var srcVol shims.StorageVol
-
-	// If a source volume is defined, find it.
 	if opts.Source.Volume != "" {
 		srcVol, err = findRawVolume(pool, opts.Source.Volume)
 		if err != nil {
@@ -119,22 +115,25 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 		defer srcVol.Free()
 	}
 
-	// If the volume is chained, locate the existing source
-	// volume or create the source volume.
 	if opts.Chained {
-		srcVol, err = findRawVolume(pool, opts.Source.Identifier)
-		if err != nil && !errors.Is(err, ErrVolumeNotFound) {
+		if srcVol == nil {
+			return nil, fmt.Errorf("%w - %s", ErrVolumeNotFound, opts.Source.Volume)
+		}
+		srcPath, err := srcVol.GetPath()
+		if err != nil {
+			return nil, err
+		}
+		srcFmt, err := getVolumeFormat(srcVol)
+		if err != nil {
 			return nil, err
 		}
 
-		if srcVol == nil {
-			srcVol, err = p.createVolumeFromImage(pool, opts.Source.Identifier,
-				opts.Source.Path, opts.Source.Format, opts.Target.Format)
-			if err != nil {
-				return nil, err
-			}
+		newVolume.BackingStore = &libvirtxml.StorageVolumeBackingStore{
+			Path: srcPath,
+			Format: &libvirtxml.StorageVolumeTargetFormat{
+				Type: srcFmt,
+			},
 		}
-		defer srcVol.Free()
 	}
 
 	// Generate the volume definition
@@ -143,34 +142,41 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 		return nil, err
 	}
 
-	var vol shims.StorageVol
-	var resize bool
+	p.logger.Debug("new volume definition defined", "definition", volData)
 
-	// If a source volume is defined then create the new volume.
-	if srcVol != nil {
-		p.logger.Trace("creating new volume from existing volume", "name", name)
+	var resize bool
+	var vol shims.StorageVol
+	defer func() {
+		if vol != nil {
+			vol.Free()
+		}
+	}()
+
+	// If a source volume is provided and the disk is not chained, clone
+	// the volume. Otherwise, create the volume and upload an image if
+	// one is provided.
+	if srcVol != nil && !opts.Chained {
 		vol, err = pool.StorageVolCreateXMLFrom(volData, srcVol, libvirtNoFlags)
 		if err != nil {
 			return nil, err
 		}
-		defer vol.Free()
 		resize = true
 	} else {
-		// If no image is provided, just create an empty volume.
-		if opts.Source.Path == "" {
-			vol, err = pool.StorageVolCreateXML(volData, libvirtNoFlags)
-			if err != nil {
+		vol, err = pool.StorageVolCreateXML(volData, libvirtNoFlags)
+		if err != nil {
+			return nil, err
+		}
+
+		// If a source path is set, upload it.
+		if opts.Source.Path != "" {
+			overwriterFn := p.defaultOverwriter
+			if p.overwriter != nil {
+				overwriterFn = p.overwriter
+			}
+
+			if err := overwriterFn(vol, opts.Source.Path); err != nil {
 				return nil, err
 			}
-			defer vol.Free()
-		} else {
-			// Otherwise, create the volume from the image
-			vol, err = p.createVolumeFromImage(pool, name, opts.Source.Path,
-				opts.Source.Format, opts.Target.Format)
-			if err != nil {
-				return nil, err
-			}
-			defer vol.Free()
 			resize = true
 		}
 	}
@@ -187,11 +193,27 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 		}
 	}
 
-	return &storage.Volume{
-		Name:   name,
-		Pool:   p.name,
-		Format: opts.Target.Format,
-	}, nil
+	// Grab the new volume information to fill in the result.
+	info, err := getVolumeInfo(vol)
+	if err != nil {
+		return nil, err
+	}
+
+	v := &storage.Volume{
+		Name: name,
+		Pool: p.name,
+		Kind: info.Type,
+	}
+
+	if info.Capacity != nil {
+		v.Size = info.Capacity.Value
+	}
+
+	if info.Target != nil && info.Target.Format != nil {
+		v.Format = info.Target.Format.Type
+	}
+
+	return v, nil
 }
 
 // DeleteVolume deletes a volume from the storage pool.
@@ -220,77 +242,6 @@ func (p *pool) DeleteVolume(name string) error {
 	defer vol.Free()
 
 	return vol.Delete(libvirt.STORAGE_VOL_DELETE_NORMAL)
-}
-
-// createVolumeFromImage creates a new volume and uploads the image into
-// the volume.
-// NOTE: caller is responsible to free result
-func (p *pool) createVolumeFromImage(pool shims.StoragePool, name, image, srcFmt, targetFmt string) (shims.StorageVol, error) {
-	var err error
-	// If the source format isn't set, get it.
-	if srcFmt == "" {
-		if srcFmt, err = p.s.ImageHandler().GetImageFormat(image); err != nil {
-			return nil, err
-		}
-	}
-
-	// If the image isn't in the target format, convert it.
-	if srcFmt != targetFmt {
-		p.logger.Debug("converting image", "source-format", srcFmt, "target-format", targetFmt, "image", image)
-		dst := image + ".converted"
-		if err := p.s.ImageHandler().ConvertImage(image, srcFmt, dst, targetFmt); err != nil {
-			return nil, err
-		}
-		defer os.RemoveAll(dst)
-		image = dst
-	}
-
-	// Stat the file to get the size
-	info, err := os.Stat(image)
-	if err != nil {
-		return nil, err
-	}
-
-	// Create the volume definition.
-	vol := libvirtxml.StorageVolume{
-		Name: name,
-		Target: &libvirtxml.StorageVolumeTarget{
-			Format: &libvirtxml.StorageVolumeTargetFormat{
-				Type: targetFmt,
-			},
-		},
-		Capacity: &libvirtxml.StorageVolumeSize{
-			Unit:  "B",
-			Value: uint64(info.Size()),
-		},
-		Allocation: &libvirtxml.StorageVolumeSize{
-			Unit:  "B",
-			Value: 0,
-		},
-	}
-	volInfo, err := vol.Marshal()
-	if err != nil {
-		return nil, err
-	}
-
-	// Create the actual volume.
-	v, err := pool.StorageVolCreateXML(volInfo, libvirtNoFlags)
-	if err != nil {
-		return nil, err
-	}
-
-	// Upload the image into the volume. If a custom upload function
-	// is provided, use that.
-	overwriterFn := p.defaultOverwriter
-	if p.overwriter != nil {
-		overwriterFn = p.overwriter
-	}
-
-	if err := overwriterFn(v, image); err != nil {
-		return nil, err
-	}
-
-	return v, nil
 }
 
 // defaultOverwriter overwrites the volume with the content at the path.

@@ -10,7 +10,6 @@ import (
 
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
-	"github.com/hashicorp/nomad-driver-virt/storage/image_tools"
 	"libvirt.org/go/libvirt"
 	"libvirt.org/go/libvirtxml"
 )
@@ -42,84 +41,28 @@ func findVolume(pool shims.StoragePool, name string) (*storage.Volume, error) {
 		return nil, err
 	}
 
+	info, err := getVolumeInfo(v)
+	if err != nil {
+		return nil, err
+	}
+
 	defer v.Free()
 
-	return &storage.Volume{Name: name, Pool: poolName}, nil
-}
-
-// findOrCreateParentVolume returns information about an existing parent volume or
-// creates the volume and uploads the source.
-func findOrCreateParentVolume(s libvirtStorage, pool shims.StoragePool, handler image_tools.ImageHandler, opts storage.Options) (path string, format string, err error) {
-	parentName := opts.Source.Identifier
-	v, err := findRawVolume(pool, parentName)
-	if err != nil && !errors.Is(err, ErrVolumeNotFound) {
-		return "", "", err
-	}
-	var srcFmt string
-
-	// Ensure the volume is freed if set
-	defer func() {
-		if v != nil {
-			v.Free()
-		}
-	}()
-
-	// If the volume doesn't exist, create it
-	if v == nil {
-		srcFmt = opts.Source.Format
-		if srcFmt == "" {
-			srcFmt, err = handler.GetImageFormat(opts.Source.Path)
-			if err != nil {
-				return "", "", err
-			}
-		}
-		info, err := os.Stat(opts.Source.Path)
-		if err != nil {
-			return "", "", err
-		}
-		// NOTE: Make parent sparse so it does not claim space that will never be used
-		vol := libvirtxml.StorageVolume{
-			Name: parentName,
-			Target: &libvirtxml.StorageVolumeTarget{
-				Format: &libvirtxml.StorageVolumeTargetFormat{
-					Type: srcFmt,
-				},
-			},
-			Capacity: &libvirtxml.StorageVolumeSize{
-				Unit:  "B",
-				Value: uint64(info.Size()),
-			},
-			Allocation: &libvirtxml.StorageVolumeSize{
-				Unit:  "B",
-				Value: 0,
-			},
-		}
-		volInfo, err := vol.Marshal()
-		if err != nil {
-			return "", "", err
-		}
-		v, err = pool.StorageVolCreateXML(volInfo, libvirtNoFlags)
-		if err != nil {
-			return "", "", err
-		}
-		if err = uploadToVolume(s, opts.Source.Path, v, nil); err != nil {
-			return "", "", err
-		}
+	vol := &storage.Volume{
+		Name: name,
+		Pool: poolName,
+		Kind: info.Type,
 	}
 
-	path, err = v.GetPath()
-	if err != nil {
-		return "", "", err
+	if info.Capacity != nil {
+		vol.Size = info.Capacity.Value
 	}
 
-	if srcFmt == "" {
-		srcFmt, err = getVolumeFormat(v)
-		if err != nil {
-			return "", "", err
-		}
+	if info.Target != nil && info.Target.Format != nil {
+		vol.Format = info.Target.Format.Type
 	}
 
-	return path, srcFmt, nil
+	return vol, nil
 }
 
 // getVolumeFormat gets the format of the given volume
