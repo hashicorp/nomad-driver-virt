@@ -14,7 +14,9 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nomad-driver-virt/internal/convert"
+	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/storage"
+	"github.com/hashicorp/nomad-driver-virt/storage/image_tools"
 	"github.com/hashicorp/nomad/helper/pointer"
 	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
@@ -347,11 +349,12 @@ func (d Disks) ApplyMounts(mounts []*drivers.MountConfig) error {
 	return nil
 }
 
-// SetDefaults will fill in applicable empty values in disk configurations
-// with default values
-func (d Disks) SetDefaults(s storage.Storage) {
+// Prepare will prepare the disks configuration for validation and generation. It
+// will fill in empty values with defaults where applicable and perform image
+// conversions or parent volume creations where needed.
+func (d Disks) Prepare(s storage.Storage) error {
 	if d == nil {
-		return
+		return nil
 	}
 
 	validPrimaryDisks := []*Disk{}
@@ -384,9 +387,11 @@ func (d Disks) SetDefaults(s storage.Storage) {
 
 		// If a source image is set, attempt to determine its format if not set.
 		if disk.Source != nil && disk.Source.Image != "" && disk.Source.Format == "" {
-			if sfmt, err := s.ImageHandler().GetImageFormat(disk.Source.Image); err == nil {
-				disk.Source.Format = sfmt
+			sfmt, err := s.ImageHandler().GetImageFormat(disk.Source.Image)
+			if err != nil {
+				return err
 			}
+			disk.Source.Format = sfmt
 		}
 
 		if disk.Primary {
@@ -402,6 +407,95 @@ func (d Disks) SetDefaults(s storage.Storage) {
 			continue
 		}
 
+		// Load up the target pool of the disk.
+		var pool storage.Pool
+		var err error
+		if disk.Pool != "" {
+			pool, err = s.GetPool(disk.Pool)
+		} else {
+			pool, err = s.DefaultPool()
+		}
+		if err != nil {
+			return err
+		}
+
+		// Get the default format for the disk from the target pool if no
+		// format is provided
+		if disk.Format == "" {
+			disk.Format = pool.DefaultImageFormat()
+		}
+
+		// If the disk is chained generate the identifier if needed and
+		// create the parent volume if it does not exist.
+		if disk.Source != nil && disk.Source.Image != "" {
+			if disk.Chained {
+				if disk.Source.identifier == "" {
+					var err error
+					disk.Source.identifier, err = generateIdentifier(disk.Source.Image, disk.Format)
+					if err != nil {
+						return err
+					}
+				}
+
+				vol, err := pool.GetVolume(disk.Source.identifier)
+				if err != nil {
+					if !errors.Is(err, vm.ErrNotFound) {
+						return err
+					}
+
+					// If the source image isn't in the disk format, convert it.
+					if disk.Source.Format != disk.Format {
+						disk.Source.Image, err = convertImage(s.ImageHandler(), disk.Source.Image, disk.Source.Format, disk.Format)
+						if err != nil {
+							return err
+						}
+						defer os.Remove(disk.Source.Image)
+					}
+
+					info, err := os.Stat(disk.Source.Image)
+					if err != nil {
+						return err
+					}
+
+					parentOpts := storage.Options{
+						Sparse: true,
+						Target: storage.Target{
+							Format: disk.Format,
+						},
+						Source: storage.Source{
+							Path: disk.Source.Image,
+						},
+						Size: uint64(info.Size()),
+					}
+
+					// Create the parent volume.
+					vol, err = pool.AddVolume(disk.Source.identifier, parentOpts)
+					if err != nil {
+						return err
+					}
+				}
+
+				// Remove the source image and set the source
+				// volume to the parent.
+				disk.Source.Volume = vol.Name
+				disk.Source.Image = ""
+
+				// If the size was not set for the disk, set it to the
+				// parent volume size since we have the volume available.
+				if disk.Size == "" {
+					disk.Size = fmt.Sprintf("%d", vol.Size)
+				}
+			} else if disk.Format != disk.Source.Format {
+				// Convert the image if the source format doesn't match the disk.
+				dst, err := convertImage(s.ImageHandler(), disk.Source.Image, disk.Source.Format, disk.Format)
+				if err != nil {
+					return err
+				}
+				disk.Source.Image = dst
+				disk.Source.Format = disk.Format
+			}
+		}
+
 		// If the size is not set and a source is defined, attempt to derive
 		// the size from the source.
 		if disk.Size == "" && disk.Source != nil {
@@ -413,29 +507,15 @@ func (d Disks) SetDefaults(s storage.Storage) {
 					disk.Size = fmt.Sprintf("%d", info.Size())
 				}
 			}
-			// TODO: If a volume is set in the source, get the size and use that value.
-		}
 
-		// If the disk is not a Nomad volume and the format is not set, default
-		// it to the pool's default format.
-		if disk.IsNomadVolume() || disk.Format != "" {
-			continue
+			if disk.Source.Volume != "" {
+				vol, err := pool.GetVolume(disk.Source.Volume)
+				if err != nil {
+					return err
+				}
+				disk.Size = fmt.Sprintf("%d", vol.Size)
+			}
 		}
-
-		var pool storage.Pool
-		var err error
-		if disk.Pool != "" {
-			pool, err = s.GetPool(disk.Pool)
-		} else {
-			pool, err = s.DefaultPool()
-		}
-		// If the pool couldn't be loaded just ignore. Validation
-		// can force an error.
-		if err != nil {
-			continue
-		}
-
-		disk.Format = pool.DefaultImageFormat()
 	}
 
 	// If no disk was marked as primary, but only one disk has been
@@ -444,6 +524,8 @@ func (d Disks) SetDefaults(s storage.Storage) {
 	if !primaryFound && len(validPrimaryDisks) == 1 {
 		validPrimaryDisks[0].Primary = true
 	}
+
+	return nil
 }
 
 // Validate validates the disks configurations
@@ -522,6 +604,11 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 				fmt.Errorf("%s size value is not valid - %q", errPrefix, disk.Size))
 		}
 
+		if disk.Chained && (disk.Source == nil || (disk.Source.Volume == "" && disk.Source.Image == "")) {
+			mErr = multierror.Append(mErr,
+				fmt.Errorf("%s %w: chained cannot be enabled without a source", errPrefix, ErrInvalidConfiguration))
+		}
+
 		// Load the storage pool for this disk and apply any custom validation if
 		// the pool provides it.
 		var pool storage.Pool
@@ -560,9 +647,9 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 	return nil
 }
 
-// Prepare prepares the disk for usage, importing it into the storage pool. The
-// name is used for volume naming. Using the task name is ideal.
-func (d Disks) Prepare(name string, s storage.Storage) error {
+// Generate will generate the storage volumes defined by the disk configuration.
+// The name is used for volume naming. Using the task name is ideal.
+func (d Disks) Generate(name string, s storage.Storage) error {
 	// Generate the volumes for the virtual machine
 	for _, disk := range d {
 		var pool storage.Pool
@@ -612,38 +699,20 @@ func (d Disks) Prepare(name string, s storage.Storage) error {
 
 			if disk.Source != nil {
 				opts.Source = storage.Source{
-					Format:     disk.Source.Format,
-					Path:       disk.Source.Image,
-					Volume:     disk.Source.Volume,
-					Identifier: disk.Source.identifier,
-				}
-
-				// If the disk source has an image and the identifier was
-				// not set, generate the identifier now
-				// NOTE: this is only done if chained since the identifer
-				// is not used otherwise.
-				if disk.Source.identifier == "" && disk.Chained && disk.Source.Image != "" {
-					id, err := generateIdentifier(disk.Source.Image, disk.Format)
-					if err != nil {
-						return err
-					}
-					opts.Source.Identifier = id
+					Path:   disk.Source.Image,
+					Volume: disk.Source.Volume,
 				}
 			}
 
+			// Now create the new volume.
 			vol, err = pool.AddVolume(volumeName, opts)
 			if err != nil {
 				return err
 			}
 		}
 
-		// If the format was already set by the pool,
-		// prefer that value
-		if vol.Format == "" {
-			vol.Format = disk.Format
-		}
-
 		// Fill in extra volume information
+		vol.Format = disk.Format
 		vol.Kind = disk.Kind
 		vol.Driver = disk.Driver
 		vol.DeviceName = disk.Devname
@@ -794,4 +863,24 @@ func prefixError(prefix string, err error) error {
 	default:
 		return fmt.Errorf("%s %w", prefix, err)
 	}
+}
+
+// convertImage converts an image file into a different format, creating the
+// converted file next to the original.
+func convertImage(h image_tools.ImageHandler, src, srcFmt, dstFmt string) (string, error) {
+	dir := filepath.Dir(src)
+	f, err := os.CreateTemp(dir, fmt.Sprintf("%s-*.%s", filepath.Base(src), dstFmt))
+	if err != nil {
+		return "", err
+	}
+	f.Close()
+	if err := os.Remove(f.Name()); err != nil {
+		return "", err
+	}
+
+	if err := h.ConvertImage(src, srcFmt, f.Name(), dstFmt); err != nil {
+		return "", err
+	}
+
+	return f.Name(), nil
 }

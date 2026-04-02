@@ -153,9 +153,8 @@ func TestCeph_AddVolume(t *testing.T) {
 			volOptions := storage.Options{
 				Chained: true,
 				Source: storage.Source{
-					Path:       testImagePath(),
-					Identifier: "parent.img",
-					Format:     "test-source-format",
+					Path:   testImagePath(),
+					Volume: "parent.img",
 				},
 				Target: storage.Target{Format: "test-format"},
 			}
@@ -206,10 +205,16 @@ func TestCeph_AddVolume(t *testing.T) {
 					Unit:  "B",
 					Value: 200,
 				},
+				Allocation: &libvirtxml.StorageVolumeSize{
+					Unit:  "B",
+					Value: 0,
+				},
 			}
 			expectedVolCreateXml, err := expectedVolCreate.Marshal()
 			must.NoError(t, err)
-			vol := mock_libvirt_storage.NewStaticStorageVol()
+			vol := &mock_libvirt_storage.StaticStorageVol{
+				GetXMLDescResult: expectedVolCreateXml,
+			}
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
@@ -226,7 +231,7 @@ func TestCeph_AddVolume(t *testing.T) {
 			result, err := pool.AddVolume(volName,
 				storage.Options{Size: 200, Target: storage.Target{Format: "raw"}})
 			must.NoError(t, err)
-			must.Eq(t, &storage.Volume{Name: volName, Pool: testPoolName, Format: "raw"}, result)
+			must.Eq(t, &storage.Volume{Name: volName, Pool: testPoolName, Format: "raw", Size: 200}, result)
 			// Ensure volume was freed
 			must.One(t, vol.CallCount("Free"), must.Sprint("expected volume Free call"))
 		})
@@ -246,12 +251,14 @@ func TestCeph_AddVolume(t *testing.T) {
 				},
 				Capacity: &libvirtxml.StorageVolumeSize{
 					Unit:  "B",
-					Value: uint64(len(testImageConvertedContent)),
+					Value: 200,
 				},
 			}
 			expectedVolCreateXml, err := expectedVolCreate.Marshal()
 			must.NoError(t, err)
-			vol := mock_libvirt_storage.NewStaticStorageVol()
+			vol := &mock_libvirt_storage.StaticStorageVol{
+				GetXMLDescResult: expectedVolCreateXml,
+			}
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
@@ -276,60 +283,11 @@ func TestCeph_AddVolume(t *testing.T) {
 			}
 			result, err := pool.AddVolume(volName, volOptions)
 			must.NoError(t, err)
-			must.Eq(t, &storage.Volume{Name: volName, Pool: testPoolName, Format: "raw"}, result)
+			must.Eq(t, &storage.Volume{Name: volName, Pool: testPoolName, Format: "raw", Size: 200}, result)
 			// Volume should have been resized
 			must.One(t, vol.CallCount("Resize"), must.Sprint("expected volume Resize call"))
 			// Ensure volume was freed
 			must.One(t, vol.CallCount("Free"), must.Sprint("expected volume Free call"))
-		})
-
-		t.Run("creates volume from image using image size", func(t *testing.T) {
-			volName := "test-volume"
-			expectedVolCreate := libvirtxml.StorageVolume{
-				Name: volName,
-				Target: &libvirtxml.StorageVolumeTarget{
-					Format: &libvirtxml.StorageVolumeTargetFormat{
-						Type: "raw",
-					},
-				},
-				Allocation: &libvirtxml.StorageVolumeSize{
-					Unit:  "B",
-					Value: 0,
-				},
-				Capacity: &libvirtxml.StorageVolumeSize{
-					Unit:  "B",
-					Value: uint64(len(testImageConvertedContent)),
-				},
-			}
-			expectedVolCreateXml, err := expectedVolCreate.Marshal()
-			must.NoError(t, err)
-			vol := mock_libvirt_storage.NewStaticStorageVol()
-			lvStream := mock_libvirt.NewStaticStream()
-			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
-			defer lvPool.AssertExpectations()
-			lvPool.Expect(
-				mock_libvirt_storage.Refresh{},
-				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
-				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedVolCreateXml, Result: vol},
-				mock_libvirt_storage.Free{},
-			)
-			lv := &mock_libvirt.StaticLibvirt{
-				FindStoragePoolResult: lvPool,
-				NewStreamResult:       lvStream,
-			}
-
-			pool := mkCephPool()
-			pool.l = lv
-
-			volOptions := storage.Options{
-				Source: storage.Source{
-					Path: testImagePath(),
-				},
-				Target: storage.Target{Format: "raw"},
-			}
-			result, err := pool.AddVolume(volName, volOptions)
-			must.NoError(t, err)
-			must.Eq(t, &storage.Volume{Name: volName, Pool: testPoolName, Format: "raw"}, result)
 		})
 
 		t.Run("creates chained volume using existing volume", func(t *testing.T) {
@@ -338,12 +296,16 @@ func TestCeph_AddVolume(t *testing.T) {
 				Name: volName,
 				Target: &libvirtxml.StorageVolumeTarget{
 					Format: &libvirtxml.StorageVolumeTargetFormat{
-						Type: "raw",
+						Type: "test-format",
 					},
 				},
 				Capacity: &libvirtxml.StorageVolumeSize{
 					Unit:  "B",
 					Value: uint64(len(testImageConvertedContent)),
+				},
+				Allocation: &libvirtxml.StorageVolumeSize{
+					Unit:  "B",
+					Value: 0,
 				},
 			}
 			expectedVolCreateXml, err := expectedVolCreate.Marshal()
@@ -365,14 +327,16 @@ func TestCeph_AddVolume(t *testing.T) {
 				},
 			}
 
-			vol := mock_libvirt_storage.NewStaticStorageVol()
+			vol := &mock_libvirt_storage.StaticStorageVol{
+				GetXMLDescResult: expectedVolCreateXml,
+			}
 			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
 			defer lvPool.AssertExpectations()
 			lvPool.Expect(
 				mock_libvirt_storage.Refresh{},
 				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Result: parentVol},
-				mock_libvirt_storage.StorageVolCreateXMLFrom{Desc: expectedVolCreateXml, CloneVol: parentVol, Result: vol},
+				mock_libvirt_storage.StorageVolCreateXMLFrom{CloneVol: parentVol, Desc: expectedVolCreateXml, Result: vol},
 				mock_libvirt_storage.Free{},
 			)
 			lv := &mock_libvirt.StaticLibvirt{
@@ -386,88 +350,13 @@ func TestCeph_AddVolume(t *testing.T) {
 				Chained: true,
 				Size:    uint64(len(testImageConvertedContent)),
 				Source: storage.Source{
-					Path:       testImagePath(),
-					Identifier: "parent.img",
-					Format:     "raw",
+					Volume: "parent.img",
 				},
 				Target: storage.Target{Format: "test-format"},
 			}
 			result, err := pool.AddVolume(volName, volOptions)
 			must.NoError(t, err)
-			must.Eq(t, &storage.Volume{Name: volName, Pool: testPoolName, Format: "raw"}, result)
-		})
-
-		t.Run("creates chained volume using image", func(t *testing.T) {
-			volName := "test-volume"
-			expectedParentCreate := libvirtxml.StorageVolume{
-				Name: "parent.img",
-				Target: &libvirtxml.StorageVolumeTarget{
-					Format: &libvirtxml.StorageVolumeTargetFormat{
-						Type: "raw",
-					},
-				},
-				Allocation: &libvirtxml.StorageVolumeSize{
-					Unit:  "B",
-					Value: 0,
-				},
-				Capacity: &libvirtxml.StorageVolumeSize{
-					Unit:  "B",
-					Value: uint64(len(testImageContent)),
-				},
-			}
-			expectedParentCreateXml, err := expectedParentCreate.Marshal()
-			must.NoError(t, err)
-			expectedVolCreate := libvirtxml.StorageVolume{
-				Name: volName,
-				Target: &libvirtxml.StorageVolumeTarget{
-					Format: &libvirtxml.StorageVolumeTargetFormat{
-						Type: "raw",
-					},
-				},
-				Capacity: &libvirtxml.StorageVolumeSize{
-					Unit:  "B",
-					Value: uint64(len(testImageContent)),
-				},
-			}
-			expectedVolCreateXml, err := expectedVolCreate.Marshal()
-			must.NoError(t, err)
-
-			parentVol := &mock_libvirt_storage.StaticStorageVol{
-				GetPathResult: "/dev/null/parent.img",
-			}
-			vol := mock_libvirt_storage.NewStaticStorageVol()
-			lvPool := mock_libvirt_storage.NewMockStoragePool(t)
-			defer lvPool.AssertExpectations()
-			lvPool.Expect(
-				mock_libvirt_storage.Refresh{},
-				mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
-				mock_libvirt_storage.LookupStorageVolByName{Name: "parent.img", Err: ErrVolumeNotFound},
-				mock_libvirt_storage.StorageVolCreateXML{Desc: expectedParentCreateXml, Result: parentVol},
-				mock_libvirt_storage.StorageVolCreateXMLFrom{Desc: expectedVolCreateXml, CloneVol: parentVol, Result: vol},
-				mock_libvirt_storage.Free{},
-			)
-			lv := &mock_libvirt.StaticLibvirt{
-				FindStoragePoolResult: lvPool,
-			}
-
-			pool := mkCephPool()
-			pool.l = lv
-
-			volOptions := storage.Options{
-				Chained: true,
-				Size:    uint64(len(testImageContent)),
-				Source: storage.Source{
-					Path:       testImagePath(),
-					Identifier: "parent.img",
-					Format:     "raw",
-				},
-				Target: storage.Target{Format: "raw"},
-			}
-			result, err := pool.AddVolume(volName, volOptions)
-			must.NoError(t, err)
-			must.Eq(t, &storage.Volume{Name: volName, Pool: testPoolName, Format: "raw"}, result)
-			// Ensure parent volume is freed
-			must.One(t, parentVol.CallCount("Free"), must.Sprint("expected parent volume Free call"))
+			must.Eq(t, &storage.Volume{Name: volName, Pool: testPoolName, Format: "test-format", Size: uint64(len(testImageConvertedContent))}, result)
 		})
 	})
 }
