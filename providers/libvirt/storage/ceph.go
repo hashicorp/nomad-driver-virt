@@ -198,14 +198,82 @@ func (c *ceph) DefaultImageFormat() string {
 // to adding the volume.
 // implements storage.Pool
 func (c *ceph) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {
-	// If the target format is specified, warn and modify if not raw.
-	if opts.Target.Format != defaultCephImageFormat {
-		c.logger.Warn("only raw format is allowed for target, modifying to raw", "name", name,
-			"original-format", opts.Target.Format)
-		opts.Target.Format = defaultCephImageFormat
+	// If a volume is set to be cloned (volume source and not chained) then use custom
+	// helper since libvirt does not support fully cloning a volume.
+	if !opts.Chained && opts.Source.Volume != "" {
+		return c.copyVol(name, opts)
 	}
 
+	// If the disk should be chained, libvirt doesn't support a volume defining a
+	// backing store. Instead, cloning a volume will create a chained volume, so
+	// disable the option before proceeding.
+	if opts.Chained {
+		opts.Chained = false
+	}
+
+	// Ceph volumes are always sparsely populated, so force sparse.
+	opts.Sparse = true
+
+	// Add the new volume to the pool.
 	return c.pool.AddVolume(name, opts)
+}
+
+// copyVol will create a new full copy of the source volume
+func (c *ceph) copyVol(name string, opts storage.Options) (*storage.Volume, error) {
+	connOpts, err := c.buildConnectOpts()
+	if err != nil {
+		return nil, err
+	}
+
+	// The name of the ceph pool is needed since the copy is performed
+	// using a direct connection. Extract it from the pool info.
+	p, err := c.l.FindStoragePool(c.pool.name)
+	if err != nil {
+		return nil, err
+	}
+	defer p.Free()
+
+	info, err := getPoolInfo(p)
+	if err != nil {
+		return nil, err
+	}
+
+	if info.Source == nil || info.Source.Name == "" {
+		return nil, fmt.Errorf("failed to determine remote ceph pool name")
+	}
+
+	// Grab the volume copy function and make the copy.
+	fn, err := cephPlugin.Lookup("VolumeCopy")
+	if err != nil {
+		return nil, err
+	}
+
+	// Create the new cloned volume.
+	err = fn.(func(ctx context.Context, connInfo *CephConnect, pool, srcVol, dstVol string) error)(
+		c.pool.ctx, connOpts, info.Source.Name, opts.Source.Volume, name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Refresh the pool so the new volume is found.
+	if err := p.Refresh(libvirtNoFlags); err != nil {
+		return nil, err
+	}
+
+	v, err := findRawVolume(p, name)
+	if err != nil {
+		return nil, err
+	}
+	defer v.Free()
+
+	// Run the resizer on the new volume so if the new volume size
+	// is larger it is properly expanded.
+	if err := c.resizeVol(v, opts.Size, true); err != nil {
+		return nil, err
+	}
+
+	// Return the volume loaded with expected information.
+	return findVolume(p, name)
 }
 
 // resizeVol is a custom volume resizer for rbd volumes that ignores sparseness
@@ -234,37 +302,6 @@ func (c *ceph) resizeVol(vol shims.StorageVol, sizeBytes uint64, _ bool) error {
 func (c *ceph) overwriteVolume(v shims.StorageVol, path string) error {
 	c.logger.Debug("uploading content to volume", "path", path)
 
-	pool, err := c.l.FindStoragePool(c.name)
-	if err != nil {
-		return err
-	}
-	defer pool.Free()
-
-	// Grab the pool information to get the configured hosts
-	info, err := getPoolInfo(pool)
-	if err != nil {
-		return err
-	}
-
-	// Pull the stored key. The value will be provided base64
-	// encoded which is what the connection will want.
-	key, err := c.l.GetCephSecret(c.name)
-	if err != nil {
-		return err
-	}
-
-	// Collect all the monitor hosts
-	// TODO: Need to check for IPv6 and wrap with brackets if port is set
-	hosts := make([]string, len(info.Source.Host))
-	for i := range len(info.Source.Host) {
-		h := info.Source.Host[i]
-		if h.Port != "" {
-			hosts[i] = fmt.Sprintf("%s:%s", h.Name, h.Port)
-		} else {
-			hosts[i] = h.Name
-		}
-	}
-
 	// The path of the volume is the ceph pool name
 	// and the volume name.
 	volPath, err := v.GetPath()
@@ -280,10 +317,9 @@ func (c *ceph) overwriteVolume(v shims.StorageVol, path string) error {
 	poolName := pathParts[0]
 	name := pathParts[1]
 
-	connOpts := &CephConnect{
-		Username: info.Source.Auth.Username,
-		Key:      key,
-		Hosts:    hosts,
+	connOpts, err := c.buildConnectOpts()
+	if err != nil {
+		return err
 	}
 
 	fn, err := cephPlugin.Lookup("VolumeUpload")
@@ -291,12 +327,52 @@ func (c *ceph) overwriteVolume(v shims.StorageVol, path string) error {
 		return err
 	}
 
-	err = fn.(func(ctx context.Context, connInfo *CephConnect, pool, volume, path string) error)(c.pool.ctx, connOpts, poolName, name, path)
+	err = fn.(func(ctx context.Context, connInfo *CephConnect, pool, volume, path string) error)(
+		c.pool.ctx, connOpts, poolName, name, path)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func (c *ceph) buildConnectOpts() (*CephConnect, error) {
+	pool, err := c.l.FindStoragePool(c.name)
+	if err != nil {
+		return nil, err
+	}
+	defer pool.Free()
+
+	// Grab the pool information to get the configured hosts
+	info, err := getPoolInfo(pool)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pull the stored key. The value will be provided base64
+	// encoded which is what the connection will want.
+	key, err := c.l.GetCephSecret(c.name)
+	if err != nil {
+		return nil, err
+	}
+
+	// Collect all the monitor hosts
+	// TODO: Need to check for IPv6 and wrap with brackets if port is set
+	hosts := make([]string, len(info.Source.Host))
+	for i := range len(info.Source.Host) {
+		h := info.Source.Host[i]
+		if h.Port != "" {
+			hosts[i] = fmt.Sprintf("%s:%s", h.Name, h.Port)
+		} else {
+			hosts[i] = h.Name
+		}
+	}
+
+	return &CephConnect{
+		Username: info.Source.Auth.Username,
+		Key:      key,
+		Hosts:    hosts,
+	}, nil
 }
 
 // copy creates a new copy of this pool with updated context
