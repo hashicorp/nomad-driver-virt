@@ -170,16 +170,12 @@ func (c *ceph) ValidateDisk(disk *disks.Disk) error {
 			fmt.Errorf("%w: format can only be raw for ceph volumes", disks.ErrInvalidConfiguration))
 	}
 
-	if disk.Sparse != nil && *disk.Sparse {
+	if disk.Sparse != nil && !*disk.Sparse {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w: sparse cannot be enabled for ceph volumes", disks.ErrInvalidConfiguration))
+			fmt.Errorf("%w: sparse cannot be disabled for ceph volumes", disks.ErrInvalidConfiguration))
 	}
 
-	if mErr != nil {
-		return mErr
-	}
-
-	return nil
+	return mErr.ErrorOrNil()
 }
 
 // Type returns the type of the storage pool.

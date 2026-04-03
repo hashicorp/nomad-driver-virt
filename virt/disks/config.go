@@ -170,7 +170,7 @@ func (d *Disk) ValidateNomadVolume() error {
 		mErr = multierror.Append(mErr,
 			fmt.Errorf("%w - size cannot be set when using Nomad volume", ErrInvalidConfiguration))
 	}
-	if d.Sparse != nil && *d.Sparse {
+	if d.Sparse != nil {
 		mErr = multierror.Append(mErr,
 			fmt.Errorf("%w - sparse cannot be set when using Nomad volume", ErrInvalidConfiguration))
 	}
@@ -194,11 +194,7 @@ func (d *Disk) ValidateNomadVolume() error {
 			fmt.Errorf("%w - missing Nomad volume mount configuration", ErrInvalidConfiguration))
 	}
 
-	if mErr != nil {
-		return mErr
-	}
-
-	return nil
+	return mErr.ErrorOrNil()
 }
 
 // Source describes the source of the disk
@@ -640,11 +636,7 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 			ErrMultiplePrimary, strings.Join(primaryIdx, ", ")))
 	}
 
-	if mErr != nil {
-		return mErr
-	}
-
-	return nil
+	return mErr.ErrorOrNil()
 }
 
 // Generate will generate the storage volumes defined by the disk configuration.
