@@ -50,16 +50,16 @@ func TestCeph_ValidateDisk(t *testing.T) {
 	})
 
 	t.Run("sparse support", func(t *testing.T) {
-		t.Run("disabled", func(t *testing.T) {
-			disk := &disks.Disk{Format: disks.DiskFormatRaw, Sparse: pointer.Of(false)}
+		t.Run("enabled", func(t *testing.T) {
+			disk := &disks.Disk{Format: disks.DiskFormatRaw, Sparse: pointer.Of(true)}
 			must.NoError(t, pool.ValidateDisk(disk))
 		})
 
-		t.Run("enabled", func(t *testing.T) {
-			disk := &disks.Disk{Format: disks.DiskFormatRaw, Sparse: pointer.Of(true)}
+		t.Run("disabled", func(t *testing.T) {
+			disk := &disks.Disk{Format: disks.DiskFormatRaw, Sparse: pointer.Of(false)}
 			err := pool.ValidateDisk(disk)
 			must.ErrorIs(t, err, disks.ErrInvalidConfiguration)
-			must.ErrorContains(t, err, "sparse cannot be enabled")
+			must.ErrorContains(t, err, "sparse cannot be disabled")
 		})
 	})
 }
