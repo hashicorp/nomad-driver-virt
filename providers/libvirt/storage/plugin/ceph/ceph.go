@@ -1,6 +1,12 @@
 // Copyright IBM Corp. 2024, 2025
 // SPDX-License-Identifier: MPL-2.0
 
+// This plugin provides some functionality that is currently lacking
+// in libvirt for Ceph backed volumes. Currently the plugin is providing:
+//
+// * volume upload support
+// * full volume copy support
+
 package main
 
 import (
@@ -100,19 +106,17 @@ func VolumeCopy(ctx context.Context, con *storage.CephConnect, pool, srcVol, dst
 
 	// Generally flattening an image is relatively fast, but may be
 	// slower depending on cluster conditions or size of the image.
-	// Spin it can be interrupted.
-	ch := make(chan struct{}, 1)
-	var fErr error
+	// Run it in a goroutine so it can be interrupted if the context
+	// completes.
+	ch := make(chan error, 1)
 	go func() {
-		if err := dst.Flatten(); err != nil {
-			fErr = fmt.Errorf("volume flatten failure: %w", err)
-		}
+		ch <- dst.Flatten()
 	}()
 
 	select {
-	case <-ch:
-		if fErr != nil {
-			return fErr
+	case err := <-ch:
+		if err != nil {
+			return fmt.Errorf("volume flatten failure: %w", err)
 		}
 	case <-ctx.Done():
 		return fmt.Errorf("volume flatten interrupted: %w", ctx.Err())
