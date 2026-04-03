@@ -849,7 +849,10 @@ func prefixError(prefix string, err error) error {
 			return err
 		}
 		for _, e := range err.Errors {
-			mErr = multierror.Append(mErr, fmt.Errorf("%s %w", prefix, e))
+			if !strings.Contains(e.Error(), prefix) {
+				e = fmt.Errorf("%s %w", prefix, e)
+			}
+			mErr = multierror.Append(mErr, e)
 		}
 		return mErr
 	default:
