@@ -6,27 +6,13 @@ package virt
 import (
 	"testing"
 
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/storage"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
-	"github.com/hashicorp/nomad/plugins/drivers"
-	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	"github.com/shoenig/test/must"
 )
-
-func Test_capabilities(t *testing.T) {
-	t.Parallel()
-
-	expectedCapabilities := drivers.Capabilities{
-		SendSignals:          false,
-		Exec:                 false,
-		DisableLogCollection: true,
-		FSIsolation:          fsisolation.Image,
-		NetIsolationModes:    []drivers.NetIsolationMode{drivers.NetIsolationModeHost},
-		MustInitiateNetwork:  false,
-		MountConfigs:         drivers.MountConfigSupportNone,
-	}
-	must.Eq(t, &expectedCapabilities, capabilities)
-}
 
 func TestConfig_Task(t *testing.T) {
 	t.Parallel()
@@ -44,7 +30,7 @@ func TestConfig_Task(t *testing.T) {
 	expectedMachine := "R2D2"
 
 	validHCL := `
-  config {
+config {
 	image = "/path/to/image/here"
 	primary_disk_size = 26000
 	cmds = ["redis"]
@@ -57,7 +43,7 @@ func TestConfig_Task(t *testing.T) {
 		arch = "arm78"
 		machine = "R2D2"
 	}
-  }
+}
 `
 
 	var tc *TaskConfig
@@ -79,32 +65,107 @@ func TestConfig_Plugin(t *testing.T) {
 
 	parser := hclutils.NewConfigParser(configSpec)
 
-	expectedDataDir := "/path/to/blah"
-	expectedImgPaths := []string{"/path/one", "/path/two"}
-	expectedURI := "qume:///user"
-	expectedUser := "test-user"
-	expectedPassword := "test-password"
+	t.Run("ok", func(t *testing.T) {
+		expected := &Config{
+			Provider: &Provider{
+				Libvirt: &libvirt.Config{
+					URI:      "qemu:///user",
+					User:     "test-user",
+					Password: "test-password",
+				},
+			},
+			ImagePaths: []string{"/path/one", "/path/two"},
+			DataDir:    "/path/to/blah",
+			StoragePools: &storage.Config{
+				Default: "test-pool",
+				Directory: map[string]storage.Directory{
+					"test-pool": {Path: "/test/pool/path"},
+				},
+				Ceph: map[string]storage.Ceph{
+					"test-ceph-pool": {
+						Pool:  "ceph-pool",
+						Hosts: []string{"localhost:6789"},
+						Authentication: storage.Authentication{
+							Username: "test-user",
+							Secret:   "test-password",
+						},
+					},
+				},
+			},
+		}
 
-	validHCL := `
-  config {
+		validHCL := `
+config {
 	data_dir = "/path/to/blah"
 	image_paths = ["/path/one", "/path/two"]
-	emulator {
-		uri = "qume:///user"
+	provider "libvirt" {
+		uri = "qemu:///user"
 		user = "test-user"
 		password = "test-password"
 	}
-  }
+	storage_pools {
+        default = "test-pool"
+
+		directory "test-pool" {
+			path = "/test/pool/path"
+		}
+		ceph "test-ceph-pool" {
+			pool = "ceph-pool"
+			hosts = ["localhost:6789"],
+			authentication {
+				username = "test-user"
+				secret = "test-password"
+			}
+		}
+	}
+}
 `
+		var result *Config
+		parser.ParseHCL(t, validHCL, &result)
+		must.Eq(t, expected, result)
+	})
 
-	var cs *Config
-	parser.ParseHCL(t, validHCL, &cs)
+	t.Run("compat", func(t *testing.T) {
+		expected := &Config{
+			Emulator: &Emulator{
+				URI:      "qemu:///user",
+				User:     "test-user",
+				Password: "test-password",
+			},
+			Provider: &Provider{
+				Libvirt: &libvirt.Config{
+					URI:      "qemu:///user",
+					User:     "test-user",
+					Password: "test-password",
+				},
+			},
+			ImagePaths: []string{"/path/one", "/path/two"},
+			DataDir:    "/path/to/blah",
+			StoragePools: &storage.Config{
+				Directory: map[string]storage.Directory{
+					"virt-sp": {Path: "/path/to/blah/virt-sp"},
+				},
+				Ceph: make(map[string]storage.Ceph),
+			},
+		}
 
-	must.SliceContainsAll(t, expectedImgPaths, cs.ImagePaths)
-	must.StrContains(t, expectedDataDir, cs.DataDir)
-	must.StrContains(t, expectedURI, cs.Emulator.URI)
-	must.StrContains(t, expectedUser, cs.Emulator.User)
-	must.StrContains(t, expectedPassword, cs.Emulator.Password)
+		validHCL := `
+config {
+	data_dir = "/path/to/blah"
+	image_paths = ["/path/one", "/path/two"]
+    emulator {
+		uri = "qemu:///user"
+		user = "test-user"
+		password = "test-password"
+    
+    }
+}
+`
+		var result *Config
+		parser.ParseHCL(t, validHCL, &result)
+		result.Compat()
+		must.Eq(t, expected, result)
+	})
 }
 
 func Test_taskConfigSpec(t *testing.T) {
@@ -117,18 +178,18 @@ func Test_taskConfigSpec(t *testing.T) {
 			name: "network interface with required",
 			inputConfig: `
 config {
-  image = "/path/to/image/here"
-  primary_disk_size = 26000
-  os {
-    arch    = "x86_64"
-    machine = "pc-i440fx-jammy"
-  }
-  network_interface {
-    bridge {
-      name  = "virbr0"
-      ports = ["ssh"]
-    }
-  }
+	image = "/path/to/image/here"
+	primary_disk_size = 26000
+	os {
+		arch    = "x86_64"
+		machine = "pc-i440fx-jammy"
+	}
+	network_interface {
+		bridge {
+			name  = "virbr0"
+			ports = ["ssh"]
+		}
+	}
 }
 `,
 			expectedOutput: TaskConfig{
@@ -138,6 +199,7 @@ config {
 					Arch:    "x86_64",
 					Machine: "pc-i440fx-jammy",
 				},
+				Disks: disks.NewDisks(),
 				NetworkInterfacesConfig: []*net.NetworkInterfaceConfig{
 					{
 						Bridge: &net.NetworkInterfaceBridgeConfig{

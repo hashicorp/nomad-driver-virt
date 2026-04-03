@@ -31,6 +31,10 @@ var (
 	validFilenamePattern = `^[^<>:"/\\|?*\x00-\x1F]+$`
 )
 
+type CloudInit interface {
+	Apply(ci *Config, path string) error
+}
+
 type Config struct {
 	VendorData VendorData
 	MetaData   MetaData

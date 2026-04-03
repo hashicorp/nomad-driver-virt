@@ -13,6 +13,9 @@ import (
 // easier, even allowing for this code to be moved into its own application if
 // desired.
 type Net interface {
+	// Init performs any initialization that may be required by the virtualization
+	// network sub-system.
+	Init() error
 
 	// Fingerprint interrogates the host system and populates the attribute
 	// mapping with relevant network information. Any errors performing this
@@ -20,13 +23,6 @@ type Net interface {
 	// explains the lack of error response. Each entry should use
 	// FingerprintAttributeKeyPrefix as a base.
 	Fingerprint(map[string]*structs.Attribute)
-
-	// Init performs any initialization work needed by the network sub-system
-	// prior to being used by the driver. This will be called when the plugin
-	// is set up by Nomad and should be expected to run multiple times during
-	// a Nomad client's lifecycle. It should therefore be idempotent. Any error
-	// returned is considered fatal to the plugin.
-	Init() error
 
 	// VMStartedBuild performs any network configuration required once the
 	// driver has successfully started a VM. Any error returned will be

@@ -5,14 +5,17 @@ package virt
 
 import (
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/storage"
+	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/hashicorp/nomad/plugins/shared/structs"
 )
 
-// Virtualizer is the interface that defins the virtualization system.
+// Provider is the interface that defins the virtualization system.
 type Virtualizer interface {
-	// Start is responsible for initialzing the virtualization
+	// Init is responsible for initialzing the virtualization
 	// provider. This is handled with a dedicated function to
 	// allow errors to be properly returned.
-	Start() error
+	Init() error
 
 	// CreateVM creates new virtual machine using the provided
 	// configuration.
@@ -24,28 +27,37 @@ type Virtualizer interface {
 	// DestroyVM destroys the named virtual machine.
 	DestroyVM(name string) error
 
-	// GetVM gets information about the named virtual machine.
-	GetVM(name string) (*vm.Info, error)
-
 	// GetInfo returns information about the virtualization provider.
 	GetInfo() (vm.VirtualizerInfo, error)
 
 	// GetNetworkInterfaces returns the network interfaces for the
-	// name virtual machine.
+	// named virtual machine.
 	GetNetworkInterfaces(name string) ([]vm.NetworkInterface, error)
 
 	// UseCloudInit informs if the provider supports cloud-init.
 	UseCloudInit() bool
+
+	// Networking returns the interface to the networking subsystem
+	Networking() (net.Net, error)
+
+	// Fingerprint returns fingerprint attributes for the provider
+	Fingerprint() (map[string]*structs.Attribute, error)
+
+	// SetupStorage prepares the configured storage pools for usage
+	SetupStorage(config *storage.Config) error
+
+	// Storage returns the storage interface
+	Storage() storage.Storage
+
+	// GenerateMountCommands generates the commands required to mount
+	// the provided mount configurations in the virtual machine.
+	GenerateMountCommands([]*vm.MountFileConfig) ([]string, error)
+
+	VMGetter
 }
 
 // VMGetter is a slim interface for retrieving information about virtual machines.
 type VMGetter interface {
 	// GetVM gets information about the named virtual machine.
 	GetVM(name string) (*vm.Info, error)
-}
-
-// ImageHandler is the interface handling image files directly.
-type ImageHandler interface {
-	GetImageFormat(basePath string) (string, error)
-	CreateThinCopy(basePath string, destination string, sizeM int64) error
 }

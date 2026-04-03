@@ -4,12 +4,21 @@
 package virt
 
 import (
+	"path/filepath"
 	"time"
 
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
+	"github.com/hashicorp/nomad-driver-virt/storage"
+	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
-	"github.com/hashicorp/nomad/plugins/drivers"
-	"github.com/hashicorp/nomad/plugins/drivers/fsisolation"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
+)
+
+const (
+	// These were the original default path and pool name used within
+	// the libvirt provider.
+	compatDefaultStoragePath = "/var/lib"
+	compatDefaultStoragePool = "virt-sp"
 )
 
 var (
@@ -22,8 +31,12 @@ var (
 			"user":     hclspec.NewAttr("user", "string", false),
 			"password": hclspec.NewAttr("password", "string", false),
 		})),
-		"data_dir":     hclspec.NewAttr("data_dir", "string", false),
-		"image_paths": hclspec.NewAttr("image_paths", "list(string)", false),
+		"provider": hclspec.NewBlock("provider", false, hclspec.NewObject(map[string]*hclspec.Spec{
+			"libvirt": libvirt.ConfigSpec(),
+		})),
+		"data_dir":      hclspec.NewAttr("data_dir", "string", false),
+		"image_paths":   hclspec.NewAttr("image_paths", "list(string)", false),
+		"storage_pools": hclspec.NewBlock("storage_pools", false, storage.ConfigSpec()),
 	})
 
 	// taskConfigSpec is the specification of the plugin's configuration for
@@ -32,9 +45,10 @@ var (
 	// when a job is submitted.
 	taskConfigSpec = hclspec.NewObject(map[string]*hclspec.Spec{
 		"network_interface":               net.NetworkInterfaceHCLSpec(),
+		"disk":                            disks.ConfigSpec(),
 		"use_thin_copy":                   hclspec.NewAttr("use_thin_copy", "bool", false),
-		"primary_disk_size":               hclspec.NewAttr("primary_disk_size", "number", true),
-		"image":                           hclspec.NewAttr("image", "string", true),
+		"primary_disk_size":               hclspec.NewAttr("primary_disk_size", "number", false),
+		"image":                           hclspec.NewAttr("image", "string", false),
 		"hostname":                        hclspec.NewAttr("hostname", "string", false),
 		"user_data":                       hclspec.NewAttr("user_data", "string", false),
 		"default_user_authorized_ssh_key": hclspec.NewAttr("default_user_authorized_ssh_key", "string", false),
@@ -45,34 +59,15 @@ var (
 			"machine": hclspec.NewAttr("machine", "string", false),
 		})),
 	})
-
-	// capabilities indicates what optional features this driver supports
-	// this should be set according to the target run time.
-	capabilities = &drivers.Capabilities{
-		// The plugin's capabilities signal Nomad which extra functionalities
-		// are supported. For a list of available options check the docs page:
-		// https://godoc.org/github.com/hashicorp/nomad/plugins/drivers#Capabilities
-		SendSignals:          false,
-		Exec:                 false,
-		DisableLogCollection: true,
-		FSIsolation:          fsisolation.Image,
-
-		// NetIsolationModes details that this driver only supports the network
-		// isolation of host.
-		NetIsolationModes: []drivers.NetIsolationMode{
-			drivers.NetIsolationModeHost,
-		},
-
-		// MustInitiateNetwork is set to false, indicating the driver does not
-		// implement and thus satisfy the Nomad drivers.DriverNetworkManager
-		// interface.
-		MustInitiateNetwork: false,
-
-		// MountConfigs is currently not supported, although the plumbing is
-		// ready to handle this.
-		MountConfigs: drivers.MountConfigSupportNone,
-	}
 )
+
+func ConfigSpec() *hclspec.Spec {
+	return configSpec
+}
+
+func TaskConfigSpec() *hclspec.Spec {
+	return taskConfigSpec
+}
 
 // TaskConfig contains configuration information for a task that runs within
 // this plugin.
@@ -87,6 +82,7 @@ type TaskConfig struct {
 	DefaultUserPassword string         `codec:"default_user_password"`
 	UseThinCopy         bool           `codec:"use_thin_copy"`
 	PrimaryDiskSize     uint64         `codec:"primary_disk_size"`
+	Disks               disks.Disks    `codec:"disk"`
 	// The list of network interfaces that should be added to the VM.
 	net.NetworkInterfacesConfig `codec:"network_interface"`
 }
@@ -104,8 +100,59 @@ type Emulator struct {
 
 // Config contains configuration information for the plugin
 type Config struct {
-	Emulator Emulator `codec:"emulator"`
-	DataDir  string   `codec:"data_dir"`
-	// ImagePaths is an allow-list of paths qemu is allowed to load an image from
-	ImagePaths []string `codec:"image_paths"`
+	Emulator     *Emulator       `codec:"emulator"`
+	Provider     *Provider       `codec:"provider"`
+	DataDir      string          `codec:"data_dir"`
+	ImagePaths   []string        `codec:"image_paths"` // allow-list of host paths to load
+	StoragePools *storage.Config `codec:"storage_pools"`
+}
+
+func (c *Config) Compat() {
+	if c.Emulator != nil {
+		if c.Provider == nil {
+			c.Provider = &Provider{Libvirt: &libvirt.Config{}}
+		}
+
+		if c.Provider.Libvirt == nil {
+			c.Provider.Libvirt = &libvirt.Config{}
+		}
+
+		if c.Provider.Libvirt.URI == "" {
+			c.Provider.Libvirt.URI = c.Emulator.URI
+		}
+
+		if c.Provider.Libvirt.User == "" {
+			c.Provider.Libvirt.User = c.Emulator.User
+		}
+
+		if c.Provider.Libvirt.Password == "" {
+			c.Provider.Libvirt.Password = c.Emulator.Password
+		}
+	}
+
+	// If the deprecated DataDir value is set, use it to create the compat pool.
+	if c.DataDir != "" {
+		if c.StoragePools == nil {
+			c.StoragePools = storage.NewConfig()
+		}
+
+		c.StoragePools.Directory[compatDefaultStoragePool] = storage.Directory{
+			Path: filepath.Join(c.DataDir, compatDefaultStoragePool),
+		}
+	}
+
+	// If no storage pools are defined, add in the compat pool.
+	if c.StoragePools == nil || (len(c.StoragePools.Ceph) == 0 && len(c.StoragePools.Directory) == 0) {
+		if c.StoragePools == nil {
+			c.StoragePools = storage.NewConfig()
+		}
+		c.StoragePools.Directory[compatDefaultStoragePool] = storage.Directory{
+			Path: filepath.Join(compatDefaultStoragePath, compatDefaultStoragePool),
+		}
+	}
+}
+
+// Provider contains provider specific configuration
+type Provider struct {
+	Libvirt *libvirt.Config `codec:"libvirt"`
 }

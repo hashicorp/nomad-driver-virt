@@ -8,20 +8,19 @@ env:
 jobs:
   get-go-version:
     name: "get Go toolchain version"
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       go-version: ${{ steps.get-go-version.outputs.go-version }}
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-      - name: Determine Go version
+      - uses: hashicorp/setup-golang@v3
         id: get-go-version
-        run: |
-          echo "Building with Go $(cat .go-version)"
-          echo "go-version=$(cat .go-version)" >> "$GITHUB_OUTPUT"
+        with:
+          version-file: go.mod
 
   get-product-version:
     name: "get product version"
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       product-version: ${{ steps.get-product-version.outputs.product-version }}
     steps:
@@ -35,7 +34,7 @@ jobs:
   generate-metadata-file:
     name: "generate metadata file"
     needs: get-product-version
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
       filepath: ${{ steps.generate-metadata-file.outputs.filepath }}
     steps:
@@ -66,17 +65,20 @@ jobs:
         include:
           - goarch: "amd64"
             goos: linux
-            runner_label: "ubuntu-22.04-x64"
+            runner_label: "ubuntu-24.04"
           - goarch: "arm64"
             goos: linux
-            runner_label: "ubuntu-22.04-arm"
+            runner_label: "ubuntu-24.04-arm"
       fail-fast: false
 
     name: "build Go ${{ needs.get-go-version.outputs.go-version }} ${{ matrix.goos }} ${{ matrix.goarch }}"
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: hashicorp/setup-golang@v3
+        with:
+          version-file: go.mod
       - uses: ./.github/actions/install-libvirt-dev
+      - uses: ./.github/actions/install-librados-dev        
 
       - name: "Compile binary"
         env:
