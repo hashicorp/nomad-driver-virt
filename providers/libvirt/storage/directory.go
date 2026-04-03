@@ -75,14 +75,10 @@ func (d *directory) ValidateDisk(disk *disks.Disk) error {
 	// Disk chaining is only supported with qcow2 images.
 	if disk.Format != disks.DiskFormatQcow2 && disk.Chained {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - format must be qcow2 if chained enabled for directory volumes", disks.ErrInvalidConfiguration))
+			fmt.Errorf("%w: format must be qcow2 for chained directory volumes", disks.ErrInvalidConfiguration))
 	}
 
-	if mErr != nil {
-		return mErr
-	}
-
-	return nil
+	return mErr.ErrorOrNil()
 }
 
 // Type returns the type of the storage pool.
