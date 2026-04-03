@@ -18,6 +18,7 @@ type writer struct {
 	dst io.Writer
 }
 
+// Write writes the given data unless the context is complete.
 func (w *writer) Write(p []byte) (int, error) {
 	if w.ctx.Err() != nil {
 		return 0, w.ctx.Err()
@@ -33,10 +34,10 @@ type writerTo struct {
 	dst io.WriterTo
 }
 
+// WriteTo wraps the provided io.Writer into a context aware Writer.
 func (w *writerTo) WriteTo(wrt io.Writer) (int64, error) {
-	if w.ctx.Err() != nil {
-		return 0, w.ctx.Err()
+	if _, ok := wrt.(*writer); !ok {
+		wrt = NewWriter(w.ctx, wrt)
 	}
-
 	return w.dst.WriteTo(wrt)
 }
