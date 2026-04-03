@@ -203,9 +203,7 @@ func (c *ceph) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 	// If the disk should be chained, libvirt doesn't support a volume defining a
 	// backing store. Instead, cloning a volume will create a chained volume, so
 	// disable the option before proceeding.
-	if opts.Chained {
-		opts.Chained = false
-	}
+	opts.Chained = false
 
 	// Ceph volumes are always sparsely populated, so force sparse.
 	opts.Sparse = true
