@@ -869,9 +869,6 @@ func convertImage(h image_tools.ImageHandler, src, srcFmt, dstFmt string) (strin
 		return "", err
 	}
 	f.Close()
-	if err := os.Remove(f.Name()); err != nil {
-		return "", err
-	}
 
 	if err := h.ConvertImage(src, srcFmt, f.Name(), dstFmt); err != nil {
 		return "", err
