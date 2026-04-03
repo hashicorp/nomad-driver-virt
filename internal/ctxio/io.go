@@ -22,6 +22,7 @@ func NewReader(ctx context.Context, r io.Reader) *reader {
 }
 
 // NewReaderFrom returns a context aware io.ReaderFrom.
+// NOTE: nested reader is included for io.Copy support.
 func NewReaderFrom(ctx context.Context, r ReaderFrom) *readerFrom {
 	return &readerFrom{
 		reader: &reader{
@@ -42,6 +43,7 @@ func NewWriter(ctx context.Context, w io.Writer) *writer {
 }
 
 // NewWriterTo returns a context aware io.WriterTo.
+// NOTE: nested writer is included for io.Copy support.
 func NewWriterTo(ctx context.Context, w WriterTo) *writerTo {
 	return &writerTo{
 		writer: &writer{
