@@ -18,6 +18,7 @@ type reader struct {
 	src io.Reader
 }
 
+// Read reads data unless the context is complete.
 func (r *reader) Read(p []byte) (int, error) {
 	if r.ctx.Err() != nil {
 		return 0, r.ctx.Err()
@@ -33,10 +34,10 @@ type readerFrom struct {
 	src io.ReaderFrom
 }
 
+// ReadFrom wraps the provided io.Reader into a context aware Reader.
 func (r *readerFrom) ReadFrom(rd io.Reader) (int64, error) {
-	if r.ctx.Err() != nil {
-		return 0, r.ctx.Err()
+	if _, ok := rd.(*reader); !ok {
+		rd = NewReader(r.ctx, rd)
 	}
-
 	return r.src.ReadFrom(rd)
 }
