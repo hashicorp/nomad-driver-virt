@@ -25,6 +25,7 @@ type StaticStoragePool struct {
 	GetNameResult                 string
 	GetXMLDescResult              string
 	IsActiveResult                bool
+	ListStorageVolumesResult      []string
 	LookupStorageVolByNameResult  shims.StorageVol
 	StorageVolCreateXMLResult     shims.StorageVol
 	StorageVolCreateXMLFromResult shims.StorageVol
@@ -101,6 +102,18 @@ func (s *StaticStoragePool) IsActive() (bool, error) {
 	s.incrCount()
 
 	return s.IsActiveResult, nil
+}
+
+func (s *StaticStoragePool) ListStorageVolumes() ([]string, error) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	if s.ListStorageVolumesResult != nil {
+		return s.ListStorageVolumesResult, nil
+	}
+
+	return make([]string, 0), nil
 }
 
 func (s *StaticStoragePool) LookupStorageVolByName(string) (shims.StorageVol, error) {
@@ -190,6 +203,11 @@ type SetAutostart struct {
 	Err    error
 }
 
+type ListStorageVolumes struct {
+	Result []string
+	Err    error
+}
+
 type LookupStorageVolByName struct {
 	Name   string
 	Result shims.StorageVol
@@ -221,6 +239,7 @@ type MockStoragePool struct {
 	isActive                []IsActive
 	refresh                 []Refresh
 	setAutostart            []SetAutostart
+	listStorageVolumes      []ListStorageVolumes
 	lookupStorageVolByName  []LookupStorageVolByName
 	storageVolCreateXml     []StorageVolCreateXML
 	storageVolCreateXmlFrom []StorageVolCreateXMLFrom
@@ -241,6 +260,8 @@ func (m *MockStoragePool) Expect(calls ...any) *MockStoragePool {
 			m.ExpectGetName(c)
 		case IsActive:
 			m.ExpectIsActive(c)
+		case ListStorageVolumes:
+			m.ExpectListStorageVolumes(c)
 		case LookupStorageVolByName:
 			m.ExpectLookupStorageVolByName(c)
 		case Refresh:
@@ -296,6 +317,14 @@ func (m *MockStoragePool) ExpectIsActive(c IsActive) *MockStoragePool {
 	defer m.m.Unlock()
 
 	m.isActive = append(m.isActive, c)
+	return m
+}
+
+func (m *MockStoragePool) ExpectListStorageVolumes(c ListStorageVolumes) *MockStoragePool {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.listStorageVolumes = append(m.listStorageVolumes, c)
 	return m
 }
 
@@ -415,6 +444,20 @@ func (m *MockStoragePool) IsActive() (bool, error) {
 	return call.Result, call.Err
 }
 
+func (m *MockStoragePool) ListStorageVolumes() ([]string, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.listStorageVolumes,
+		must.Sprint("unexpected call to ListStorageVolumes"))
+	call := m.listStorageVolumes[0]
+	m.listStorageVolumes = m.listStorageVolumes[1:]
+
+	return call.Result, call.Err
+}
+
 func (m *MockStoragePool) LookupStorageVolByName(name string) (shims.StorageVol, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
@@ -517,6 +560,8 @@ func (m *MockStoragePool) AssertExpectations() {
 		must.Sprintf("Refresh expecting %d more invocations", len(m.refresh)))
 	must.SliceEmpty(m.t, m.setAutostart,
 		must.Sprintf("SetAutostart expecting %d more invocations", len(m.setAutostart)))
+	must.SliceEmpty(m.t, m.listStorageVolumes,
+		must.Sprintf("ListStorageVolumes expecting %d more invocations", len(m.listStorageVolumes)))
 	must.SliceEmpty(m.t, m.lookupStorageVolByName,
 		must.Sprintf("LookupStorageVolByName expecting %d more invocations", len(m.lookupStorageVolByName)))
 	must.SliceEmpty(m.t, m.storageVolCreateXml,

@@ -11,6 +11,8 @@ type Pool interface {
 	GetVolume(name string) (*Volume, error)
 	// DeleteVolume deletes a volume from the storage pool.
 	DeleteVolume(name string) error
+	// ListVolumes returns the name of the volumes in the pool.
+	ListVolumes() ([]string, error)
 	// Name returns the name of the storage pool.
 	Name() string
 	// Type returns the type of the storage pool.

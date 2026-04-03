@@ -19,6 +19,8 @@ type Storage interface {
 	DefaultPool() (Pool, error)
 	// GetPool returns the requested storage pool by name
 	GetPool(name string) (Pool, error)
+	// ListPools returns a list of available storage pool names
+	ListPools() []string
 	// ImageHandler returns an image handler
 	ImageHandler() image_tools.ImageHandler
 	// DefaultDiskDriver provides the name of the default disk driver

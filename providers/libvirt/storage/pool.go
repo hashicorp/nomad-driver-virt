@@ -51,6 +51,17 @@ func (p *pool) GetVolume(name string) (*storage.Volume, error) {
 	return findVolume(pool, name)
 }
 
+// ListVolumes returns the volume names in the pool.
+func (p *pool) ListVolumes() ([]string, error) {
+	pool, err := p.l.FindStoragePool(p.name)
+	if err != nil {
+		return nil, err
+	}
+	defer pool.Free()
+
+	return pool.ListStorageVolumes()
+}
+
 // AddVolume adds a new volume to the storage pool.
 // implements storage.Pool
 func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {

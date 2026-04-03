@@ -32,6 +32,7 @@ type StaticStorage struct {
 	DefaultDiskDriverResult  string
 	GenerateDeviceNameResult string
 	FingerprintResult        map[string]*structs.Attribute
+	ListPoolsResult          []string
 	counts                   map[string]int
 	m                        sync.Mutex
 	o                        sync.Once
@@ -76,6 +77,18 @@ func (s *StaticStorage) DefaultPool() (storage.Pool, error) {
 	}
 
 	return s.DefaultPoolResult, nil
+}
+
+func (s *StaticStorage) ListPools() []string {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	if s.ListPoolsResult != nil {
+		return s.ListPoolsResult
+	}
+
+	return make([]string, 0)
 }
 
 func (s *StaticStorage) GetPool(string) (storage.Pool, error) {
@@ -141,6 +154,10 @@ type GetPool struct {
 	Err    error
 }
 
+type ListPools struct {
+	Result []string
+}
+
 type ImageHandler struct {
 	Result image_tools.ImageHandler
 }
@@ -169,6 +186,7 @@ type MockStorage struct {
 	defaultDiskDriver  []DefaultDiskDriver
 	generateDeviceName []GenerateDeviceName
 	fingerprint        []Fingerprint
+	listPools          []ListPools
 	m                  sync.Mutex
 }
 
@@ -187,6 +205,8 @@ func (m *MockStorage) Expect(calls ...any) *MockStorage {
 			m.ExpectDefaultPool(c)
 		case Fingerprint:
 			m.ExpectFingerprint(c)
+		case ListPools:
+			m.ExpectListPools(c)
 		default:
 			m.t.Fatalf("unsupported type for mock expectation: %T", c)
 		}
@@ -200,6 +220,14 @@ func (m *MockStorage) ExpectFingerprint(c Fingerprint) *MockStorage {
 	defer m.m.Unlock()
 
 	m.fingerprint = append(m.fingerprint, c)
+	return m
+}
+
+func (m *MockStorage) ExpectListPools(c ListPools) *MockStorage {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.listPools = append(m.listPools, c)
 	return m
 }
 
@@ -340,6 +368,20 @@ func (m *MockStorage) DefaultDiskDriver() string {
 	return call.Result
 }
 
+func (m *MockStorage) ListPools() []string {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.listPools,
+		must.Sprint("Unexpected call to ListPools"))
+	call := m.listPools[0]
+	m.listPools = m.listPools[1:]
+
+	return call.Result
+}
+
 func (m *MockStorage) GenerateDeviceName(busType string, existingDevices []string) string {
 	m.m.Lock()
 	defer m.m.Unlock()
@@ -386,4 +428,6 @@ func (m *MockStorage) AssertExpectations() {
 		must.Sprintf("GenerateDeviceName expecting %d more invocations", len(m.generateDeviceName)))
 	must.SliceEmpty(m.t, m.fingerprint,
 		must.Sprintf("Fingerprint expecting %d more invocations", len(m.fingerprint)))
+	must.SliceEmpty(m.t, m.listPools,
+		must.Sprintf("ListPools expecting %d more invocations", len(m.listPools)))
 }
