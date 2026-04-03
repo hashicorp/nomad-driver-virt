@@ -18,7 +18,7 @@ require (
 	github.com/hashicorp/go-set v0.1.14
 	github.com/hashicorp/nomad v1.11.2
 	github.com/shoenig/test v1.12.2
-	libvirt.org/go/libvirt v1.11010.0
+	libvirt.org/go/libvirt v1.12002.0
 	libvirt.org/go/libvirtxml v1.11010.0
 )
 
