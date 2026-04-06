@@ -5,6 +5,7 @@ package plugin
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -712,6 +713,153 @@ func TestVirtDriver(t *testing.T) {
 		must.StrContains(t, task.ID, ts.ID)
 		must.Eq(t, 1, ts.ExitResult.ExitCode)
 		must.Eq(t, "exited", ts.State)
+	})
+
+	t.Run("start fail cleanup", func(t *testing.T) {
+		testErr := errors.New("testing error")
+
+		dir := t.TempDir()
+		virtcfg := testVirtTaskConfig(t, filepath.Join(dir, "images"))
+		task := testTaskConfig()
+		must.NoError(t, task.EncodeConcreteDriverConfig(virtcfg))
+		vmName := vmNameFromTaskID(task.ID)
+
+		// Create all the needed mocks
+		ih := &mock_image_tools.StaticImageHandler{GetImageFormatResult: "tif"}
+		st := mock_storage.NewMockStorage(t)
+		defer st.AssertExpectations()
+		pl := mock_storage.NewMockPool(t)
+		defer pl.AssertExpectations()
+		vt := mock_virt.NewMock(t)
+		defer vt.AssertExpectations()
+		pv := mock_providers.NewStatic(vt)
+		ci := mock_cloudinit.NewStaticCloudInit()
+
+		driverCfg := driverConfig(dir)
+		// Load initialization expectations
+		vt.Expect(
+			mock_virt.Init{},
+			mock_virt.SetupStorage{Config: driverCfg.StoragePools},
+			mock_virt.Networking{Result: mock_virt_net.NewStatic()},
+			mock_virt.GenerateMountCommands{
+				Result: []string{
+					"mkdir -p /alloc",
+					"mountpoint -q /alloc || mount -t 9p -o trans=virtio allocDir /alloc",
+					"mkdir -p /local",
+					"mountpoint -q /local || mount -t 9p -o trans=virtio localDir /local",
+					"mkdir -p /secrets",
+					"mountpoint -q /secrets || mount -t 9p -o trans=virtio secretsDir /secrets",
+				},
+			},
+		)
+
+		// Build the test driver and create the alloc directory
+		driver := testHarness(t, driverCfg, pv, ci, task, 5*time.Second)
+
+		// Set all the expectations for the mocks
+		st.Expect(
+			mock_storage.ImageHandler{Result: ih},
+			mock_storage.DefaultPool{Result: pl},
+			mock_storage.DefaultPool{Result: pl},
+			mock_storage.DefaultPool{Result: pl},
+			mock_storage.GenerateDeviceName{BusType: "virtio", ExistingDevices: []string{}, Result: "sda"},
+			mock_storage.DefaultDiskDriver{Result: "test-driver"},
+			mock_storage.GetPool{Name: "default-pool", Result: pl},
+		)
+
+		vt.Expect(
+			mock_virt.UseCloudInit{Result: false},
+			mock_virt.Storage{Result: st},
+			mock_virt.Storage{Result: st},
+			mock_virt.Storage{Result: st},
+			mock_virt.Networking{Result: mock_virt_net.NewStatic()},
+			mock_virt.CreateVM{
+				Config: &vm.Config{
+					RemoveConfigFiles: true,
+					Name:              vmName,
+					Memory:            6000,
+					CPUset:            "1,2,3",
+					CPUs:              3,
+					OsVariant:         &vm.OSVariant{Arch: testOsArch, Machine: testOsMachine},
+					HostName:          "nomad-" + vmName,
+					Mounts: []vm.MountFileConfig{
+						{
+							Source:      filepath.Join(task.AllocDir, "alloc"),
+							Destination: "/alloc",
+							ReadOnly:    true,
+							Tag:         "allocDir",
+						},
+						{
+							Source:      filepath.Join(task.AllocDir, "local"),
+							Destination: "/local",
+							ReadOnly:    true,
+							Tag:         "localDir",
+						},
+						{
+							Source:      filepath.Join(task.AllocDir, "secrets"),
+							Destination: "/secrets",
+							ReadOnly:    true,
+							Tag:         "secretsDir",
+						},
+					},
+					Files: []vm.File{
+						{
+							Path:        "/etc/profile.d/virt.sh",
+							Permissions: "777",
+							Encoding:    "b64",
+						},
+					},
+					SSHKey:   "ssh-ed666 randomkey",
+					Password: "password",
+					CMDs:     []string{"cmd arg arg", "cmd arg arg"},
+					BOOTCMDs: []string{
+						"mkdir -p /alloc",
+						"mountpoint -q /alloc || mount -t 9p -o trans=virtio allocDir /alloc",
+						"mkdir -p /local",
+						"mountpoint -q /local || mount -t 9p -o trans=virtio localDir /local",
+						"mkdir -p /secrets",
+						"mountpoint -q /secrets || mount -t 9p -o trans=virtio secretsDir /secrets",
+					},
+					CIUserData: "/path/to/user/data",
+					Volumes: []storage.Volume{
+						{
+							Pool:       "default-pool",
+							Name:       vmName + "_sda.img",
+							Kind:       "disk",
+							Driver:     "test-driver",
+							Format:     "tif",
+							DeviceName: "sda",
+							BusType:    "virtio",
+							Primary:    true,
+						},
+					},
+				},
+				Err: testErr,
+			},
+			mock_virt.Storage{Result: st},
+		)
+
+		pl.Expect(
+			mock_storage.DefaultImageFormat{Result: "tif"},
+			mock_storage.AddVolume{
+				Name: vmName + "_sda.img",
+				Opts: storage.Options{
+					Size: 50000000,
+					Target: storage.Target{
+						Format: "tif",
+					},
+					Source: storage.Source{
+						Path: virtcfg.Disks[0].Source.Image,
+					},
+				},
+				Result: &storage.Volume{Pool: "default-pool", Name: vmName + "_sda.img"},
+			},
+			mock_storage.DeleteVolume{Name: vmName + "_sda.img"},
+		)
+
+		// start the task
+		_, _, err := driver.StartTask(task)
+		must.ErrorContains(t, err, testErr.Error())
 	})
 }
 

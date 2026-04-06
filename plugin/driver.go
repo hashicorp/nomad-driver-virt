@@ -16,6 +16,7 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers"
+	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt"
 	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
@@ -622,6 +623,12 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 
 	// And set the updated disks into the config
 	dc.Volumes = vdisks.Volumes()
+	// If the task fails to start, remove the volumes.
+	defer func() {
+		if err != nil {
+			d.volumeCleanup(virtualizer.Storage(), dc.Volumes)
+		}
+	}()
 
 	networking, err := virtualizer.Networking()
 	if err != nil {
@@ -760,4 +767,20 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 	d.tasks.Set(handle.Config.ID, h)
 
 	return nil
+}
+
+// volumeCleanup is a helper used to cleanup storage volumes when a task
+// fails to start.
+func (d *VirtDriverPlugin) volumeCleanup(s storage.Storage, vols []storage.Volume) {
+	for _, v := range vols {
+		p, err := s.GetPool(v.Pool)
+		if err != nil {
+			d.logger.Error("could not get pool for volume cleanup", "pool", v.Pool, "volume", v.Name, "error", err)
+			continue
+		}
+
+		if err := p.DeleteVolume(v.Name); err != nil {
+			d.logger.Error("volume cleanup failure", "pool", v.Pool, "volume", v.Name, "error", err)
+		}
+	}
 }
