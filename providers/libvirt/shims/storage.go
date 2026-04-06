@@ -41,6 +41,12 @@ type StoragePool interface {
 	// https://libvirt.org/html/libvirt-libvirt-storage.html#virStoragePoolIsActive
 	IsActive() (bool, error)
 
+	// ListStorageVolumes
+	//
+	// Also see:
+	// https://libvirt.org/html/libvirt-libvirt-storage.html#virStoragePoolListVolumes
+	ListStorageVolumes() ([]string, error)
+
 	// LookupStorageVolByName returns a storage volume based on its name within a pool.
 	//
 	// Also see:
@@ -195,6 +201,10 @@ func (l *libvirtStoragePool) GetXMLDesc(flags libvirt.StorageXMLFlags) (string, 
 
 func (l *libvirtStoragePool) IsActive() (bool, error) {
 	return l.pool.IsActive()
+}
+
+func (l *libvirtStoragePool) ListStorageVolumes() ([]string, error) {
+	return l.pool.ListStorageVolumes()
 }
 
 func (l *libvirtStoragePool) LookupStorageVolByName(name string) (StorageVol, error) {

@@ -235,6 +235,26 @@ func TestStorage_New(t *testing.T) {
 	})
 }
 
+func TestStorage_ListPools(t *testing.T) {
+	t.Run("multiple pools", func(t *testing.T) {
+		l := mock_libvirt.NewStaticLibvirt()
+		s, err := New(t.Context(), hclog.NewNullLogger(), l, mkconfig(t.TempDir()))
+		must.NoError(t, err)
+
+		must.Eq(t, []string{"aux-pool", "main-pool"}, s.ListPools())
+	})
+
+	t.Run("single pool", func(t *testing.T) {
+		l := mock_libvirt.NewStaticLibvirt()
+		config := mkconfig(t.TempDir())
+		delete(config.Directory, "aux-pool")
+		s, err := New(t.Context(), hclog.NewNullLogger(), l, config)
+		must.NoError(t, err)
+
+		must.Eq(t, []string{"main-pool"}, s.ListPools())
+	})
+}
+
 func TestStorage_Fingerprint(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		l := mock_libvirt.NewStaticLibvirt()

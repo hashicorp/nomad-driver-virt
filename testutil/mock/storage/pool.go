@@ -26,6 +26,7 @@ type StaticPool struct {
 	NameResult               string
 	TypeResult               string
 	DefaultImageFormatResult string
+	ListVolumesResult        []string
 
 	counts map[string]int
 	m      sync.Mutex
@@ -59,6 +60,18 @@ func (s *StaticPool) CallCount(fnName string) int {
 	}
 
 	return s.counts[fnName]
+}
+
+func (s *StaticPool) ListVolumes() ([]string, error) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	if s.ListVolumesResult != nil {
+		return s.ListVolumesResult, nil
+	}
+
+	return make([]string, 0), nil
 }
 
 func (s *StaticPool) AddVolume(string, storage.Options) (*storage.Volume, error) {
@@ -152,6 +165,11 @@ type Type struct {
 	Result string
 }
 
+type ListVolumes struct {
+	Result []string
+	Err    error
+}
+
 type MockPool struct {
 	t must.T
 
@@ -161,6 +179,7 @@ type MockPool struct {
 	deleteVolume       []DeleteVolume
 	name               []Name
 	types              []Type
+	listVolumes        []ListVolumes
 	m                  sync.Mutex
 }
 
@@ -179,11 +198,21 @@ func (m *MockPool) Expect(calls ...any) *MockPool {
 			m.ExpectName(c)
 		case Type:
 			m.ExpectType(c)
+		case ListVolumes:
+			m.ExpectListVolumes(c)
 		default:
 			m.t.Fatalf("unsupported type for mock expectation: %T", c)
 		}
 	}
 
+	return m
+}
+
+func (m *MockPool) ExpectListVolumes(c ListVolumes) *MockPool {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.listVolumes = append(m.listVolumes, c)
 	return m
 }
 
@@ -233,6 +262,20 @@ func (m *MockPool) ExpectName(c Name) *MockPool {
 
 	m.name = append(m.name, c)
 	return m
+}
+
+func (m *MockPool) ListVolumes() ([]string, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.listVolumes,
+		must.Sprint("Unexpected call to ListVolumes"))
+	call := m.listVolumes[0]
+	m.listVolumes = m.listVolumes[1:]
+
+	return call.Result, call.Err
 }
 
 func (m *MockPool) AddVolume(name string, opts storage.Options) (*storage.Volume, error) {
@@ -363,5 +406,6 @@ func (m *MockPool) AssertExpectations() {
 		must.Sprintf("DefaultImageFormat expecting %d more invocations", len(m.defaultImageFormat)))
 	must.SliceEmpty(m.t, m.types,
 		must.Sprintf("Type expecting %d more invocations", len(m.types)))
-
+	must.SliceEmpty(m.t, m.listVolumes,
+		must.Sprintf("ListVolumes expecting %d more invocations", len(m.listVolumes)))
 }

@@ -35,7 +35,7 @@ var (
 	ErrPoolNotFound                = fmt.Errorf("pool %w", vm.ErrNotFound)
 )
 
-// This interface defines what functions are needed from the provider.
+// This interface defines what functions are needed from the libvirt provider.
 type libvirtStorage interface {
 	CreateStoragePool(def *libvirtxml.StoragePool) (shims.StoragePool, error)
 	FindStoragePool(name string) (shims.StoragePool, error)
@@ -212,6 +212,12 @@ func (s *Storage) Fingerprint(attrs map[string]*structs.Attribute) {
 			attrs[poolKey+".default"] = structs.NewBoolAttribute(true)
 		}
 	}
+}
+
+// ListPools returns the name of available storage pools.
+// implements storage.Storage
+func (s *Storage) ListPools() []string {
+	return slices.Sorted(maps.Keys(s.pools))
 }
 
 // VolumeToDisk will convert a storage volume into a domain disk.
