@@ -1,7 +1,8 @@
 Nomad Virt Driver
 ==================
-The virt driver task plugin expands the types of workloads Nomad can run to add virtual machines.
-Leveraging on the power of Libvirt, the Virt driver allows the user to define virtual machine tasks using the Nomad job spec.
+The virt driver task plugin expands the types of workloads Nomad can run to add virtual machines. Currently
+leveraging the power of libvirt, the virt drivers allows users to define virtual machine tasks using the 
+Nomad job spec.
 
 > **_IMPORTANT:_** This plugin is in tech preview, still under active development, there might be breaking changes in future releases
 
@@ -9,20 +10,18 @@ Leveraging on the power of Libvirt, the Virt driver allows the user to define vi
 
 ## Features
 
-* Use the job's `task.config` to define the cloud image for your virtual machine
-* Start/stop virtual machines
-* [Nomad runtime environment](https://www.nomadproject.io/docs/runtime/environment.html) is populated
+* Use the job's `task.config` to define the virtual machine (VM).
+* Start/stop virtual machines.
+* [Nomad runtime environment](https://www.nomadproject.io/docs/runtime/environment.html) is populated.
 * Use Nomad alloc data in the virtual machine.
-* Publish ports
-* Monitor the memory consumption
-* Monitor CPU usage
-* Task config cpu value is used to populate virtual machine CpuShares
+* Publish ports.
+* Monitor the memory consumption.
+* Monitor CPU usage.
+* Task config cpu value is used to populate virtual machine CpuShares.
 * The tasks `task`, `alloc`, and `secrets` directories are mounted within the VM at the filesystem
-  root. These are currently mounted read-only (RO), so VMs do not write excessive amounts of data
-  which results in the host filesystem filling. Once correct guardrails are in place, this
-  restriction will be lifted. Please see the
-  [filesystem concepts page](https://developer.hashicorp.com/nomad/docs/concepts/filesystem) for
-  more detail about an allocations working directory.
+  root. These are currently mounted read-only to prevent excessive amounts of data being written to 
+  the host filesystem. Please see the [filesystem concepts page](https://developer.hashicorp.com/nomad/docs/concepts/filesystem) 
+  for more detail about an allocations working directory.
 
 ## Ubuntu Example job
 
@@ -52,11 +51,15 @@ job "python-server" {
       }
 
       config {
-        image                 = "local/focal-server-cloudimg-amd64.img"
-        primary_disk_size     = 10000
-        use_thin_copy         = true
         default_user_password = "password"
         cmds                  = ["python3 -m http.server 8000"]
+
+        disk {
+          size   = "10GiB"
+          source {
+            image  = "local/focal-server-cloudimg-amd64.img"
+          }
+        }
 
         network_interface {
           bridge {
@@ -95,12 +98,24 @@ $ virsh list
 
 ## Building The Driver from source
 
-In order to be able to build the binary, the `libvirt-dev` module is necessary,
-use any of the package managers to get it:
+In order to build the plugin binary some development libraries are required:
 
- ```
-sudo apt install libvirt-dev
+* libvirt
+* librbd
+
+For Debian/Ubuntu based systems:
+
+``` shell-session
+apt install libvirt-dev librbd-dev
 ```
+
+For RHEL based systems:
+
+``` shellsession
+dnf install libvirt-devel librbd-devel
+```
+
+To build the plugin:
 
 ```shell-session
 git clone git@github.com:hashicorp/nomad-driver-virt
@@ -130,7 +145,7 @@ lsmod | grep -E '(kvm_intel|kvm_amd)'
 If the result is empty for either call, the machine does not support virtualization and the nomad client wont be able to run any virtualization workload.
 
 3. Verify permissions:
-`Nomad` runs as root, add the user `root` and the group `root` to the [QEMU configuration](https://libvirt.org/drvqemu.html#posix-users-groups) to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restarted after adding the qemu user/group configuration:
+`Nomad` runs as root, add the user `root` and the group `root` to the [QEMU configuration](https://libvirt.org/drvqemu.html#posix-users-groups) to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restart it after adding the qemu user/group configuration:
 
 ```
 systemctl start libvirtd
@@ -144,77 +159,267 @@ Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject
 
 ## Driver Configuration
 
-* **provider libvirt block**
-  * **uri** - Since libvirt supports many different kinds of virtualization (often referred to as "drivers" or "hypervisors"), it is necessary to use a `uri` to specify which one
-  to use. It defaults to `"qemu:///system"`
-  * **user** - User for the [connection authentication](https://libvirt.org/auth.html).
-  * **password** - Password for the [connection authentication](https://libvirt.org/auth.html).
+* **image_paths** - Host paths containing image files allowed to be used by tasks.
+* **provider** - Named block containing provider configuration. Defaults to libvirt.
+* **storage_pools** - Block containing storage pool configuration.
 
-* **data_dir** - The plugin will create VM configuration files and intermediate files in
-  this directory. If not defined it will default to `/var/lib/virt`.
-* **image_paths** - Specifies the host paths the QEMU driver is allowed to load images from. If not defined, it defaults to the plugin data_dir directory and alloc directory.
+### Provider - libvirt
 
-```hcl
+* **password** - The libvirt password to use for authentication.
+* **uri** - The libvirt driver to use. Defaults to `qemu:///system`.
+* **user** - The libvirt user to use for authentication.
+
+### Storage pools 
+
+Storage pools contain volumes which are created for, and attached to, task VMs. Two 
+types of storage pools are supported by the driver: directory and Ceph. Directory
+storage pools are host local storage pools with volumes stored at a specified path.
+Ceph storage pools are RBD based volumes stored in Ceph. 
+
+It is required that a default storage pool is assigned. If the configuration only
+defines a single storage pool, that storage pool is automatically the default. 
+
+* **ceph** - Named block containing Ceph based storage pool configuration.
+* **default** - Name of the default storage pool. If only one storage pool is defined, it is automatically the default.
+* **directory** - Named block containing directory based storage pool configuration.
+
+#### Storage pool - directory 
+
+* **path** - Host path to contain the pool volumes.
+
+#### Storage pool - ceph 
+
+* **authentication** - Block containing authentication configuration.
+  * **username** - Ceph client name .
+  * **secret** - Ceph client key (base64 encoded).
+* **hosts** - List of Ceph monitors.
+* **pool** - Name of the Ceph pool.
+
+### Examples
+
+Minimal configuration defining a directory storage pool on the host and defining
+a directory for image files which tasks may reference:
+
+``` hcl
+plugin "nomad-driver-virt" {
+  config {
+    image_paths = ["/var/lib/virt/images"]
+    storage_pools {
+      directory "local-storage" {
+        path = "/var/lib/virt/storage"
+      }
+    }
+  }
+}
+```
+
+Full configuration example with libvirt configuration, multiple host directories
+for image files, and two storage pools (one directory storage pool and one Ceph 
+storage pool) with the directory storage pool marked as the default storage pool: 
+
+``` hcl
 plugin "nomad-driver-virt" {
   config {
     provider "libvirt" {
-      uri = "qemu:///default"
+      uri      = "qemu:///system"
+      user     = "libvirt-username"
+      password = "libvirt-pass"
     }
-    data_dir    = "/opt/ubuntu/virt_temp"
-    image_paths = ["/var/local/statics/images/"]
+    
+    image_paths = [
+      "/var/lib/virt/images",
+      "/opt/custom-images",
+    ]
+    
+    storage_pools {
+      default = "local-storage"
+      directory "local-storage" {
+        path = "/var/lib/virt/storage"
+      }
+      
+      ceph "remote-storage" {
+        pool  = "nomad-pool"
+        hosts = [
+          "10.0.0.2:3300",
+          "10.0.0.12:3300",
+          "10.0.0.99:3300",
+        ]
+        authentication {
+          username = "nomad"
+          secret   = "AQCzNMxpb6aWIxAA7YrNMSg8z5TxEvB0jsuibQ==" 
+        }
+      }
+    }
   }
 }
 ```
 
 ## Task Configuration
-* **image** - Path to .img cloud image to base the VM disk on, it should be located in an allowed path. It is very important that the cloud image includes cloud init, otherwise most features will not be available for teh task.
-* **use_thin_copy** - Make a thin copy of the image using qemu, and use it as the backing cloud image for the VM.
-* **hostname** - The hostname to assign which defaults to a short uuid that will be unique to every VM, to avoid clashes when there are multiple instances of the same task running. Since it's used as a network host name, it must be a valid DNS label according to RFC 1123.
-* **os** - Guest configuration for a specific machine and architecture to emulate if they are to be different from the host. Both the architecture and machine have to be available for KVM. If not defined, libvirt will use the same ones as the host machine.
-* **command** - List of commands to execute on the VM once it is running. They can provide the operator with a quick and easy way to start a process on the newly created VM, used in conjunction with the template, it can be a simple yet powerful start up tool.
-* **default_user_password** - Initial password to be configured for the default user on the newly created VM, it will have to be updated on first connect.
-* **default_user_authorized_ssh_key** - SSH public key that will be added to the SSH configuration for the default user of the cloud image distribution.
+
+* **cmds** - List of commands to execute on the VM once it is running.
+* **default_user_authorized_ssh_key** - SSH public key added to the SSH configuration for the default user of the cloud image distribution.
+* **default_user_password** - Initial password configured for the default user of the cloud image distribution.
+* **disk** - A list of disk configurations for volumes to be attached to the VM.
+* **hostname** - Hostname assigned. Must be a valid DNS label according to RFC 1123. Defaults to a name based on the task name.
+* **network_interface** A list of network interfaces to be attached to the VM. Currently only a single entry is supported.
+* **os** - Configuration for specific machine and architecture to emulate. Default to match host machine.
 * **user_data** - Path to a cloud-init compliant user data file to be used as the user-data for the cloud-init configuration.
-* **primary_disk_size** - Disk space to assign to the VM, bear in mind it will fit the
-VM's OS.
 
-Regarding the resources, currently the driver has support for cpuSets or cores and memory.
-Every core will be treated as a vcpu.
-Do not use `resources.cpus`, they will be ignored.
+_Note_: The driver currently has support for cpuSets or cores and memory. Every core will be treated as a vcpu. Do not use `resources.cpus`, they will be ignored.
 
-```sh
-driver = "virt"
+### Disk 
 
-artifact {
-  source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
-  destination = "local/focal-server-cloudimg-amd64.img"
-  mode        = "file"
+A disk describes a volume to be attached to the task VM. Multiple disks can be defined within a task's configuration,
+with one disk required to be identified as the `primary` disk. A disk can provide a volume that is an empty block device,
+a clone of an existing volume within the storage pool, or formatted with a supplied image. 
+
+* **bus_type** - Bus type for the disk. Defaults to `virtio`.
+* **chained** - Disk is an overlay on the source.
+* **devname** - Device name used within the VM. Auto-generated by default.
+* **driver** - Driver to use for the disk. Usage and default value is provider specific.
+* **format** - Format of the disk. Default is provider specific.
+* **kind** - Kind of disk defined. Defaults to `disk`.
+* **pool** - Storage pool to place volume created from this definition. Defaults to the default storage pool.
+* **primary** - Disk is the primary to boot the VM.
+* **read_only** - Disk is read only.
+* **size** - Size of the disk as bytes, or string (example: `20GB` or `15GiB`)
+* **sparse** - Disk should be sparsely populated.
+* **source** - Block containing disk source configuration.
+  * **format** - Format of the image. Auto-detected if unset.
+  * **image** - Image to write to the disk. Overwrites any existing information on disk.
+  * **volume** - Volume in storage pool to clone.
+* **volume** - Nomad volume to back the disk.
+
+#### Example 
+
+The example below shows the task and disk configuration to define a primary disk in the directory storage pool and a secondary
+empty disk in the Ceph storage pool:
+
+```hcl
+job "python-server" {
+  group "virt-group" {
+    task "virt-task" {
+      driver = "virt"
+
+      artifact {
+        source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+        destination = "local/focal-server-cloudimg-amd64.img"
+        mode        = "file"
+      }
+
+      config {
+        disk {
+          size   = "10GiB"
+          pool   = "local-storage"
+          source {
+            image = "local/focal-server-cloudimg-amd64.img"
+          }
+        }
+
+        disk {
+          size = "20GB"
+          pool = "local-storage"
+        }
+      }
+    }
+  }
 }
 
-config {
-  image                           = "local/focal-server-cloudimg-amd64.img"
-  primary_disk_size               = 9000
-  use_thin_copy                   = true
-  default_user_password           = "password"
-  cmds                            = ["touch /home/ubuntu/file.txt"]
-  default_user_authorized_ssh_key = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIC31v1..."
+```
+
+If the storage pool already contains a volume with the focal server image, it can be cloned to remove the need of
+downloading and applying the image. Once the volume is cloned, it will be automatically resized to the requested
+size:
+
+```hcl
+job "python-server" {
+  group "virt-group" {
+    task "virt-task" {
+      driver = "virt"
+
+      config {
+        disk {
+          size   = "10GiB"
+          pool   = "local-storage"
+          source {
+            volume = "focal-server-cloudimg-amd64.img"
+          }
+        }
+      }
+    }
+  }
 }
+
+```
+
+Instead of making a full clone of the source volume, a chained copy may be created which overlays the new volume
+on the source volume creating a copy-on-write volume:
+
+```hcl
+job "python-server" {
+  group "virt-group" {
+    task "virt-task" {
+      driver = "virt"
+
+      config {
+        disk {
+          size    = "10GiB"
+          pool    = "local-storage"
+          chained = true
+          source {
+            volume = "focal-server-cloudimg-amd64.img"
+          }
+        }
+      }
+    }
+  }
+}
+
+```
+
+Chained copies may also be used when providing a source image. A new volume will be created for the image and
+any tasks that define a chained disk with that source image will be chained to that volume:
+
+```hcl
+job "python-server" {
+  group "virt-group" {
+    task "virt-task" {
+      driver = "virt"
+
+      artifact {
+        source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
+        destination = "local/focal-server-cloudimg-amd64.img"
+        mode        = "file"
+      }
+
+      config {
+        disk {
+          size    = "10GiB"
+          pool    = "local-storage"
+          chained = true
+          source {
+            image = "local/focal-server-cloudimg-amd64.img"
+          }
+        }
+      }
+    }
+  }
+}
+
 ```
 
 ### Network Configuration
-The following configuration options are available within the task's driver configuration block:
-* **network_interface** - A list of network interfaces that should be attached to the VM. This
-  currently only supports a single entry.
-  * **bridge** - Attach the VM to a network of bridged type. `virbr0`, the default libvirt network
-  is a bridged network.
-    * **name** - The name of the bridge interface to use. This relates to the output seen from
-    commands such as `virsh net-info`.
-    * **ports** - A list of port labels which will be exposed on the host via mapping to the
-    network interface. These labels must exist within the job specification
-    [network block](https://developer.hashicorp.com/nomad/docs/job-specification/network).
 
-The example below shows the network configuration and task configuration required to expose and map
-ports `22` and `80`:
+The following configuration options are available within the task's driver configuration block:
+
+* **bridge** - Block configuration for connecting to a bridged network.
+  * **name** - Name of the bridge interface to use. Defaults to `virbr0` which is the default libvirt network.
+  * **ports** - A list of port labels exposed on the host via mapping to the network interface. Labels must exist within the job specification [network block](https://developer.hashicorp.com/nomad/docs/job-specification/network).
+
+#### Example
+
+The example below shows the network configuration and task configuration required to expose and map ports `22` and `80`:
+
 ```hcl
 group "virt-group" {
 
