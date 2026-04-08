@@ -13,9 +13,10 @@ var configSpec = hclspec.NewBlock("libvirt", false, hclspec.NewObject(map[string
 		hclspec.NewAttr("uri", "string", false),
 		hclspec.NewLiteral(`"qemu:///system"`),
 	),
-	"user":     hclspec.NewAttr("user", "string", false),
-	"password": hclspec.NewAttr("password", "string", false),
-	"default":  hclspec.NewAttr("default", "bool", false),
+	"user":                           hclspec.NewAttr("user", "string", false),
+	"password":                       hclspec.NewAttr("password", "string", false),
+	"default":                        hclspec.NewAttr("default", "bool", false),
+	"allow_insecure_readonly_mounts": hclspec.NewAttr("allow_insecure_readonly_mounts", "bool", false),
 }))
 
 // ConfigSpec returns the HCL spec for the libvirt provider configuration.
@@ -25,8 +26,9 @@ func ConfigSpec() *hclspec.Spec {
 
 // Configuration supported by this provider.
 type Config struct {
-	URI      string `codec:"uri"`
-	User     string `codec:"user"`
-	Password string `codec:"password"`
-	Default  bool   `codec:"default"`
+	URI                 string `codec:"uri"`
+	User                string `codec:"user"`
+	Password            string `codec:"password"`
+	Default             bool   `codec:"default"`
+	AllowInsecureMounts bool   `codec:"allow_insecure_readonly_mounts"`
 }
