@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_libvirt "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt"
 	mock_libvirt_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt/storage"
@@ -615,17 +616,9 @@ func TestPool_AddVolume(t *testing.T) {
 		})
 
 		t.Run("source image", func(t *testing.T) {
-			imgPath := filepath.Join(t.TempDir(), "volume-image")
-			f, err := os.Create(imgPath)
-			must.NoError(t, err)
-			f.Close()
-
 			name := "test-vol"
 			opts := storage.Options{
 				Size: 200,
-				Source: storage.Source{
-					Path: imgPath,
-				},
 				Target: storage.Target{
 					Format: "raw",
 				},
@@ -650,36 +643,230 @@ func TestPool_AddVolume(t *testing.T) {
 			expectedData, err := expectedVol.Marshal()
 			must.NoError(t, err)
 
-			lvVol := mock_libvirt_storage.NewMockStorageVol(t).Expect(
-				mock_libvirt_storage.GetInfo{
-					Result: &libvirt.StorageVolInfo{
-						Capacity: 200,
-					},
-				},
-				mock_libvirt_storage.GetXMLDesc{
-					Result: expectedData,
-				},
-				mock_libvirt_storage.Free{},
-			)
-			defer lvVol.AssertExpectations()
-			lvPool := mock_libvirt_storage.NewMockStoragePool(t).Expect(
-				mock_libvirt_storage.Refresh{},
-				mock_libvirt_storage.LookupStorageVolByName{
-					Name: name,
-					Err:  ErrVolumeNotFound,
-				},
-				mock_libvirt_storage.StorageVolCreateXML{
-					Desc:   expectedData,
-					Result: lvVol,
-				},
-				mock_libvirt_storage.Free{},
-			)
-			defer lvPool.AssertExpectations()
-			pool := mkPool(t.Context(), lvPool)
+			t.Run("empty image", func(t *testing.T) {
+				imgPath := filepath.Join(t.TempDir(), "volume-image")
+				f, err := os.Create(imgPath)
+				must.NoError(t, err)
+				f.Close()
 
-			vol, err := pool.AddVolume(name, opts)
-			must.NoError(t, err)
-			must.Eq(t, &storage.Volume{Name: name, Pool: "test-pool", Size: 200, Format: "raw"}, vol)
+				opts.Source.Path = imgPath
+
+				lvVol := mock_libvirt_storage.NewMockStorageVol(t).Expect(
+					mock_libvirt_storage.GetInfo{
+						Result: &libvirt.StorageVolInfo{
+							Capacity: 200,
+						},
+					},
+					mock_libvirt_storage.GetXMLDesc{
+						Result: expectedData,
+					},
+					mock_libvirt_storage.Free{},
+				)
+				defer lvVol.AssertExpectations()
+				lvPool := mock_libvirt_storage.NewMockStoragePool(t).Expect(
+					mock_libvirt_storage.Refresh{},
+					mock_libvirt_storage.LookupStorageVolByName{
+						Name: name,
+						Err:  ErrVolumeNotFound,
+					},
+					mock_libvirt_storage.StorageVolCreateXML{
+						Desc:   expectedData,
+						Result: lvVol,
+					},
+					mock_libvirt_storage.Free{},
+				)
+				defer lvPool.AssertExpectations()
+				pool := mkPool(t.Context(), lvPool)
+
+				vol, err := pool.AddVolume(name, opts)
+				must.NoError(t, err)
+				must.Eq(t, &storage.Volume{Name: name, Pool: "test-pool", Size: 200, Format: "raw"}, vol)
+			})
+
+			// NOTE: Two files are included in the ./testdata directory:
+			// * test.img - random content, no holes
+			// * test.sparse.img - random content, two holes (4096-12288 and 20480-40960)
+
+			t.Run("standard image", func(t *testing.T) {
+				imgPath := "./testdata/test.img"
+				info, err := os.Stat(imgPath)
+				must.NoError(t, err)
+				opts.Source.Path = imgPath
+
+				lvStream := mock_libvirt.NewMockStream(t).Expect(
+					mock_libvirt.Send{Result: -1},
+					mock_libvirt.Finish{},
+					mock_libvirt.Free{},
+				)
+				defer lvStream.AssertExpectations()
+				wrappedStream := shims.WrapStream(lvStream, t.Context(), false)
+				lvVol := mock_libvirt_storage.NewMockStorageVol(t).Expect(
+					mock_libvirt_storage.GetInfo{
+						Result: &libvirt.StorageVolInfo{
+							Capacity: 200,
+						},
+					},
+					mock_libvirt_storage.GetXMLDesc{
+						Result: expectedData,
+					},
+					mock_libvirt_storage.Upload{
+						Stream: wrappedStream,
+						Offset: 0,
+						Size:   uint64(info.Size()),
+						Flags:  libvirtNoFlags,
+					},
+					mock_libvirt_storage.Free{},
+				)
+				defer lvVol.AssertExpectations()
+				lvPool := mock_libvirt_storage.NewMockStoragePool(t).Expect(
+					mock_libvirt_storage.Refresh{},
+					mock_libvirt_storage.LookupStorageVolByName{
+						Name: name,
+						Err:  ErrVolumeNotFound,
+					},
+					mock_libvirt_storage.StorageVolCreateXML{
+						Desc:   expectedData,
+						Result: lvVol,
+					},
+					mock_libvirt_storage.Free{},
+				)
+				defer lvPool.AssertExpectations()
+				pool := mkPool(t.Context(), lvPool)
+				// NOTE: Reset this to include mocked stream for testing.
+				pool.l = &mock_libvirt.StaticLibvirt{
+					FindStoragePoolResult: lvPool,
+					NewStreamResult:       wrappedStream,
+				}
+
+				vol, err := pool.AddVolume(name, opts)
+				must.NoError(t, err)
+				must.Eq(t, &storage.Volume{Name: name, Pool: "test-pool", Size: 200, Format: "raw"}, vol)
+			})
+
+			t.Run("sparse image", func(t *testing.T) {
+				imgPath := "./testdata/test.sparse.img"
+				info, err := os.Stat(imgPath)
+				must.NoError(t, err)
+				opts.Source.Path = imgPath
+
+				lvStream := mock_libvirt.NewMockStream(t).Expect(
+					mock_libvirt.Send{Result: -1},
+					mock_libvirt.Send{Result: -1},
+					mock_libvirt.Send{Result: -1},
+					mock_libvirt.SendHole{Size: 8192},
+					mock_libvirt.SendHole{Size: 20480},
+					mock_libvirt.Finish{},
+					mock_libvirt.Free{},
+				)
+				defer lvStream.AssertExpectations()
+				wrappedStream := shims.WrapStream(lvStream, t.Context(), false)
+				lvVol := mock_libvirt_storage.NewMockStorageVol(t).Expect(
+					mock_libvirt_storage.GetInfo{
+						Result: &libvirt.StorageVolInfo{
+							Capacity: 200,
+						},
+					},
+					mock_libvirt_storage.GetXMLDesc{
+						Result: expectedData,
+					},
+					mock_libvirt_storage.Upload{
+						Stream: wrappedStream,
+						Offset: 0,
+						Size:   uint64(info.Size()),
+						Flags:  libvirtNoFlags,
+					},
+					mock_libvirt_storage.Free{},
+				)
+				defer lvVol.AssertExpectations()
+				lvPool := mock_libvirt_storage.NewMockStoragePool(t).Expect(
+					mock_libvirt_storage.Refresh{},
+					mock_libvirt_storage.LookupStorageVolByName{
+						Name: name,
+						Err:  ErrVolumeNotFound,
+					},
+					mock_libvirt_storage.StorageVolCreateXML{
+						Desc:   expectedData,
+						Result: lvVol,
+					},
+					mock_libvirt_storage.Free{},
+				)
+				defer lvPool.AssertExpectations()
+				pool := mkPool(t.Context(), lvPool)
+				// NOTE: Reset this to include mocked stream for testing.
+				pool.l = &mock_libvirt.StaticLibvirt{
+					FindStoragePoolResult: lvPool,
+					NewStreamResult:       wrappedStream,
+				}
+
+				vol, err := pool.AddVolume(name, opts)
+				must.NoError(t, err)
+				must.Eq(t, &storage.Volume{Name: name, Pool: "test-pool", Size: 200, Format: "raw"}, vol)
+			})
+
+			t.Run("standard image", func(t *testing.T) {
+				imgPath := filepath.Join(t.TempDir(), "volume-image")
+				f, err := os.Create(imgPath)
+				must.NoError(t, err)
+				testImageContent := "testing-image-content"
+				_, err = f.WriteString(testImageContent)
+				must.NoError(t, err)
+				f.Close()
+
+				opts.Source.Path = imgPath
+
+				lvStream := mock_libvirt.NewMockStream(t).Expect(
+					mock_libvirt.Send{
+						Data:   []byte(testImageContent),
+						Result: len(testImageContent),
+					},
+					mock_libvirt.Finish{},
+					mock_libvirt.Free{},
+				)
+				defer lvStream.AssertExpectations()
+				wrappedStream := shims.WrapStream(lvStream, t.Context(), false)
+				lvVol := mock_libvirt_storage.NewMockStorageVol(t).Expect(
+					mock_libvirt_storage.GetInfo{
+						Result: &libvirt.StorageVolInfo{
+							Capacity: 200,
+						},
+					},
+					mock_libvirt_storage.GetXMLDesc{
+						Result: expectedData,
+					},
+					mock_libvirt_storage.Upload{
+						Stream: wrappedStream,
+						Offset: 0,
+						Size:   uint64(len(testImageContent)),
+						Flags:  libvirtNoFlags,
+					},
+					mock_libvirt_storage.Free{},
+				)
+				defer lvVol.AssertExpectations()
+				lvPool := mock_libvirt_storage.NewMockStoragePool(t).Expect(
+					mock_libvirt_storage.Refresh{},
+					mock_libvirt_storage.LookupStorageVolByName{
+						Name: name,
+						Err:  ErrVolumeNotFound,
+					},
+					mock_libvirt_storage.StorageVolCreateXML{
+						Desc:   expectedData,
+						Result: lvVol,
+					},
+					mock_libvirt_storage.Free{},
+				)
+				defer lvPool.AssertExpectations()
+				pool := mkPool(t.Context(), lvPool)
+				// NOTE: Reset this to include mocked stream for testing.
+				pool.l = &mock_libvirt.StaticLibvirt{
+					FindStoragePoolResult: lvPool,
+					NewStreamResult:       wrappedStream,
+				}
+
+				vol, err := pool.AddVolume(name, opts)
+				must.NoError(t, err)
+				must.Eq(t, &storage.Volume{Name: name, Pool: "test-pool", Size: 200, Format: "raw"}, vol)
+			})
+
 		})
 
 		t.Run("volume already exists", func(t *testing.T) {

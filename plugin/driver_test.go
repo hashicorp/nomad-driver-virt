@@ -73,7 +73,7 @@ func testHarness(t *testing.T, config *virt.Config, p providers.Providers, ci cl
 
 	// Set the config and create the harness
 	must.NoError(t, d.SetConfig(c),
-		must.Sprint("cloud not set the plugin configuration"))
+		must.Sprint("could not set the plugin configuration"))
 
 	driver := driver_testutils.NewDriverHarness(t, d)
 	t.Cleanup(driver.MkAllocDir(task, false))

@@ -769,7 +769,16 @@ func (p *provider) NewStream() (shims.Stream, error) {
 		return nil, err
 	}
 
-	return shims.WrapStream(s), nil
+	// Sparse uploads were broken starting with the 9.6.0 release resulting in
+	// the client connection being throttled and the upload timing out. It was
+	// fixed in 10.1.0. Unless we really need to support sparse uploads for
+	// pre-9.6.0 releases, just check that libvirt is recent enough.
+	sparseSupported := p.requiresLibvirtVersion("10.1.0")
+	if !sparseSupported {
+		p.logger.Debug("sparse stream disabled due to libvirt version")
+	}
+
+	return shims.WrapStream(s, p.ctx, sparseSupported), nil
 }
 
 // FindStoragePool finds the named storage pool
