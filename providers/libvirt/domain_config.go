@@ -59,8 +59,14 @@ func (p *provider) parseConfiguration(config *vm.Config) (string, error) {
 		if m.Driver == mountFsVirtiofs {
 			mnt.AccessMode = virtiofsSecurityMode
 			mnt.Driver = &libvirtxml.DomainFilesystemDriver{
-				Type:  mountFsVirtiofs,
+				Type:  "virtiofs",
 				Queue: virtiofsQueueSize,
+			}
+
+			// If insecure read-only mounts are allowed, then disable the
+			// read-only setting.
+			if p.insecureReadonlyMounts {
+				mnt.ReadOnly = nil
 			}
 		}
 

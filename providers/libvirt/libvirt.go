@@ -104,6 +104,12 @@ type provider struct {
 	libvirtVersion   uint32
 	m                sync.Mutex
 
+	// insecureReadonlyMounts can be used to allow virtiofs to be used for read-only host
+	// mounts even if unsupported by libvirt. This relies on the mount command only for
+	// making the mount read-only, which is not secure due to the ability to remount
+	// and remove the read-only option.
+	insecureReadonlyMounts bool
+
 	availableMountFsOverride map[string]struct{} // used for testing
 }
 
@@ -114,15 +120,16 @@ func (p *provider) Copy(ctx context.Context) *provider {
 
 	ctx, cancel := context.WithCancel(ctx)
 	dCopy := &provider{
-		ctx:              ctx,
-		cancel:           cancel,
-		closed:           p.closed,
-		uri:              p.uri,
-		logger:           p.logger,
-		user:             p.user,
-		password:         p.password,
-		availableMountFs: p.availableMountFs,
-		libvirtVersion:   p.libvirtVersion,
+		ctx:                    ctx,
+		cancel:                 cancel,
+		closed:                 p.closed,
+		uri:                    p.uri,
+		logger:                 p.logger,
+		user:                   p.user,
+		password:               p.password,
+		availableMountFs:       p.availableMountFs,
+		libvirtVersion:         p.libvirtVersion,
+		insecureReadonlyMounts: p.insecureReadonlyMounts,
 	}
 	dCopy.storage = p.storage.Copy(ctx, dCopy)
 	dCopy.networking = p.networking.Copy(dCopy)
@@ -148,6 +155,9 @@ func WithConfig(c *Config) Option {
 		}
 		if c.Password != "" {
 			p.password = c.Password
+		}
+		if c.AllowInsecureMounts {
+			p.insecureReadonlyMounts = true
 		}
 	}
 }
@@ -709,8 +719,15 @@ func (p *provider) GenerateMountCommands(mounts []*vm.MountFileConfig) ([]string
 	cmds := []string{}
 	// read-only volumes are not supported in libvirt until 11.0.0
 	virtiofsRO := p.requiresLibvirtVersion("11.0.0")
+	// if virtiofs does not support read-only mounts, check if insecure
+	// mounts have been enabled to bypass the version restriction.
+	if !virtiofsRO && p.insecureReadonlyMounts {
+		p.logger.Warn("configuration allows insecure read-only host mounts")
+		virtiofsRO = true
+	}
+
 	for _, m := range mounts {
-		// if the mount is read-only, only 9p is supportep.
+		// if the mount is read-only, only 9p is supported (unless insecure mounts enabled).
 		if m.ReadOnly && !virtiofsRO {
 			if !p.mountFsAvailable(mountFs9p) {
 				return nil, fmt.Errorf("read-only virtiofs mount %w - libvirt version 11.0.0 or greater required", vm.ErrNotSupported)
@@ -1043,9 +1060,14 @@ func (p *provider) mountFsAvailable(name string) bool {
 func (p *provider) generateVirtiofsMountCmds(m *vm.MountFileConfig) []string {
 	m.Driver = mountFsVirtiofs
 
+	var readonly string
+	if m.ReadOnly {
+		readonly = " -o ro"
+	}
+
 	return []string{
 		fmt.Sprintf(`mkdir -p "%s"`, m.Destination),
-		fmt.Sprintf(`mountpoint -q "%s" || mount -t virtiofs %s "%s"`, m.Destination, m.Tag, m.Destination),
+		fmt.Sprintf(`mountpoint -q "%s" || mount -t virtiofs%s %s "%s"`, m.Destination, readonly, m.Tag, m.Destination),
 	}
 }
 
@@ -1053,9 +1075,13 @@ func (p *provider) generateVirtiofsMountCmds(m *vm.MountFileConfig) []string {
 func (p *provider) generate9pMountCmds(m *vm.MountFileConfig) []string {
 	m.Driver = mountFs9p
 
+	var readonly string
+	if m.ReadOnly {
+		readonly = ",ro"
+	}
 	return []string{
 		fmt.Sprintf(`mkdir -p "%s"`, m.Destination),
-		fmt.Sprintf(`mountpoint -q "%s" || mount -t 9p -o trans=virtio %s "%s"`, m.Destination, m.Tag, m.Destination),
+		fmt.Sprintf(`mountpoint -q "%s" || mount -t 9p -o trans=virtio%s %s "%s"`, m.Destination, readonly, m.Tag, m.Destination),
 	}
 }
 

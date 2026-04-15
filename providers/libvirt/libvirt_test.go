@@ -406,6 +406,115 @@ func Test_GenerateMountCommands(t *testing.T) {
 		}, result)
 	})
 
+	t.Run("read-only", func(t *testing.T) {
+		t.Run("9p and virtiofs are available", func(t *testing.T) {
+			t.Run("virtiofs read-only supported", func(t *testing.T) {
+				ld, _ := testNew(t, overrideFs(mountFs9p, mountFsVirtiofs))
+				// Force libvirt version to supported version
+				ld.libvirtVersion = genVersion("12.0.0")
+				mnts := mounts()
+				mnts[0].ReadOnly = true
+
+				result, err := ld.GenerateMountCommands(mnts)
+				must.NoError(t, err)
+				must.Eq(t, []string{
+					`mkdir -p "/test"`,
+					`mountpoint -q "/test" || mount -t virtiofs -o ro test-tag "/test"`,
+				}, result)
+			})
+
+			t.Run("virtiofs read-only not supported", func(t *testing.T) {
+				ld, _ := testNew(t, overrideFs(mountFs9p, mountFsVirtiofs))
+				// Force libvirt version to unsupported version
+				ld.libvirtVersion = genVersion("1.0.0")
+				mnts := mounts()
+				mnts[0].ReadOnly = true
+
+				result, err := ld.GenerateMountCommands(mnts)
+				must.NoError(t, err)
+				must.Eq(t, []string{
+					`mkdir -p "/test"`,
+					`mountpoint -q "/test" || mount -t 9p -o trans=virtio,ro test-tag "/test"`,
+				}, result)
+			})
+
+			t.Run("virtiofs read-only not supported insecure mounts enabled", func(t *testing.T) {
+				ld, _ := testNew(t, overrideFs(mountFs9p, mountFsVirtiofs))
+				// Force libvirt version to unsupported version
+				ld.libvirtVersion = genVersion("1.0.0")
+				// Allow insecure read-only host mounts
+				ld.insecureReadonlyMounts = true
+				mnts := mounts()
+				mnts[0].ReadOnly = true
+
+				result, err := ld.GenerateMountCommands(mnts)
+				must.NoError(t, err)
+				must.Eq(t, []string{
+					`mkdir -p "/test"`,
+					`mountpoint -q "/test" || mount -t virtiofs -o ro test-tag "/test"`,
+				}, result)
+			})
+		})
+
+		t.Run("virtiofs only available", func(t *testing.T) {
+			t.Run("read-only supported", func(t *testing.T) {
+				ld, _ := testNew(t, overrideFs(mountFsVirtiofs))
+				// Force libvirt version to supported version
+				ld.libvirtVersion = genVersion("12.0.0")
+				mnts := mounts()
+				mnts[0].ReadOnly = true
+
+				result, err := ld.GenerateMountCommands(mnts)
+				must.NoError(t, err)
+				must.Eq(t, []string{
+					`mkdir -p "/test"`,
+					`mountpoint -q "/test" || mount -t virtiofs -o ro test-tag "/test"`,
+				}, result)
+			})
+
+			t.Run("read-only not supported", func(t *testing.T) {
+				ld, _ := testNew(t, overrideFs(mountFsVirtiofs))
+				// Force libvirt version to unsupported version
+				ld.libvirtVersion = genVersion("1.0.0")
+				mnts := mounts()
+				mnts[0].ReadOnly = true
+
+				_, err := ld.GenerateMountCommands(mnts)
+				must.ErrorIs(t, err, vm.ErrNotSupported)
+			})
+
+			t.Run("read-only not supported insecure mounts enabled", func(t *testing.T) {
+				ld, _ := testNew(t, overrideFs(mountFsVirtiofs))
+				// Force libvirt version to unsupported version
+				ld.libvirtVersion = genVersion("1.0.0")
+				// Allow insecure read-only host mounts
+				ld.insecureReadonlyMounts = true
+				mnts := mounts()
+				mnts[0].ReadOnly = true
+
+				result, err := ld.GenerateMountCommands(mnts)
+				must.NoError(t, err)
+				must.Eq(t, []string{
+					`mkdir -p "/test"`,
+					`mountpoint -q "/test" || mount -t virtiofs -o ro test-tag "/test"`,
+				}, result)
+			})
+		})
+
+		t.Run("9p only available", func(t *testing.T) {
+			ld, _ := testNew(t, overrideFs(mountFs9p))
+			mnts := mounts()
+			mnts[0].ReadOnly = true
+
+			result, err := ld.GenerateMountCommands(mnts)
+			must.NoError(t, err)
+			must.Eq(t, []string{
+				`mkdir -p "/test"`,
+				`mountpoint -q "/test" || mount -t 9p -o trans=virtio,ro test-tag "/test"`,
+			}, result)
+		})
+	})
+
 	t.Run("read-only mount without virtiofs support", func(t *testing.T) {
 		// Make mount read-only
 		mnts := mounts()
@@ -420,7 +529,7 @@ func Test_GenerateMountCommands(t *testing.T) {
 			must.NoError(t, err)
 			must.Eq(t, []string{
 				`mkdir -p "/test"`,
-				`mountpoint -q "/test" || mount -t 9p -o trans=virtio test-tag "/test"`,
+				`mountpoint -q "/test" || mount -t 9p -o trans=virtio,ro test-tag "/test"`,
 			}, result)
 		})
 
