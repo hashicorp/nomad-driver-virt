@@ -990,7 +990,7 @@ func (p *provider) SetCephSecret(name, credential string) (string, error) {
 		return "", err
 	}
 
-	if err := secret.SetValue([]byte(credential), libvirtNoFlags); err != nil {
+	if err := secret.SetValue(decodedCred, libvirtNoFlags); err != nil {
 		return "", err
 	}
 
