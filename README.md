@@ -1,7 +1,8 @@
 Nomad Virt Driver
 ==================
+
 The virt driver task plugin expands the types of workloads Nomad can run to add virtual machines. Currently
-leveraging the power of libvirt, the virt drivers allows users to define virtual machine tasks using the 
+leveraging the power of libvirt, the virt driver allows users to define virtual machine tasks using the
 Nomad job spec.
 
 > **_IMPORTANT:_** This plugin is in tech preview, still under active development, there might be breaking changes in future releases
@@ -19,8 +20,8 @@ Nomad job spec.
 * Monitor CPU usage.
 * Task config cpu value is used to populate virtual machine CpuShares.
 * The tasks `task`, `alloc`, and `secrets` directories are mounted within the VM at the filesystem
-  root. These are currently mounted read-only to prevent excessive amounts of data being written to 
-  the host filesystem. Please see the [filesystem concepts page](https://developer.hashicorp.com/nomad/docs/concepts/filesystem) 
+  root. These are currently mounted read-only to prevent excessive amounts of data being written to
+  the host filesystem. Please see the [filesystem concepts page](https://developer.hashicorp.com/nomad/docs/concepts/filesystem)
   for more detail about an allocations working directory.
 
 ## Ubuntu Example job
@@ -55,9 +56,9 @@ job "python-server" {
         cmds                  = ["python3 -m http.server 8000"]
 
         disk {
-          size   = "10GiB"
+          size = "10GiB"
           source {
-            image  = "local/focal-server-cloudimg-amd64.img"
+            image = "local/focal-server-cloudimg-amd64.img"
           }
         }
 
@@ -169,25 +170,25 @@ Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject
 * **uri** - The libvirt driver to use. Defaults to `qemu:///system`.
 * **user** - The libvirt user to use for authentication.
 
-### Storage pools 
+### Storage pools
 
-Storage pools contain volumes which are created for, and attached to, task VMs. Two 
+Storage pools contain volumes which are created for, and attached to, task VMs. Two
 types of storage pools are supported by the driver: directory and Ceph. Directory
 storage pools are host local storage pools with volumes stored at a specified path.
-Ceph storage pools are RBD based volumes stored in Ceph. 
+Ceph storage pools are RBD based volumes stored in Ceph.
 
-It is required that a default storage pool is assigned. If the configuration only
-defines a single storage pool, that storage pool is automatically the default. 
+A default storage pool must be assigned. If the configuration only
+defines a single storage pool, that storage pool is automatically the default.
 
 * **ceph** - Named block containing Ceph based storage pool configuration.
 * **default** - Name of the default storage pool. If only one storage pool is defined, it is automatically the default.
 * **directory** - Named block containing directory based storage pool configuration.
 
-#### Storage pool - directory 
+#### Storage pool - directory
 
 * **path** - Host path to contain the pool volumes.
 
-#### Storage pool - ceph 
+#### Storage pool - ceph
 
 * **authentication** - Block containing authentication configuration.
   * **username** - Ceph client name .
@@ -213,9 +214,9 @@ plugin "nomad-driver-virt" {
 }
 ```
 
-Full configuration example with libvirt configuration, multiple host directories
-for image files, and two storage pools (one directory storage pool and one Ceph 
-storage pool) with the directory storage pool marked as the default storage pool: 
+This full libvirt configuration example has a username and password and allows
+multiple host directories for image files. It defines two storage pools, one
+directory and one Ceph, and the directory storage pool is marked as the default:
 
 ``` hcl
 plugin "nomad-driver-virt" {
@@ -225,18 +226,18 @@ plugin "nomad-driver-virt" {
       user     = "libvirt-username"
       password = "libvirt-pass"
     }
-    
+
     image_paths = [
       "/var/lib/virt/images",
       "/opt/custom-images",
     ]
-    
+
     storage_pools {
       default = "local-storage"
       directory "local-storage" {
         path = "/var/lib/virt/storage"
       }
-      
+
       ceph "remote-storage" {
         pool  = "nomad-pool"
         hosts = [
@@ -246,7 +247,7 @@ plugin "nomad-driver-virt" {
         ]
         authentication {
           username = "nomad"
-          secret   = "AQCzNMxpb6aWIxAA7YrNMSg8z5TxEvB0jsuibQ==" 
+          secret   = "AQCzNMxpb6aWIxAA7YrNMSg8z5TxEvB0jsuibQ=="
         }
       }
     }
@@ -267,11 +268,11 @@ plugin "nomad-driver-virt" {
 
 _Note_: The driver currently has support for cpuSets or cores and memory. Every core will be treated as a vcpu. Do not use `resources.cpus`, they will be ignored.
 
-### Disk 
+### Disk
 
 A disk describes a volume to be attached to the task VM. Multiple disks can be defined within a task's configuration,
 with one disk required to be identified as the `primary` disk. A disk can provide a volume that is an empty block device,
-a clone of an existing volume within the storage pool, or formatted with a supplied image. 
+a clone of an existing volume within the storage pool, or formatted with a supplied image.
 
 * **bus_type** - Bus type for the disk. Defaults to `virtio`.
 * **chained** - Disk is an overlay on the source.
@@ -290,7 +291,7 @@ a clone of an existing volume within the storage pool, or formatted with a suppl
   * **volume** - Volume in storage pool to clone.
 * **volume** - Nomad volume to back the disk.
 
-#### Example 
+#### Example
 
 The example below shows the task and disk configuration to define a primary disk in the directory storage pool and a secondary
 empty disk in the Ceph storage pool:
@@ -299,18 +300,19 @@ empty disk in the Ceph storage pool:
 job "python-server" {
   group "virt-group" {
     task "virt-task" {
-      driver = "virt"
-
       artifact {
         source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
         destination = "local/focal-server-cloudimg-amd64.img"
         mode        = "file"
       }
 
+      driver = "virt"
+
       config {
         disk {
-          size   = "10GiB"
-          pool   = "local-storage"
+          size    = "10GiB"
+          pool    = "local-storage"
+          primary = true
           source {
             image = "local/focal-server-cloudimg-amd64.img"
           }
@@ -318,7 +320,7 @@ job "python-server" {
 
         disk {
           size = "20GB"
-          pool = "local-storage"
+          pool = "ceph-storage"
         }
       }
     }
@@ -384,13 +386,13 @@ any tasks that define a chained disk with that source image will be chained to t
 job "python-server" {
   group "virt-group" {
     task "virt-task" {
-      driver = "virt"
-
       artifact {
         source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
         destination = "local/focal-server-cloudimg-amd64.img"
         mode        = "file"
       }
+
+      driver = "virt"
 
       config {
         disk {
@@ -413,7 +415,7 @@ job "python-server" {
 The following configuration options are available within the task's driver configuration block:
 
 * **bridge** - Block configuration for connecting to a bridged network.
-  * **name** - Name of the bridge interface to use. Defaults to `virbr0` which is the default libvirt network.
+  * **name** - Name of the bridge interface to use. The default libvirt network, `virbr0`, is a bridged network.
   * **ports** - A list of port labels exposed on the host via mapping to the network interface. Labels must exist within the job specification [network block](https://developer.hashicorp.com/nomad/docs/job-specification/network).
 
 #### Example
@@ -482,7 +484,7 @@ virsh list
 
 If running a job for the first time, you run into errors, remember to verify the runtime [Runtime dependencies](#runtime-dependencies).
 
-It is important to know that to protect the host machine from guests overusing the disk, managed vm don't have write access to the Nomad filesystem. 
+It is important to know that to protect the host machine from guests overusing the disk, managed vm don't have write access to the Nomad filesystem.
 
 If Nomad is not running as root, the permissions for the directories used by both Nomad and the virt driver need to be adjusted.
 
@@ -492,7 +494,7 @@ Here are some strategies to debug a failing VM:
 ### Connecting to a VM
 
 By default, cloud images are password protected, by adding a `default_user_password`
-a new password is assigned to the default user of the used distribution (for example, 
+a new password is assigned to the default user of the used distribution (for example,
 `ubuntu` for ubuntu `fedora` for fedora, or `root` for alpine)
 By running `virsh console [vm-name]`, a terminal is started inside the VM that will allow an internal inspection of the VM.
 
@@ -502,7 +504,7 @@ $ virsh list
 ------------------------------------
  1    virt-task-8bc0a63f   running
 
-$ virsh console virt-task-8bc0a63f 
+$ virsh console virt-task-8bc0a63f
 Connected to domain 'virt-task-8bc0a63f'
 Escape character is ^] (Ctrl + ])
 
@@ -510,12 +512,12 @@ nomad-virt-task-8bc0a63f login: ubuntu
 Password:
 ```
 
-If no login prompt shows up, it can mean the virtual machine is not booting and 
-adding  some extra  space to the disk may solve the problem. Remember the disk 
+If no login prompt shows up, it can mean the virtual machine is not booting and
+adding  some extra  space to the disk may solve the problem. Remember the disk
 has to fit the root image plus any other process running in the VM.
 
-The virt driver heavily relies on `cloud-init` to execute the virtual machine's 
-configuration. Once you have managed to connect to the terminal, the results of 
+The virt driver heavily relies on `cloud-init` to execute the virtual machine's
+configuration. Once you have managed to connect to the terminal, the results of
 cloud init can be found in two different places:
   * `/var/log/cloud-init.log`
   * `/var/log/cloud-init-output.log`
@@ -524,7 +526,7 @@ Looking into these files can give a better understanding of any possible executi
 errors.
 
 If connecting to the terminal is not an option, it is possible to stop the job and
-mount the VM's disk to inspect it. If the `use_thin_copy` option is used, the driver will create 
+mount the VM's disk to inspect it. If the `use_thin_copy` option is used, the driver will create
 the disk image in the directory `${plugin_config.data_dir}/virt/vm-name.img`:
 
 ```
@@ -562,9 +564,9 @@ $ virsh net-list
 --------------------------------------------
  default   active   yes         yes
  ```
- 
-Under the hood, libvirt uses [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html) to lease 
-IP addresses to the virtual machines, there are mutiple ways to find the IP assigned 
+
+Under the hood, libvirt uses [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html) to lease
+IP addresses to the virtual machines, there are mutiple ways to find the IP assigned
 to the nomad task.
 Using virsh to find the leased IP:
 
@@ -574,8 +576,8 @@ $ virsh net-dhcp-leases default
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------
  2024-10-07 18:48:09   52:54:00:b5:0b:d4   ipv4       192.168.122.211/24   nomad-virt-task-dc8187e3   ff:08:24:45:0e:00:02:00:00:ab:11:63:3c:26:5b:b7:fe:b3:13
  ```
- 
- or using the mac address to find the IP via ARP: 
+
+ or using the mac address to find the IP via ARP:
 
 ```
 $ virsh dumpxml virt-task-8473ccfb  | grep "mac address" | awk -F\' '{ print $2}'

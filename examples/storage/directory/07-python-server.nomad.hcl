@@ -15,20 +15,28 @@ job "python-server" {
 
     task "virt-task" {
 
-      driver = "virt"
+      template {
+        data        = <<EOH
+<pre>
+Guest System
 
-      artifact {
-        source      = "http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img"
-        destination = "local/focal-server-cloudimg-amd64.img"
-        mode        = "file"
+\o/
+</pre>
+        EOH
+        destination = "local/index.html"
       }
 
+      driver = "virt"
+
       config {
-        image                 = "local/focal-server-cloudimg-amd64.img"
-        primary_disk_size     = 10000
-        use_thin_copy         = true
         default_user_password = "password"
-        cmds                  = ["python3 -m http.server 8000"]
+        cmds                  = ["python3 -m http.server 8000 -d /local"]
+
+        disk {
+          source {
+            volume = "focal.img"
+          }
+        }
 
         network_interface {
           bridge {
@@ -39,8 +47,8 @@ job "python-server" {
       }
 
       resources {
-        cores  = 2
-        memory = 4000
+        cores  = 1
+        memory = 1024
       }
     }
   }
