@@ -207,7 +207,7 @@ func (s *Storage) Fingerprint(attrs map[string]*structs.Attribute) {
 			vm.FingerprintAttributeKeyPrefix, name)
 
 		attrs[poolKey] = structs.NewStringAttribute(pool.Type())
-		attrs[poolKey+".provider"] = structs.NewStringAttribute(providerName)
+		attrs[poolKey+".provider."+providerName] = structs.NewBoolAttribute(true)
 		if s.defaultPool == pool {
 			attrs[poolKey+".default"] = structs.NewBoolAttribute(true)
 		}
