@@ -430,6 +430,7 @@ func TestDirectory_DeleteVolume(t *testing.T) {
 		lvPool.Expect(
 			mock_libvirt_storage.Refresh{},
 			mock_libvirt_storage.LookupStorageVolByName{Name: volName, Result: vol},
+			mock_libvirt_storage.LookupStorageVolByName{Name: volName, Err: ErrVolumeNotFound},
 			mock_libvirt_storage.Free{},
 		)
 		lv := &mock_libvirt.StaticLibvirt{FindStoragePoolResult: lvPool}

@@ -76,6 +76,10 @@ func TestPool_DeleteVolume(t *testing.T) {
 				Name:   "test-vol",
 				Result: lvVol,
 			},
+			mock_libvirt_storage.LookupStorageVolByName{
+				Name: "test-vol",
+				Err:  ErrVolumeNotFound,
+			},
 			mock_libvirt_storage.Free{},
 		)
 		defer lvPool.AssertExpectations()
@@ -83,6 +87,28 @@ func TestPool_DeleteVolume(t *testing.T) {
 
 		must.NoError(t, pool.DeleteVolume("test-vol"))
 		must.One(t, lvVol.CallCount("Free"), must.Sprint("libvirt volume was not freed"))
+	})
+
+	t.Run("ok - retry", func(t *testing.T) {
+		lvVol := mock_libvirt_storage.NewStaticStorageVol()
+		lvPool := mock_libvirt_storage.NewMockStoragePool(t).Expect(
+			mock_libvirt_storage.Refresh{},
+			mock_libvirt_storage.LookupStorageVolByName{
+				Name:   "test-vol",
+				Result: lvVol,
+			},
+			mock_libvirt_storage.LookupStorageVolByName{
+				Name:   "test-vol",
+				Result: lvVol,
+			},
+			mock_libvirt_storage.Free{},
+		)
+		defer lvPool.AssertExpectations()
+		pool := mkPool(t.Context(), lvPool)
+
+		must.NoError(t, pool.DeleteVolume("test-vol"))
+		must.Eq(t, 2, lvVol.CallCount("Delete"), must.Sprint("expected volume delete retry"))
+		must.Eq(t, 2, lvVol.CallCount("Free"), must.Sprint("libvirt volume was not freed"))
 	})
 
 	t.Run("ok - not found", func(t *testing.T) {

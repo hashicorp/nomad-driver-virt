@@ -252,7 +252,25 @@ func (p *pool) DeleteVolume(name string) error {
 	}
 	defer vol.Free()
 
-	return vol.Delete(libvirt.STORAGE_VOL_DELETE_NORMAL)
+	// Delete the volume.
+	if err := vol.Delete(libvirt.STORAGE_VOL_DELETE_NORMAL); err != nil {
+		return err
+	}
+
+	// Refresh the pool to check if the volume is still available.
+	chkVol, err := findRawVolume(pool, name)
+	if err != nil {
+		if errors.Is(err, ErrVolumeNotFound) {
+			return nil
+		}
+		return err
+	}
+	defer chkVol.Free()
+
+	p.logger.Debug("volume still exists after delete, delete again", "name", name)
+
+	// Volume still exists so attempt deletion again.
+	return chkVol.Delete(libvirt.STORAGE_VOL_DELETE_NORMAL)
 }
 
 // defaultOverwriter overwrites the volume with the content at the path.
