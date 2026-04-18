@@ -712,6 +712,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 	// If the VM did not include any network configuration, there will not be a
 	// teardown spec.
 	if netBuildResp.TeardownSpec != nil {
+		driverState.NetTeardown = netBuildResp.TeardownSpec
 		h.netTeardown = netBuildResp.TeardownSpec
 	}
 

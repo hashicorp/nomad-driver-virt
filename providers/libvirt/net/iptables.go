@@ -18,6 +18,7 @@ type IPTables interface {
 	DeleteIfExists(table, chain string, rulespec ...string) error
 	Insert(table, chain string, pos int, rulespec ...string) error
 	ListChains(table string) ([]string, error)
+	List(table, chain string) ([]string, error)
 	NewChain(table, chain string) error
 }
 

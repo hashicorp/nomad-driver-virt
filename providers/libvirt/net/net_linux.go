@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	stdnet "net"
+	"net/netip"
+	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -29,6 +32,12 @@ import (
 )
 
 const (
+	// postroutingIPTablesChainName is the IPTables chain name used by the
+	// driver for postrouting rules. This is currently used for entries within
+	// the nat table specifically for handling the special case of loopback
+	// addresses.
+	postroutingIPTablesChainName = "NOMAD_VT_PST"
+
 	// preroutingIPTablesChainName is the IPTables chain name used by the
 	// driver for prerouting rules. This is currently used for entries within
 	// the nat table.
@@ -38,6 +47,11 @@ const (
 	// for forwarding rules. This is currently used for entries within the
 	// filter table.
 	forwardIPTablesChainName = "NOMAD_VT_FW"
+
+	// outputIPTablesChainName is the IPTables chain name used by the driver
+	// for output rules. This is currently used for entries within the nat
+	// table specifically for handling the special case of loopback addresses.
+	outputIPTablesChainName = "NOMAD_VT_OUT"
 
 	// iptablesNATTableName is the name of the nat table within iptables.
 	iptablesNATTableName = "nat"
@@ -51,10 +65,20 @@ const (
 
 	// dhcpServerPort is the port the DHCP server is listening on.
 	dhcpServerPort = "67"
+
+	// routeLocalnetPathTemplate is the template for generating the path to check for device specific routing support.
+	routeLocalnetPathTemplate = "/proc/sys/net/ipv4/conf/%s/route_localnet"
+
+	// routeLocalnetGlobalName is the name of the global kernel configuration for localnet routing.
+	routeLocalnetGlobalName = "all"
 )
 
-// initLock is used to prevent multiple controller.Init's running at once
+// initLock is used to prevent multiple controller.Init's running at once.
 var initLock sync.Mutex
+
+// loopbackForwardsLock is used to prevent multiple loopback forwards enablements
+// and loopback device enablements from running at once.
+var loopbackForwardsLock sync.Mutex
 
 // Copy returns a new copy of the controller.
 func (c *Controller) Copy(conn shims.Connect) *Controller {
@@ -66,8 +90,9 @@ func (c *Controller) Copy(conn shims.Connect) *Controller {
 		iptablesInterfaceGetter:    c.iptablesInterfaceGetter,
 		logger:                     c.logger,
 		netConn:                    conn,
+		routingInterfaceByIPGetter: c.routingInterfaceByIPGetter,
+		routeLocalnetTemplate:      c.routeLocalnetTemplate,
 	}
-
 }
 
 func (c *Controller) Fingerprint(attr map[string]*structs.Attribute) {
@@ -406,6 +431,125 @@ func (c *Controller) discoverDHCPLeaseIP(
 	}
 }
 
+// enableLoopbackPortForwards validates that the host system is configured for routing
+// localnet packets and adds the required chains.
+func (c *Controller) enableLoopbackPortForwards() error {
+	loopbackForwardsLock.Lock()
+	defer loopbackForwardsLock.Unlock()
+
+	ipt, err := c.iptablesInterfaceGetter()
+	if err != nil {
+		return err
+	}
+
+	// Add the output chain if it does not exist.
+	outputCreated, err := ensureIPTablesChain(ipt, iptablesNATTableName, outputIPTablesChainName)
+	if err != nil {
+		return err
+	}
+	if outputCreated {
+		if err := ipt.Insert(iptablesNATTableName, "OUTPUT", 1, []string{"-j", outputIPTablesChainName}...); err != nil {
+			return err
+		}
+
+		c.logger.Info("successfully created NAT output iptables chain", "name", outputIPTablesChainName)
+	}
+
+	// Add the postrouting chain if it does not exist.
+	postroutingCreated, err := ensureIPTablesChain(ipt, iptablesNATTableName, postroutingIPTablesChainName)
+	if err != nil {
+		return err
+	}
+	if postroutingCreated {
+		if err := ipt.Insert(iptablesNATTableName, "POSTROUTING", 1, []string{"-j", postroutingIPTablesChainName}...); err != nil {
+			return err
+		}
+
+		c.logger.Info("successfully created NAT postrouting iptables chain", "name", postroutingIPTablesChainName)
+	}
+
+	// Log a warning that loopback port forwarding is being enabled.
+	c.logger.Warn("port forwarding for the local loopback is enabled")
+	return nil
+}
+
+// loopbackPortForwardsSupported returns if the host has been configured for routing localnet packets.
+// NOTE: The global configuration overrides device specific configuration.
+func (c *Controller) loopbackPortForwardsSupported(device string) bool {
+	for _, configName := range []string{routeLocalnetGlobalName, device} {
+		tmpl := c.routeLocalnetTemplate
+		if tmpl == "" {
+			tmpl = routeLocalnetPathTemplate
+		}
+
+		cfgPath := fmt.Sprintf(tmpl, configName)
+		content, err := os.ReadFile(cfgPath)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+
+			c.logger.Error("read failed for device loopback support check", "path", cfgPath, "error", err)
+			return false
+		}
+
+		if strings.TrimSpace(string(content)) == "1" {
+			return true
+		}
+	}
+
+	return false
+}
+
+// loopbackPortForwardsEnabled checks if port forwards are enabled for the loopback device.
+func (c *Controller) loopbackPortForwardsEnabled(ipt IPTables) bool {
+	chains, err := ipt.ListChains(iptablesNATTableName)
+	if err != nil {
+		c.logger.Error("could not list table chains", "table", iptablesNATTableName,
+			"chain", postroutingIPTablesChainName, "error", err)
+		return false
+	}
+
+	return slices.Contains(chains, postroutingIPTablesChainName)
+}
+
+// enableLoopbackForDevice will add the required rule to the postrouting chain
+// for the device to handle port forwards from the loopback device.
+func (c *Controller) enableLoopbackForDevice(ipt IPTables, device string) error {
+	loopbackForwardsLock.Lock()
+	defer loopbackForwardsLock.Unlock()
+
+	// Create the required rule.
+	rule := []string{
+		"-o", device,
+		"-m", "addrtype",
+		"--src-type", "LOCAL",
+		"--dst-type", "UNICAST",
+		"-j", "MASQUERADE",
+	}
+
+	// Check if the rule already exists.
+	existingRules, err := ipt.List(iptablesNATTableName, postroutingIPTablesChainName)
+	if err != nil {
+		return fmt.Errorf("failed to list postrouting rules: %w", err)
+	}
+
+	for _, existingRule := range existingRules {
+		// Match the suffix of the existing rule since chain information is not included
+		// in the new rule.
+		if strings.HasSuffix(existingRule, strings.Join(rule, " ")) {
+			return nil
+		}
+	}
+
+	// Still here, then add the rule.
+	if err := ipt.Append(iptablesNATTableName, postroutingIPTablesChainName, rule...); err != nil {
+		return fmt.Errorf("failed to add loopback rule for device: %w", err)
+	}
+
+	return nil
+}
+
 // configureIPTables is responsible for adding the iptables entries to enable
 // port mapping. The function will perform this action for all configured ports
 // within the network interface configuration.
@@ -458,47 +602,104 @@ func (c *Controller) configureIPTables(
 		// Generate our NAT preroute arguments to include the table and chain
 		// information. This allows us to store all the detail within the
 		// teardownRules easily.
-		preRouteArgs := []string{
-			iptablesNATTableName,
-			preroutingIPTablesChainName,
-			"-d", reservedPort.HostIP,
-			"-i", iface,
-			"-p", "tcp",
-			"-m", "tcp",
-			"--dport", strconv.Itoa(reservedPort.Value),
-			"-j", "DNAT",
-			"--to-destination", fmt.Sprintf("%s:%v", ip, reservedPort.To),
+		var preRouteArgs []string
+
+		hostIP, err := netip.ParseAddr(reservedPort.HostIP)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse host IP address: %w", err)
 		}
 
-		if err := ipt.Append(preRouteArgs[0], preRouteArgs[1], preRouteArgs[2:]...); err != nil {
-			return nil, err
+		// If the host IP provided is a loopback, it needs to be picked up on the
+		// output chain and redirected to the VM. This is a special case and which
+		// requires the host to be properly configured.
+		if hostIP.IsLoopback() {
+			// Find the interface that the destination address is attached.
+			dstIface, ok := interfaceMapping[ip]
+			if !ok {
+				dstIface, err = c.routingInterfaceByIPGetter(ip)
+				if err != nil {
+					return nil, fmt.Errorf("failed to identify IP interface: %w", err)
+				}
+
+				interfaceMapping[ip] = dstIface
+			}
+
+			// Check if loopback port forwarding is even available before starting.
+			if !c.loopbackPortForwardsSupported(dstIface) {
+				c.logger.Error(fmt.Sprintf("loopback port forwarding requires kernel runtime configuration - net.ipv4.conf.%s.route_localnet=1", dstIface))
+				return nil, fmt.Errorf("loopback port forwarding not enabled for device - %s", dstIface)
+			}
+
+			// Ensure loopback port forwarding is setup
+			if err := c.enableLoopbackPortForwards(); err != nil {
+				return nil, fmt.Errorf("failed to enable loopback port forwarding: %w", err)
+			}
+
+			// Enable the device to handle requests from the loopback device.
+			if err := c.enableLoopbackForDevice(ipt, dstIface); err != nil {
+				return nil, err
+			}
+
+			preRouteArgs = []string{
+				iptablesNATTableName,
+				outputIPTablesChainName,
+				"-s", reservedPort.HostIP,
+				"-o", iface,
+				"-p", "tcp",
+				"-m", "tcp",
+				"--dport", strconv.Itoa(reservedPort.Value),
+				"-j", "DNAT",
+				"--to-destination", fmt.Sprintf("%s:%v", ip, reservedPort.To),
+			}
+
+			if err := ipt.Append(preRouteArgs[0], preRouteArgs[1], preRouteArgs[2:]...); err != nil {
+				return nil, err
+			}
+
+			c.logger.Debug("configured nat output chain for localhost", "args", preRouteArgs)
+			teardownRules = append(teardownRules, preRouteArgs)
+		} else {
+			preRouteArgs = []string{
+				iptablesNATTableName,
+				preroutingIPTablesChainName,
+				"-d", reservedPort.HostIP,
+				"-i", iface,
+				"-p", "tcp",
+				"-m", "tcp",
+				"--dport", strconv.Itoa(reservedPort.Value),
+				"-j", "DNAT",
+				"--to-destination", fmt.Sprintf("%s:%v", ip, reservedPort.To),
+			}
+
+			if err := ipt.Append(preRouteArgs[0], preRouteArgs[1], preRouteArgs[2:]...); err != nil {
+				return nil, err
+			}
+
+			c.logger.Debug("configured nat prerouting chain", "args", preRouteArgs)
+			teardownRules = append(teardownRules, preRouteArgs)
+
+			// Generate our filter forward arguments to include the table and chain
+			// information. This allows us to store all the detail within the
+			// teardownRules easily.
+			filterArgs := []string{
+				iptablesFilterTableName,
+				forwardIPTablesChainName,
+				"-d", ip,
+				"-p", "tcp",
+				"-m", "state",
+				"--state", "NEW",
+				"-m", "tcp",
+				"--dport", strconv.Itoa(reservedPort.To),
+				"-j", "ACCEPT",
+			}
+
+			if err := ipt.Append(filterArgs[0], filterArgs[1], filterArgs[2:]...); err != nil {
+				return nil, err
+			}
+
+			c.logger.Debug("configured filter forward chain", "args", filterArgs)
+			teardownRules = append(teardownRules, filterArgs)
 		}
-
-		c.logger.Debug("configured nat prerouting chain", "args", preRouteArgs)
-		teardownRules = append(teardownRules, preRouteArgs)
-
-		// Generate our filter forward arguments to include the table and chain
-		// information. This allows us to store all the detail within the
-		// teardownRules easily.
-		filterArgs := []string{
-			iptablesFilterTableName,
-			forwardIPTablesChainName,
-			"-d", ip,
-			"-p", "tcp",
-			"-m", "state",
-			"--state", "NEW",
-			"-m", "tcp",
-			"--dport", strconv.Itoa(reservedPort.To),
-			"-j", "ACCEPT",
-		}
-
-		if err := ipt.Append(filterArgs[0], filterArgs[1], filterArgs[2:]...); err != nil {
-			return nil, err
-		}
-
-		c.logger.Debug("configured filter forward chain", "args", filterArgs)
-		teardownRules = append(teardownRules, filterArgs)
-
 		// The process made a change to the system, so log the critical
 		// information that might be useful to operators.
 		c.logger.Info("successfully configured port forwarding rules",
@@ -507,6 +708,34 @@ func (c *Controller) configureIPTables(
 	}
 
 	return teardownRules, nil
+}
+
+// getRoutingInterfaceByIP returns the name of the interface that can be used
+// to reach the provided address.
+func getRoutingInterfaceByIP(ip string) (string, error) {
+	interfaces, err := stdnet.Interfaces()
+	if err != nil {
+		return "", err
+	}
+
+	checkAddr, err := netip.ParseAddr(ip)
+	if err != nil {
+		return "", err
+	}
+
+	for _, iface := range interfaces {
+		if addrs, err := iface.Addrs(); err == nil {
+			for _, addr := range addrs {
+				if prefix, err := netip.ParsePrefix(addr.String()); err == nil {
+					if prefix.Contains(checkAddr) {
+						return iface.Name, nil
+					}
+				}
+			}
+		}
+	}
+
+	return "", fmt.Errorf("failed to find interface for IP %q", ip)
 }
 
 // getInterfaceByIP is a helper function which identifies which host network
