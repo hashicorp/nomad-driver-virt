@@ -94,7 +94,7 @@ test-tools: ## Install the tools used to run tests
 .PHONY: test
 test: ## Test the source code
 	@echo "==> Testing source code..."
-	@$(GO_TEST_CMD) -race -trimpath -cover ./... -run=1
+	$(GO_TEST_CMD) -race -trimpath -cover -count=1 ./...
 	@echo "==> Done"
 
 .PHONY: check-go-mod
