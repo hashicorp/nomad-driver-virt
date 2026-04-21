@@ -56,6 +56,8 @@ const (
 	DomainCrashed     = "crashed"
 	DomainPMSuspended = "pmsuspended"
 	DomainShutOff     = "shutoff"
+
+	Name = "libvirt" // Name of the provider.
 )
 
 var (

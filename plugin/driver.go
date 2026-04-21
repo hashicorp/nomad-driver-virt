@@ -168,6 +168,11 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 	// Apply any required configuration updates
 	d.config.Compat()
 
+	// Validate the configuration
+	if err := d.config.Validate(); err != nil {
+		return err
+	}
+
 	// Save the Nomad agent configuration
 	if cfg.AgentConfig != nil {
 		d.nomadConfig = cfg.AgentConfig.Driver

@@ -4,6 +4,8 @@
 package libvirt
 
 import (
+	"fmt"
+
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 )
 
@@ -11,11 +13,10 @@ import (
 var configSpec = hclspec.NewBlock("libvirt", false, hclspec.NewObject(map[string]*hclspec.Spec{
 	"uri": hclspec.NewDefault(
 		hclspec.NewAttr("uri", "string", false),
-		hclspec.NewLiteral(`"qemu:///system"`),
+		hclspec.NewLiteral(fmt.Sprintf(`"%s"`, defaultURI)),
 	),
 	"user":                           hclspec.NewAttr("user", "string", false),
 	"password":                       hclspec.NewAttr("password", "string", false),
-	"default":                        hclspec.NewAttr("default", "bool", false),
 	"allow_insecure_readonly_mounts": hclspec.NewAttr("allow_insecure_readonly_mounts", "bool", false),
 }))
 
@@ -29,6 +30,11 @@ type Config struct {
 	URI                 string `codec:"uri"`
 	User                string `codec:"user"`
 	Password            string `codec:"password"`
-	Default             bool   `codec:"default"`
 	AllowInsecureMounts bool   `codec:"allow_insecure_readonly_mounts"`
+}
+
+// Validate validates the libvirt configuration.
+func (c *Config) Validate() error {
+	// NOTE: Nothing to validate currently.
+	return nil
 }
