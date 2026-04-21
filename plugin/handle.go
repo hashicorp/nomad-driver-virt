@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/virt"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
@@ -68,7 +69,7 @@ func (h *taskHandle) TaskStatus() *drivers.TaskStatus {
 func (h *taskHandle) GetStats() (*drivers.TaskResourceUsage, error) {
 	virtvm, err := h.taskGetter.GetVM(h.name)
 	if err != nil {
-		if errors.Is(err, vm.ErrNotFound) {
+		if errors.Is(err, errs.ErrNotFound) {
 			return nil, fmt.Errorf("virt: task not found %s: %w", h.name, drivers.ErrTaskNotFound)
 		}
 		return nil, fmt.Errorf("virt: unable to get task %s stats: %w", h.name, err)
@@ -96,7 +97,7 @@ func (h *taskHandle) monitor(ctx context.Context, interval time.Duration, exitCh
 		select {
 		case <-ticker.C:
 			virtvm, err := h.taskGetter.GetVM(h.name)
-			if err != nil && !errors.Is(err, vm.ErrNotFound) {
+			if err != nil && !errors.Is(err, errs.ErrNotFound) {
 				h.logger.Error("virt: unable to get task state", "task", h.name, "error", err)
 				h.stateLock.Lock()
 				h.procState = drivers.TaskStateUnknown

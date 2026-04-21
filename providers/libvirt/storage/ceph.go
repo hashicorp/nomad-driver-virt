@@ -14,7 +14,7 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-multierror"
-	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt/disks"
@@ -52,7 +52,7 @@ func newCephPool(ctx context.Context, logger hclog.Logger, l libvirtStorage, poo
 	}
 
 	p, err := l.FindStoragePool(poolName)
-	if err != nil && !errors.Is(err, vm.ErrNotFound) {
+	if err != nil && !errors.Is(err, errs.ErrNotFound) {
 		logger.Debug("unexpected error during pool lookup", "error", err)
 		return nil, err
 	}
@@ -167,12 +167,12 @@ func (c *ceph) ValidateDisk(disk *disks.Disk) error {
 	// Only raw format is supported for ceph volumes
 	if disk.Format != disks.DiskFormatRaw {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w: format can only be raw for ceph volumes", disks.ErrInvalidConfiguration))
+			fmt.Errorf("%w: format can only be raw for ceph volumes", errs.ErrInvalidConfiguration))
 	}
 
 	if disk.Sparse != nil && !*disk.Sparse {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w: sparse cannot be disabled for ceph volumes", disks.ErrInvalidConfiguration))
+			fmt.Errorf("%w: sparse cannot be disabled for ceph volumes", errs.ErrInvalidConfiguration))
 	}
 
 	return mErr.ErrorOrNil()

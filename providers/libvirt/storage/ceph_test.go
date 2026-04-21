@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_libvirt "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt"
@@ -44,7 +45,7 @@ func TestCeph_ValidateDisk(t *testing.T) {
 		t.Run("qcow2", func(t *testing.T) {
 			disk := &disks.Disk{Format: disks.DiskFormatQcow2}
 			err := pool.ValidateDisk(disk)
-			must.ErrorIs(t, err, disks.ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "format can only be raw")
 		})
 	})
@@ -58,7 +59,7 @@ func TestCeph_ValidateDisk(t *testing.T) {
 		t.Run("disabled", func(t *testing.T) {
 			disk := &disks.Disk{Format: disks.DiskFormatRaw, Sparse: pointer.Of(false)}
 			err := pool.ValidateDisk(disk)
-			must.ErrorIs(t, err, disks.ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "sparse cannot be disabled")
 		})
 	})

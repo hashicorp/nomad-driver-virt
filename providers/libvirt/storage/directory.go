@@ -11,7 +11,7 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-multierror"
-	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"libvirt.org/go/libvirtxml"
@@ -29,7 +29,7 @@ type directory struct {
 func newDirectoryPool(ctx context.Context, logger hclog.Logger, l libvirtStorage, poolName string, config storage.Directory, s storage.Storage) (*directory, error) {
 	logger = logger.Named("storage-pool").With("name", poolName)
 	p, err := l.FindStoragePool(poolName)
-	if err != nil && !errors.Is(err, vm.ErrNotFound) {
+	if err != nil && !errors.Is(err, errs.ErrNotFound) {
 		return nil, err
 	}
 
@@ -69,13 +69,13 @@ func (d *directory) ValidateDisk(disk *disks.Disk) error {
 	// Directory pool currently supports qcow2 and raw volumes
 	if disk.Format != disks.DiskFormatQcow2 && disk.Format != disks.DiskFormatRaw {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w: format only supports raw or qcow2 for directory volumes", disks.ErrInvalidConfiguration))
+			fmt.Errorf("%w: format only supports raw or qcow2 for directory volumes", errs.ErrInvalidConfiguration))
 	}
 
 	// Disk chaining is only supported with qcow2 images.
 	if disk.Format != disks.DiskFormatQcow2 && disk.Chained {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w: format must be qcow2 for chained directory volumes", disks.ErrInvalidConfiguration))
+			fmt.Errorf("%w: format must be qcow2 for chained directory volumes", errs.ErrInvalidConfiguration))
 	}
 
 	return mErr.ErrorOrNil()

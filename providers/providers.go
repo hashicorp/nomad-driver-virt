@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/virt"
@@ -218,7 +219,7 @@ func (p *providers) GetVM(name string) (*vm.Info, error) {
 
 		info, err := pv.GetVM(name)
 		if err != nil {
-			if !errors.Is(err, vm.ErrNotFound) {
+			if !errors.Is(err, errs.ErrNotFound) {
 				return nil, err
 			}
 
@@ -228,7 +229,7 @@ func (p *providers) GetVM(name string) (*vm.Info, error) {
 		return info, err
 	}
 
-	return nil, vm.ErrNotFound
+	return nil, errs.ErrNotFound
 }
 
 // GetProviderForVM will return the virt.Virtualizer responsible
@@ -245,7 +246,7 @@ func (p *providers) GetProviderForVM(ctx context.Context, name string) (virt.Vir
 
 		_, err = pv.GetVM(name)
 		if err != nil {
-			if !errors.Is(err, vm.ErrNotFound) {
+			if !errors.Is(err, errs.ErrNotFound) {
 				return nil, err
 			}
 
@@ -255,5 +256,5 @@ func (p *providers) GetProviderForVM(ctx context.Context, name string) (virt.Vir
 		return pv, nil
 	}
 
-	return nil, vm.ErrNotFound
+	return nil, errs.ErrNotFound
 }

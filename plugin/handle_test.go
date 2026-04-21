@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	mock_virt "github.com/hashicorp/nomad-driver-virt/testutil/mock/virt"
 	"github.com/hashicorp/nomad/client/structs"
@@ -53,7 +54,7 @@ func Test_GetStats(t *testing.T) {
 		},
 		{
 			name:          "task_not_found_error",
-			info:          mock_virt.GetVM{Name: "test-vm", Err: vm.ErrNotFound},
+			info:          mock_virt.GetVM{Name: "test-vm", Err: errs.ErrNotFound},
 			expectedError: drivers.ErrTaskNotFound,
 		},
 	}

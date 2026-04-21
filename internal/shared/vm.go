@@ -4,7 +4,6 @@
 package vm
 
 import (
-	"errors"
 	"fmt"
 	"net/netip"
 	"regexp"
@@ -14,6 +13,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
@@ -33,17 +33,13 @@ var (
 	// should be at most 63 characters according to the RFC
 	validLabel = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?$`)
 
-	ErrEmptyName            = errors.New("virtual machine name can not be empty")
-	ErrMissingImage         = errors.New("image path can not be empty")
-	ErrNotEnoughDisk        = errors.New("not enough disk space assigned to task")
-	ErrNoCPUS               = errors.New("no cpus configured, use resources.cores to assign cores in the job spec")
-	ErrNotEnoughMemory      = errors.New("not enough memory assigned to task")
-	ErrIncompleteOSVariant  = errors.New("provided os information is incomplete: arch and machine are mandatory ")
-	ErrInvalidHostName      = fmt.Errorf("a resource name must consist of lower case alphanumeric characters or '-', must start and end with an alphanumeric character and be less than %d characters", maxNameLength+1)
-	ErrNotFound             = errors.New("not found")
-	ErrNotImplemented       = errors.New("not implemented")
-	ErrNotSupported         = errors.New("feature is not supported")
-	ErrInvalidConfiguration = errors.New("invalid configuration")
+	ErrEmptyName           = fmt.Errorf("%w - virtual machine name can not be empty", errs.ErrInvalidConfiguration)
+	ErrMissingImage        = fmt.Errorf("%w - image path can not be empty", errs.ErrInvalidConfiguration)
+	ErrNotEnoughDisk       = fmt.Errorf("%w - not enough disk space assigned to task", errs.ErrInvalidConfiguration)
+	ErrNoCPUS              = fmt.Errorf("%w - no cpus configured, use resources.cores to assign cores in the job spec", errs.ErrInvalidConfiguration)
+	ErrNotEnoughMemory     = fmt.Errorf("%w - not enough memory assigned to task", errs.ErrInvalidConfiguration)
+	ErrIncompleteOSVariant = fmt.Errorf("%w - provided os information is incomplete: arch and machine are mandatory", errs.ErrInvalidConfiguration)
+	ErrInvalidHostName     = fmt.Errorf("%w - a resource name must consist of lower case alphanumeric characters or '-', must start and end with an alphanumeric character and be less than %d characters", errs.ErrInvalidConfiguration, maxNameLength+1)
 )
 
 type VMState string

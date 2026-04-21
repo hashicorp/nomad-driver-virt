@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_libvirt "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt"
@@ -488,7 +489,7 @@ func TestStorage_VolumeToDisk(t *testing.T) {
 				TypeResult: "unknown",
 				NameResult: "test-pool",
 			},
-			err: vm.ErrNotImplemented,
+			err: errs.ErrNotImplemented,
 		},
 	}
 

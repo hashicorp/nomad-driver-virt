@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage"
 	mock_image_tools "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage/image_tools"
@@ -358,7 +358,7 @@ func TestDisk(t *testing.T) {
 					p := mock_storage.NewMockPool(t)
 					defer p.AssertExpectations()
 					p.Expect(
-						mock_storage.GetVolume{Name: volName, Err: vm.ErrNotFound},
+						mock_storage.GetVolume{Name: volName, Err: errs.ErrNotFound},
 						mock_storage.AddVolume{
 							Name: volName,
 							Opts: storage.Options{
@@ -396,49 +396,49 @@ func TestDisk(t *testing.T) {
 		t.Run("set format", func(t *testing.T) {
 			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Format: "not-raw"}
 			err := d.ValidateNomadVolume()
-			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "format")
 		})
 
 		t.Run("set size", func(t *testing.T) {
 			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Size: "2GB"}
 			err := d.ValidateNomadVolume()
-			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "size")
 		})
 
 		t.Run("sparse enabled", func(t *testing.T) {
 			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Sparse: pointer.Of(true)}
 			err := d.ValidateNomadVolume()
-			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "sparse")
 		})
 
 		t.Run("set pool", func(t *testing.T) {
 			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Pool: "some-pool"}
 			err := d.ValidateNomadVolume()
-			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "pool")
 		})
 
 		t.Run("chained enabled", func(t *testing.T) {
 			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Chained: true}
 			err := d.ValidateNomadVolume()
-			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "chained")
 		})
 
 		t.Run("set source", func(t *testing.T) {
 			d := Disk{VolumeName: "nomad-volume", blockDevicePath: "/dev/null", Source: &Source{Volume: "other-volume"}}
 			err := d.ValidateNomadVolume()
-			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "source.volume")
 		})
 
 		t.Run("unset device path", func(t *testing.T) {
 			d := Disk{VolumeName: "nomad-volume"}
 			err := d.ValidateNomadVolume()
-			must.ErrorIs(t, err, ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "missing Nomad volume")
 		})
 	})

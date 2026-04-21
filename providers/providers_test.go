@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	mock_virtualizers "github.com/hashicorp/nomad-driver-virt/testutil/mock/virt"
 	"github.com/hashicorp/nomad-driver-virt/virt"
@@ -79,7 +80,7 @@ func TestProviders(t *testing.T) {
 		t.Run("no providers", func(t *testing.T) {
 			p := New(ctx, logger)
 			v, err := p.GetVM("test")
-			must.ErrorIs(t, err, vm.ErrNotFound)
+			must.ErrorIs(t, err, errs.ErrNotFound)
 			must.Nil(t, v)
 		})
 
@@ -91,7 +92,7 @@ func TestProviders(t *testing.T) {
 
 			t.Run("when VM is not registered", func(t *testing.T) {
 				v, err := p.GetVM("test")
-				must.ErrorIs(t, err, vm.ErrNotFound)
+				must.ErrorIs(t, err, errs.ErrNotFound)
 				must.Nil(t, v)
 			})
 
@@ -109,7 +110,7 @@ func TestProviders(t *testing.T) {
 		t.Run("no providers", func(t *testing.T) {
 			p := New(ctx, logger)
 			v, err := p.GetProviderForVM(t.Context(), "test-vm")
-			must.ErrorIs(t, err, vm.ErrNotFound)
+			must.ErrorIs(t, err, errs.ErrNotFound)
 			must.Nil(t, v)
 		})
 
@@ -118,7 +119,7 @@ func TestProviders(t *testing.T) {
 			stubProvider(p, "test-virt", mock_virtualizers.NewStatic())
 			stubProvider(p, "other-virt", mock_virtualizers.NewStatic())
 			v, err := p.GetProviderForVM(t.Context(), "test-vm")
-			must.ErrorIs(t, err, vm.ErrNotFound)
+			must.ErrorIs(t, err, errs.ErrNotFound)
 			must.Nil(t, v)
 		})
 

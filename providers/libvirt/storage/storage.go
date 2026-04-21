@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
@@ -29,10 +30,10 @@ const (
 )
 
 var (
-	ErrInvalidStorageConfiguration = fmt.Errorf("%w for storage", vm.ErrInvalidConfiguration)
-	ErrInvalidVolumeConfiguration  = fmt.Errorf("%w for volume", vm.ErrInvalidConfiguration)
-	ErrVolumeNotFound              = fmt.Errorf("volume %w", vm.ErrNotFound)
-	ErrPoolNotFound                = fmt.Errorf("pool %w", vm.ErrNotFound)
+	ErrInvalidStorageConfiguration = fmt.Errorf("%w for storage", errs.ErrInvalidConfiguration)
+	ErrInvalidVolumeConfiguration  = fmt.Errorf("%w for volume", errs.ErrInvalidConfiguration)
+	ErrVolumeNotFound              = fmt.Errorf("volume %w", errs.ErrNotFound)
+	ErrPoolNotFound                = fmt.Errorf("pool %w", errs.ErrNotFound)
 )
 
 // This interface defines what functions are needed from the libvirt provider.
@@ -307,7 +308,7 @@ func (s *Storage) VolumeToDisk(vol storage.Volume) (*libvirtxml.DomainDisk, erro
 			},
 		}
 	default:
-		return nil, fmt.Errorf("%w: unknown storage type - %s", vm.ErrNotImplemented, pool.Type())
+		return nil, fmt.Errorf("%w: unknown storage type - %s", errs.ErrNotImplemented, pool.Type())
 	}
 
 	return disk, nil

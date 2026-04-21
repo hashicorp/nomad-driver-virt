@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_libvirt "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt"
 	mock_libvirt_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt/storage"
@@ -46,7 +47,7 @@ func TestDirectory_ValidateDisk(t *testing.T) {
 		t.Run("unknown", func(t *testing.T) {
 			disk := &disks.Disk{Format: "unknown"}
 			err := pool.ValidateDisk(disk)
-			must.ErrorIs(t, err, disks.ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "format only supports")
 		})
 	})
@@ -60,7 +61,7 @@ func TestDirectory_ValidateDisk(t *testing.T) {
 		t.Run("raw format", func(t *testing.T) {
 			disk := &disks.Disk{Format: disks.DiskFormatRaw, Chained: true}
 			err := pool.ValidateDisk(disk)
-			must.ErrorIs(t, err, disks.ErrInvalidConfiguration)
+			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "format must be qcow2")
 		})
 	})

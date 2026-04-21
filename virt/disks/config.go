@@ -14,7 +14,7 @@ import (
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nomad-driver-virt/internal/convert"
-	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/storage/image_tools"
 	"github.com/hashicorp/nomad/helper/pointer"
@@ -23,12 +23,10 @@ import (
 )
 
 var (
-	ErrInvalidConfiguration = errors.New("invalid configuration")
-	ErrMissingAttribute     = errors.New("missing required attribute")
-	ErrDisallowedPath       = errors.New("access to path is not allowed")
-	ErrPathNotFound         = errors.New("path not found")
-	ErrNoPrimary            = errors.New("no primary disk defined")
-	ErrMultiplePrimary      = errors.New("multiple primary disks defined")
+	ErrDisallowedPath  = fmt.Errorf("%w - access to path is not allowed", errs.ErrInvalidConfiguration)
+	ErrPathNotFound    = fmt.Errorf("%w - path not found", errs.ErrInvalidConfiguration)
+	ErrNoPrimary       = fmt.Errorf("%w - no primary disk defined", errs.ErrInvalidConfiguration)
+	ErrMultiplePrimary = fmt.Errorf("%w - multiple primary disks defined", errs.ErrInvalidConfiguration)
 
 	configSpec = hclspec.NewBlockSet("disk", hclspec.NewObject(map[string]*hclspec.Spec{
 		"pool":      hclspec.NewAttr("pool", "string", false),
@@ -164,34 +162,34 @@ func (d *Disk) ValidateNomadVolume() error {
 
 	if d.Format != "" && d.Format != DiskFormatRaw {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - format cannot be set when using Nomad volume", ErrInvalidConfiguration))
+			fmt.Errorf("%w - format cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
 	if d.Size != "" {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - size cannot be set when using Nomad volume", ErrInvalidConfiguration))
+			fmt.Errorf("%w - size cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
 	if d.Sparse != nil {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - sparse cannot be set when using Nomad volume", ErrInvalidConfiguration))
+			fmt.Errorf("%w - sparse cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
 	if d.Pool != "" {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - pool cannot be set when using Nomad volume", ErrInvalidConfiguration))
+			fmt.Errorf("%w - pool cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
 	if d.Chained {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - chained cannot be set when using Nomad volume", ErrInvalidConfiguration))
+			fmt.Errorf("%w - chained cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
 	if d.Source != nil {
 		if d.Source.Volume != "" {
 			mErr = multierror.Append(mErr,
-				fmt.Errorf("%w - source.volume cannot be set when using Nomad volume", ErrInvalidConfiguration))
+				fmt.Errorf("%w - source.volume cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 		}
 	}
 
 	if d.blockDevicePath == "" {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - missing Nomad volume mount configuration", ErrInvalidConfiguration))
+			fmt.Errorf("%w - missing Nomad volume mount configuration", errs.ErrInvalidConfiguration))
 	}
 
 	return mErr.ErrorOrNil()
@@ -435,7 +433,7 @@ func (d Disks) Prepare(s storage.Storage) error {
 
 				vol, err := pool.GetVolume(disk.Source.identifier)
 				if err != nil {
-					if !errors.Is(err, vm.ErrNotFound) {
+					if !errors.Is(err, errs.ErrNotFound) {
 						return err
 					}
 
@@ -540,17 +538,17 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 		// Start with checking values that should be set for all disks.
 		if disk.BusType == "" {
 			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: bus_type", errPrefix, ErrMissingAttribute))
+				fmt.Errorf("%s %w: bus_type", errPrefix, errs.ErrMissingAttribute))
 		}
 
 		if disk.Kind == "" {
 			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: kind", errPrefix, ErrMissingAttribute))
+				fmt.Errorf("%s %w: kind", errPrefix, errs.ErrMissingAttribute))
 		}
 
 		if disk.Devname == "" {
 			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: devname", errPrefix, ErrMissingAttribute))
+				fmt.Errorf("%s %w: devname", errPrefix, errs.ErrMissingAttribute))
 		}
 
 		// If a source image has been set, check that it exists and it's
@@ -566,11 +564,11 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 			}
 			if disk.Source.Format == "" {
 				mErr = multierror.Append(mErr,
-					fmt.Errorf("%s %w: source.format", errPrefix, ErrMissingAttribute))
+					fmt.Errorf("%s %w: source.format", errPrefix, errs.ErrMissingAttribute))
 			}
 			if disk.Source.Volume != "" {
 				mErr = multierror.Append(mErr,
-					fmt.Errorf("%s %w: storage.volume and storage.image are mutually exclusive", errPrefix, ErrInvalidConfiguration))
+					fmt.Errorf("%s %w: storage.volume and storage.image are mutually exclusive", errPrefix, errs.ErrInvalidConfiguration))
 			}
 		}
 
@@ -586,12 +584,12 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 
 		if disk.Format == "" {
 			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: format", errPrefix, ErrMissingAttribute))
+				fmt.Errorf("%s %w: format", errPrefix, errs.ErrMissingAttribute))
 		}
 
 		if disk.Size == "" {
 			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: size", errPrefix, ErrMissingAttribute))
+				fmt.Errorf("%s %w: size", errPrefix, errs.ErrMissingAttribute))
 		}
 
 		// If a size for the disk is set, check that the value is a size.
@@ -602,7 +600,7 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 
 		if disk.Chained && (disk.Source == nil || (disk.Source.Volume == "" && disk.Source.Image == "")) {
 			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: chained cannot be enabled without a source", errPrefix, ErrInvalidConfiguration))
+				fmt.Errorf("%s %w: chained cannot be enabled without a source", errPrefix, errs.ErrInvalidConfiguration))
 		}
 
 		// Load the storage pool for this disk and apply any custom validation if

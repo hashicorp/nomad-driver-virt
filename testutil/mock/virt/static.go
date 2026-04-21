@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage"
@@ -105,7 +106,7 @@ func (s *StaticVirt) GetVM(string) (*vm.Info, error) {
 		return s.GetVMResult, nil
 	}
 
-	return nil, vm.ErrNotFound
+	return nil, errs.ErrNotFound
 }
 
 func (s *StaticVirt) GetNetworkInterfaces(string) ([]vm.NetworkInterface, error) {

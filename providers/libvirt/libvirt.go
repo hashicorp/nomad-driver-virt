@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	libvirtnet "github.com/hashicorp/nomad-driver-virt/providers/libvirt/net"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
@@ -60,8 +61,8 @@ const (
 var (
 	ErrConnectionClosed = errors.New("libvirt connection is closed")
 	ErrDomainExists     = errors.New("the domain exists already")
-	ErrDomainNotFound   = fmt.Errorf("domain %w", vm.ErrNotFound)
-	ErrPoolNotFound     = fmt.Errorf("storage pool %w", vm.ErrNotFound)
+	ErrDomainNotFound   = fmt.Errorf("domain %w", errs.ErrNotFound)
+	ErrPoolNotFound     = fmt.Errorf("storage pool %w", errs.ErrNotFound)
 
 	// nomadDomainStates is a mapping of the libvirt domain state to local string constant
 	nomadDomainStates = map[libvirt.DomainState]string{
@@ -325,7 +326,7 @@ func (p *provider) CreateVM(config *vm.Config) error {
 	}
 
 	dom, err := p.getDomain(config.Name)
-	if err != nil && !errors.Is(err, vm.ErrNotFound) {
+	if err != nil && !errors.Is(err, errs.ErrNotFound) {
 		return err
 	}
 
@@ -693,7 +694,7 @@ func (p *provider) Fingerprint() (map[string]*structs.Attribute, error) {
 // implements virt.Virtualizer
 func (p *provider) SetupStorage(config *storage.Config) error {
 	if config == nil {
-		return fmt.Errorf("%w: missing storage pool configuration", vm.ErrInvalidConfiguration)
+		return fmt.Errorf("%w: missing storage pool configuration", errs.ErrInvalidConfiguration)
 	}
 
 	s, err := libvirt_storage.New(p.ctx, p.logger, p, config)
@@ -730,7 +731,7 @@ func (p *provider) GenerateMountCommands(mounts []*vm.MountFileConfig) ([]string
 		// if the mount is read-only, only 9p is supported (unless insecure mounts enabled).
 		if m.ReadOnly && !virtiofsRO {
 			if !p.mountFsAvailable(mountFs9p) {
-				return nil, fmt.Errorf("read-only virtiofs mount %w - libvirt version 11.0.0 or greater required", vm.ErrNotSupported)
+				return nil, fmt.Errorf("read-only virtiofs mount %w - libvirt version 11.0.0 or greater required", errs.ErrNotSupported)
 			}
 
 			cmds = append(cmds, p.generate9pMountCmds(m)...)
@@ -750,7 +751,7 @@ func (p *provider) GenerateMountCommands(mounts []*vm.MountFileConfig) ([]string
 		}
 
 		// If here then no support filesystem detected
-		return nil, fmt.Errorf("mounting %w - no supported filesystems available", vm.ErrNotSupported)
+		return nil, fmt.Errorf("mounting %w - no supported filesystems available", errs.ErrNotSupported)
 	}
 
 	return cmds, nil
