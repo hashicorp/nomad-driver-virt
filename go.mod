@@ -17,7 +17,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-set v0.1.14
 	github.com/hashicorp/nomad v1.11.3
-	github.com/shoenig/test v1.12.2
+	github.com/shoenig/test v1.13.0
 	libvirt.org/go/libvirt v1.12002.0
 	libvirt.org/go/libvirtxml v1.12002.0
 )
