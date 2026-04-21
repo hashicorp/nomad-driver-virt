@@ -1194,7 +1194,9 @@ func ModifyMountFsAvailability(fn mountFsAvailabilityFn) {
 		logger.Warn("mount filesystem availability function override removed")
 	}
 
+	mountFsAvailabilityLock.Lock()
 	mountFsAvailabilityOverride = fn
+	mountFsAvailabilityLock.Unlock()
 }
 
 type mountFsAvailabilityFn func() (map[string]struct{}, error)
@@ -1202,4 +1204,7 @@ type mountFsAvailabilityFn func() (map[string]struct{}, error)
 // mountFsAvailabilityOverride is an override to manually set available guest
 // filesystem support. It is used for testing and can be set outside of the
 // package using the [ModifyMountFsAvailability] function.
-var mountFsAvailabilityOverride mountFsAvailabilityFn
+var (
+	mountFsAvailabilityOverride mountFsAvailabilityFn
+	mountFsAvailabilityLock     sync.Mutex
+)
