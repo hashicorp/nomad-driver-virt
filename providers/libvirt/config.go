@@ -13,7 +13,7 @@ import (
 var configSpec = hclspec.NewBlock("libvirt", false, hclspec.NewObject(map[string]*hclspec.Spec{
 	"uri": hclspec.NewDefault(
 		hclspec.NewAttr("uri", "string", false),
-		hclspec.NewLiteral(fmt.Sprintf(`"%s"`, defaultURI)),
+		hclspec.NewLiteral(fmt.Sprintf("%q", defaultURI)),
 	),
 	"user":                           hclspec.NewAttr("user", "string", false),
 	"password":                       hclspec.NewAttr("password", "string", false),

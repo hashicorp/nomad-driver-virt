@@ -126,13 +126,10 @@ func (c *Config) Validate() error {
 
 	var mErr *multierror.Error
 
-	if err := c.Provider.Validate(); err != nil {
-		mErr = multierror.Append(mErr, err)
-	}
-
-	if err := c.StoragePools.Validate(); err != nil {
-		mErr = multierror.Append(mErr, err)
-	}
+	mErr = multierror.Append(mErr,
+		c.Provider.Validate(),
+		c.StoragePools.Validate(),
+	)
 
 	return mErr.ErrorOrNil()
 }

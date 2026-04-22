@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/go-set/v3"
 	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 )
@@ -41,40 +42,33 @@ func (c *Config) Validate() error {
 	var mErr *multierror.Error
 
 	// Track names to flag duplicates.
-	names := map[string]struct{}{}
+	names := set.New[string](0)
 
 	// Validate the directory storage pools.
 	for n, dir := range c.Directory {
-		names[n] = struct{}{}
-
-		if err := dir.Validate(); err != nil {
-			mErr = multierror.Append(mErr, err)
-		}
+		names.Insert(n)
+		mErr = multierror.Append(mErr, dir.Validate())
 	}
 
 	// Validate the ceph storage pools.
 	for n, ceph := range c.Ceph {
-		if _, ok := names[n]; ok {
+		if !names.Insert(n) {
 			mErr = multierror.Append(mErr,
 				fmt.Errorf("%w: storage pool name already defined - %s",
 					errs.ErrInvalidConfiguration, n))
 		}
-		names[n] = struct{}{}
-
-		if err := ceph.Validate(); err != nil {
-			mErr = multierror.Append(mErr, err)
-		}
+		mErr = multierror.Append(mErr, ceph.Validate())
 	}
 
 	// Must have at least one pool defined.
-	if len(names) == 0 {
+	if names.Empty() {
 		mErr = multierror.Append(mErr,
 			fmt.Errorf("%w: no storage pools defined", errs.ErrInvalidConfiguration))
 	}
 
 	// Check the default pool is defined if set.
 	if c.Default != "" {
-		if _, ok := names[c.Default]; !ok {
+		if !names.Contains(c.Default) {
 			mErr = multierror.Append(mErr,
 				fmt.Errorf("%w: default storage pool is unknown - %s",
 					errs.ErrInvalidConfiguration, c.Default))
@@ -93,10 +87,8 @@ type Directory struct {
 func (d Directory) Validate() error {
 	var mErr *multierror.Error
 
-	if d.Path == "" {
-		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w: storage_pool.directory.path", errs.ErrMissingAttribute))
-	}
+	mErr = multierror.Append(mErr,
+		errs.MissingAttribute("storage_pool.directory.path", d.Path))
 
 	return mErr.ErrorOrNil()
 }
@@ -112,25 +104,12 @@ type Ceph struct {
 func (c Ceph) Validate() error {
 	var mErr *multierror.Error
 
-	if c.Pool == "" {
-		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w: storage_pool.ceph.pool", errs.ErrMissingAttribute))
-	}
-
-	if len(c.Hosts) == 0 {
-		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w: storage_pool.ceph.hosts", errs.ErrMissingAttribute))
-	}
-
-	if c.Authentication.Username == "" {
-		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w: storage_pool.ceph.authentication.username", errs.ErrMissingAttribute))
-	}
-
-	if c.Authentication.Secret == "" {
-		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w: storage_pool.ceph.authentication.secret", errs.ErrMissingAttribute))
-	}
+	mErr = multierror.Append(mErr,
+		errs.MissingAttribute("storage_pool.ceph.pool", c.Pool),
+		errs.MissingAttribute("storage_pool.ceph.hosts", c.Hosts),
+		errs.MissingAttribute("storage_pool.ceph.authentication.username", c.Authentication.Username),
+		errs.MissingAttribute("storage_pool.ceph.authentication.secret", c.Authentication.Secret),
+	)
 
 	return mErr.ErrorOrNil()
 }
