@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/internal/holes"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	mock_libvirt "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt"
@@ -683,17 +684,16 @@ func TestPool_AddVolume(t *testing.T) {
 				must.Eq(t, &storage.Volume{Name: name, Pool: "test-pool", Size: 200, Format: "raw"}, vol)
 			})
 
-			// NOTE: Two files are included in the ./testdata directory:
-			// * test.img - random content, no holes
-			// * test.sparse.img - random content, two holes (4096-12288 and 20480-40960)
-
 			t.Run("standard image", func(t *testing.T) {
-				imgPath := "./testdata/test.img"
+				// Use the helper to generate a non-sparse file. The
+				// file size will be 50k.
+				_, imgPath := holes.TestFiles(t, t.TempDir())
 				info, err := os.Stat(imgPath)
 				must.NoError(t, err)
 				opts.Source.Path = imgPath
 
 				lvStream := mock_libvirt.NewMockStream(t).Expect(
+					mock_libvirt.Send{Result: -1},
 					mock_libvirt.Send{Result: -1},
 					mock_libvirt.Finish{},
 					mock_libvirt.Free{},
@@ -744,7 +744,8 @@ func TestPool_AddVolume(t *testing.T) {
 			})
 
 			t.Run("sparse image", func(t *testing.T) {
-				imgPath := "./testdata/test.sparse.img"
+				// Generate a sparse file for the test.
+				imgPath := holes.TestFile(t, t.TempDir())
 				info, err := os.Stat(imgPath)
 				must.NoError(t, err)
 				opts.Source.Path = imgPath

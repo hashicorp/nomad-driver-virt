@@ -1,6 +1,8 @@
 // Copyright IBM Corp. 2024, 2025
 // SPDX-License-Identifier: MPL-2.0
 
+//go:build unix
+
 package holes
 
 import (
@@ -10,14 +12,14 @@ import (
 	"github.com/shoenig/test/must"
 )
 
-// NOTE: Two files are included in the ./testdata directory:
-// * test.img - random content, no holes
-// * test.sparse.img - random content, two holes (4096-12288 and 20480-40960)
-
 func TestHoles(t *testing.T) {
+	// The sparse image produced includes two holes with known positions
+	// in the file (4096-12288 and 20480-40960)
+	sparseImg, fullImg := TestFiles(t, t.TempDir())
+
 	t.Run("MakeReader", func(t *testing.T) {
 		t.Run("with holes", func(t *testing.T) {
-			f, err := os.Open("./testdata/test.sparse.img")
+			f, err := os.Open(sparseImg)
 			must.NoError(t, err)
 
 			_, ok := MakeReader(f)
@@ -25,7 +27,7 @@ func TestHoles(t *testing.T) {
 		})
 
 		t.Run("without holes", func(t *testing.T) {
-			f, err := os.Open("./testdata/test.img")
+			f, err := os.Open(fullImg)
 			must.NoError(t, err)
 
 			_, ok := MakeReader(f)
@@ -36,7 +38,7 @@ func TestHoles(t *testing.T) {
 	t.Run("Collect", func(t *testing.T) {
 		t.Run("with holes", func(t *testing.T) {
 			var f Reader
-			f, err := os.Open("./testdata/test.sparse.img")
+			f, err := os.Open(sparseImg)
 			must.NoError(t, err)
 			c, err := Collect(f)
 			must.NoError(t, err)
@@ -55,7 +57,7 @@ func TestHoles(t *testing.T) {
 
 		t.Run("without holes", func(t *testing.T) {
 			var f Reader
-			f, err := os.Open("./testdata/test.img")
+			f, err := os.Open(fullImg)
 			must.NoError(t, err)
 			c, err := Collect(f)
 			must.NoError(t, err)
