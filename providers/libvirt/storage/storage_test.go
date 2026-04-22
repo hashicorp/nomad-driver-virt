@@ -265,11 +265,11 @@ func TestStorage_Fingerprint(t *testing.T) {
 		s.Fingerprint(attrs)
 
 		expected := map[string]*structs.Attribute{
-			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool":          structs.NewStringAttribute("directory"),
-			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.provider": structs.NewStringAttribute(providerName),
-			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.default":  structs.NewBoolAttribute(true),
-			vm.FingerprintAttributeKeyPrefix + ".storage_pool.aux-pool":           structs.NewStringAttribute("directory"),
-			vm.FingerprintAttributeKeyPrefix + ".storage_pool.aux-pool.provider":  structs.NewStringAttribute(providerName),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool":                          structs.NewStringAttribute("directory"),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.provider." + providerName: structs.NewBoolAttribute(true),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.default":                  structs.NewBoolAttribute(true),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.aux-pool":                           structs.NewStringAttribute("directory"),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.aux-pool.provider." + providerName:  structs.NewBoolAttribute(true),
 		}
 
 		must.Eq(t, expected, attrs)
@@ -286,9 +286,9 @@ func TestStorage_Fingerprint(t *testing.T) {
 		s.Fingerprint(attrs)
 
 		expected := map[string]*structs.Attribute{
-			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool":          structs.NewStringAttribute("directory"),
-			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.provider": structs.NewStringAttribute(providerName),
-			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.default":  structs.NewBoolAttribute(true),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool":                          structs.NewStringAttribute("directory"),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.provider." + providerName: structs.NewBoolAttribute(true),
+			vm.FingerprintAttributeKeyPrefix + ".storage_pool.main-pool.default":                  structs.NewBoolAttribute(true),
 		}
 
 		must.Eq(t, expected, attrs)
