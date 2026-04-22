@@ -129,40 +129,6 @@ type StorageVol interface {
 	Upload(Stream, uint64, uint64, libvirt.StorageVolUploadFlags) error
 }
 
-// Stream is the shim interface that wraps the libvirt Stream.
-type Stream interface {
-	// Abort requests data transfer be cancelled abnormally.
-	//
-	// Also see:
-	// https://libvirt.org/html/libvirt-libvirt-stream.html#virStreamAbort
-	Abort() error
-
-	// Finish indicates no further data to be transmitted on the stream.
-	//
-	// Also see:
-	// https://libvirt.org/html/libvirt-libvirt-stream.html#virStreamFinish
-	Finish() error
-
-	// Free frees the resources associated to this instance.
-	//
-	// Also see:
-	// https://libvirt.org/html/libvirt-libvirt-stream.html#virStreamFree
-	Free() error
-
-	// Read reads a series of bytes from the stream.
-	// NOTE: Name is modified from Recv -> Read for interface support.
-	//
-	// Also see:
-	// https://libvirt.org/html/libvirt-libvirt-stream.html#virStreamRecv
-	Read([]byte) (int, error)
-	// Write writes a series of bytes to the stream.
-	// NOTE: Name is modified from Send -> Write for interface support.
-	//
-	// Also see:
-	// https://libvirt.org/html/libvirt-libvirt-stream.html#virStreamSend
-	Write([]byte) (int, error)
-}
-
 // WrapStoragePool wraps a libvirt StoragePool in the shim.
 func WrapStoragePool(pool *libvirt.StoragePool) StoragePool {
 	return &libvirtStoragePool{pool}
@@ -171,11 +137,6 @@ func WrapStoragePool(pool *libvirt.StoragePool) StoragePool {
 // WrapStorageVol wraps a libvirt StorageVol in the shim.
 func WrapStorageVol(vol *libvirt.StorageVol) StorageVol {
 	return &libvirtStorageVol{vol}
-}
-
-// WrapStream wraps a libvirt Stream in the shim.
-func WrapStream(stream *libvirt.Stream) *libvirtStream {
-	return &libvirtStream{stream}
 }
 
 // Below are storage related shim implementations
@@ -281,44 +242,15 @@ func (l *libvirtStorageVol) GetInfo() (*libvirt.StorageVolInfo, error) {
 }
 
 func (l *libvirtStorageVol) Upload(stream Stream, offset uint64, size uint64, flags libvirt.StorageVolUploadFlags) error {
-	ls, ok := stream.(*libvirtStream)
-	if !ok {
-		return fmt.Errorf("cannot access raw stream for upload")
+	s, err := stream.RawStream()
+	if err != nil {
+		return err
 	}
 
-	return l.vol.Upload(ls.RawStream(), offset, size, flags)
-}
-
-type libvirtStream struct {
-	s *libvirt.Stream
-}
-
-func (l *libvirtStream) Abort() error {
-	return l.s.Abort()
-}
-
-func (l *libvirtStream) Finish() error {
-	return l.s.Finish()
-}
-
-func (l *libvirtStream) Free() error {
-	return l.s.Free()
-}
-
-func (l *libvirtStream) Read(data []byte) (int, error) {
-	return l.s.Recv(data)
-}
-
-func (l *libvirtStream) Write(data []byte) (int, error) {
-	return l.s.Send(data)
-}
-
-func (l *libvirtStream) RawStream() *libvirt.Stream {
-	return l.s
+	return l.vol.Upload(s, offset, size, flags)
 }
 
 var (
 	_ StoragePool = (*libvirtStoragePool)(nil)
 	_ StorageVol  = (*libvirtStorageVol)(nil)
-	_ Stream      = (*libvirtStream)(nil)
 )

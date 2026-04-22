@@ -18,7 +18,6 @@ import (
 
 	"github.com/ceph/go-ceph/rados"
 	"github.com/ceph/go-ceph/rbd"
-	"github.com/hashicorp/nomad-driver-virt/internal/ctxio"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/storage"
 	"github.com/hashicorp/nomad/helper/uuid"
 )
@@ -178,10 +177,7 @@ func VolumeUpload(ctx context.Context, con *storage.CephConnect, pool, volume, p
 	// Copy the source image into the volume. The reader and writer
 	// are wrapped with a context to allow the copy to be interrupted
 	// if the task has been stopped.
-	wrote, err := io.Copy(
-		ctxio.NewWriter(ctx, img),
-		ctxio.NewReaderFrom(ctx, f),
-	)
+	wrote, err := io.Copy(SparseWriter(ctx, img), f)
 	if err != nil {
 		return fmt.Errorf("data copy to volume failure: %w", err)
 	}

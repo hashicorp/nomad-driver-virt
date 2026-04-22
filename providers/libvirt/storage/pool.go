@@ -292,7 +292,12 @@ func (p *pool) defaultOverwriter(vol shims.StorageVol, path string) error {
 	}()
 
 	// Connect the stream to the volume for upload
-	if err = vol.Upload(stream, 0, uint64(info.Size()), libvirtNoFlags); err != nil {
+	// NOTE: Only set the sparse flag if the stream supports it
+	var flags libvirt.StorageVolUploadFlags = libvirtNoFlags
+	if stream.Sparse() {
+		flags = libvirt.STORAGE_VOL_UPLOAD_SPARSE_STREAM
+	}
+	if err = vol.Upload(stream, 0, uint64(info.Size()), flags); err != nil {
 		return err
 	}
 
