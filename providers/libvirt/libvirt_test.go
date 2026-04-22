@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/storage"
@@ -142,7 +143,7 @@ func TestStorage(t *testing.T) {
 
 			// Check that the volume does not exist
 			_, err = pool.GetVolume("test-vol")
-			must.ErrorIs(t, err, vm.ErrNotFound)
+			must.ErrorIs(t, err, errs.ErrNotFound)
 		})
 	})
 }
@@ -366,7 +367,7 @@ func Test_GenerateMountCommands(t *testing.T) {
 	t.Run("not available", func(t *testing.T) {
 		ld, _ := testNew(t, overrideFs())
 		_, err := ld.GenerateMountCommands(mounts())
-		must.ErrorIs(t, err, vm.ErrNotSupported)
+		must.ErrorIs(t, err, errs.ErrNotSupported)
 	})
 
 	t.Run("9p available", func(t *testing.T) {
@@ -480,7 +481,7 @@ func Test_GenerateMountCommands(t *testing.T) {
 				mnts[0].ReadOnly = true
 
 				_, err := ld.GenerateMountCommands(mnts)
-				must.ErrorIs(t, err, vm.ErrNotSupported)
+				must.ErrorIs(t, err, errs.ErrNotSupported)
 			})
 
 			t.Run("read-only not supported insecure mounts enabled", func(t *testing.T) {
@@ -539,7 +540,7 @@ func Test_GenerateMountCommands(t *testing.T) {
 			ld.libvirtVersion = 1
 
 			_, err := ld.GenerateMountCommands(mnts)
-			must.ErrorIs(t, err, vm.ErrNotSupported)
+			must.ErrorIs(t, err, errs.ErrNotSupported)
 		})
 	})
 }

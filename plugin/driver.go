@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers"
 	"github.com/hashicorp/nomad-driver-virt/storage"
@@ -754,7 +755,7 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 	taskVm, err := h.taskGetter.GetVM(h.name)
 	if err != nil {
 		defer cancel()
-		if errors.Is(err, vm.ErrNotFound) {
+		if errors.Is(err, errs.ErrNotFound) {
 			return drivers.ErrTaskNotFound
 		}
 

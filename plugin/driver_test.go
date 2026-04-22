@@ -14,6 +14,7 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
@@ -964,7 +965,7 @@ func TestVirtDriver_Libvirt(t *testing.T) {
 
 	// Validate VM no longer exists
 	_, err = libvirtProvider.GetVM(vmName)
-	must.ErrorIs(t, err, vm.ErrNotFound)
+	must.ErrorIs(t, err, errs.ErrNotFound)
 
 	// Get fingerprint information
 	fCh, err := driver.Fingerprint(t.Context())
