@@ -10,7 +10,8 @@ import (
 )
 
 // NOTE: Whence values are defined originally in solaris and used across
-// unix systems that implement sparse files.
+// unix systems that implement sparse files. More information about
+// whence values can be found in the lseek manual page: `man lseek`
 
 const (
 	// Whence value for seeking to next data position.
