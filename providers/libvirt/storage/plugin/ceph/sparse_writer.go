@@ -37,7 +37,7 @@ type sparseWriter struct {
 	img *rbd.Image
 }
 
-// ReadImage reads from the io.Reader and handles if the io.Reader
+// ReadFrom reads from the io.Reader and handles if the io.Reader
 // is a sparse file by only writing the content to the image and
 // skipping the holes. Otherwise, a normal copy is performed.
 func (s *sparseWriter) ReadFrom(r io.Reader) (int64, error) {

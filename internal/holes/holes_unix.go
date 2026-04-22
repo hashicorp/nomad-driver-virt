@@ -31,8 +31,8 @@ func MakeReader(r io.Reader) (Reader, bool) {
 		return nil, false
 	}
 
-	// Get the current position. If the file is not seekable, this will error.
-	// If it is, the returned position is used to reset the position when complete.
+	// Reset to the current position after we finish checking for holes.
+	// This will error if the file is not seekable.
 	pos, err := f.Seek(0, io.SeekCurrent)
 	if err != nil {
 		return nil, false
