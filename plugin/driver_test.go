@@ -985,5 +985,5 @@ func TestVirtDriver_Libvirt(t *testing.T) {
 	// Check that storage pools are included
 	must.Eq(t, "directory", *print.Attributes["driver.virt.storage_pool.default-pool"].String)
 	must.True(t, *print.Attributes["driver.virt.storage_pool.default-pool.default"].Bool)
-	must.Eq(t, "libvirt", *print.Attributes["driver.virt.storage_pool.default-pool.provider"].String)
+	must.True(t, *print.Attributes["driver.virt.storage_pool.default-pool.provider.libvirt"].Bool)
 }
