@@ -446,7 +446,7 @@ func (d Disks) Prepare(s storage.Storage) error {
 						defer os.Remove(disk.Source.Image)
 					}
 
-					info, err := os.Stat(disk.Source.Image)
+					size, err := s.ImageHandler().GetImageSize(disk.Source.Image)
 					if err != nil {
 						return err
 					}
@@ -459,7 +459,7 @@ func (d Disks) Prepare(s storage.Storage) error {
 						Source: storage.Source{
 							Path: disk.Source.Image,
 						},
-						Size: uint64(info.Size()),
+						Size: size,
 					}
 
 					// Create the parent volume.
@@ -496,9 +496,9 @@ func (d Disks) Prepare(s storage.Storage) error {
 			// If an image is defined, use the size of the image. This may not be large enough
 			// if a format conversion happens, but this is just best effort.
 			if disk.Source.Image != "" {
-				info, err := os.Stat(disk.Source.Image)
+				size, err := s.ImageHandler().GetImageSize(disk.Source.Image)
 				if err == nil {
-					disk.Size = fmt.Sprintf("%d", info.Size())
+					disk.Size = fmt.Sprintf("%d", size)
 				}
 			}
 

@@ -21,6 +21,7 @@ func NewStaticImageHandler() *StaticImageHandler {
 
 type StaticImageHandler struct {
 	GetImageFormatResult string
+	GetImageSizeResult   uint64
 
 	counts map[string]int
 	m      sync.Mutex
@@ -76,6 +77,14 @@ func (s *StaticImageHandler) GetImageFormat(string) (string, error) {
 	return "test-format", nil
 }
 
+func (s *StaticImageHandler) GetImageSize(string) (uint64, error) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	return s.GetImageSizeResult, nil
+}
+
 func (s *StaticImageHandler) CreateCopy(string, string, int64) error {
 	s.m.Lock()
 	defer s.m.Unlock()
@@ -120,6 +129,12 @@ type CreateChainedCopy struct {
 	Err   error
 }
 
+type GetImageSize struct {
+	Path   string
+	Result uint64
+	Err    error
+}
+
 type MockImageHandler struct {
 	t must.T
 
@@ -127,6 +142,7 @@ type MockImageHandler struct {
 	convertImage      []ConvertImage
 	createCopy        []CreateCopy
 	createChainedCopy []CreateChainedCopy
+	getImageSize      []GetImageSize
 	m                 sync.Mutex
 }
 
@@ -135,6 +151,8 @@ func (m *MockImageHandler) Expect(calls ...any) *MockImageHandler {
 		switch c := call.(type) {
 		case GetImageFormat:
 			m.ExpectGetImageFormat(c)
+		case GetImageSize:
+			m.ExpectGetImageSize(c)
 		case CreateCopy:
 			m.ExpectCreateCopy(c)
 		case CreateChainedCopy:
@@ -162,6 +180,14 @@ func (m *MockImageHandler) ExpectGetImageFormat(c GetImageFormat) *MockImageHand
 	defer m.m.Unlock()
 
 	m.getImageFormat = append(m.getImageFormat, c)
+	return m
+}
+
+func (m *MockImageHandler) ExpectGetImageSize(c GetImageSize) *MockImageHandler {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.getImageSize = append(m.getImageSize, c)
 	return m
 }
 
@@ -213,6 +239,26 @@ func (m *MockImageHandler) GetImageFormat(path string) (string, error) {
 		struct{ Path string }{call.Path},
 		struct{ Path string }{path},
 		must.Sprint("GetImageFormat received incorrect arguments"),
+	)
+
+	return call.Result, call.Err
+}
+
+func (m *MockImageHandler) GetImageSize(path string) (uint64, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.getImageSize,
+		must.Sprint("Unexpected call to GetImageSize"))
+	call := m.getImageSize[0]
+	m.getImageSize = m.getImageSize[1:]
+
+	must.Eq(m.t,
+		struct{ Path string }{call.Path},
+		struct{ Path string }{path},
+		must.Sprint("GetImageSize received incorrect arguments"),
 	)
 
 	return call.Result, call.Err
@@ -278,6 +324,8 @@ func (m *MockImageHandler) AssertExpectations() {
 
 	must.SliceEmpty(m.t, m.getImageFormat,
 		must.Sprintf("GetImageFormat expecting %d more invocations", len(m.getImageFormat)))
+	must.SliceEmpty(m.t, m.getImageSize,
+		must.Sprintf("GetImageSize expecting %d more invocations", len(m.getImageSize)))
 	must.SliceEmpty(m.t, m.createCopy,
 		must.Sprintf("CreateCopy expecting %d more invocations", len(m.createCopy)))
 	must.SliceEmpty(m.t, m.createChainedCopy,
