@@ -14,6 +14,7 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt/disks"
+	"github.com/hashicorp/nomad/helper/pointer"
 	"libvirt.org/go/libvirtxml"
 )
 
@@ -65,6 +66,12 @@ func newDirectoryPool(ctx context.Context, logger hclog.Logger, l libvirtStorage
 // implements disks.DiskValidator
 func (d *directory) ValidateDisk(disk *disks.Disk) error {
 	var mErr *multierror.Error
+
+	// If the format of the disk is qcow2 and the sparse attribute has not
+	// been set to any value, set it as true.
+	if disk.Sparse == nil && disk.Format == disks.DiskFormatQcow2 {
+		disk.Sparse = pointer.Of(true)
+	}
 
 	// Directory pool currently supports qcow2 and raw volumes
 	if disk.Format != disks.DiskFormatQcow2 && disk.Format != disks.DiskFormatRaw {

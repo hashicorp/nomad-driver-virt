@@ -16,6 +16,7 @@ import (
 	mock_libvirt_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers/libvirt/storage"
 	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt/disks"
+	"github.com/hashicorp/nomad/helper/pointer"
 	"github.com/shoenig/test/must"
 	"libvirt.org/go/libvirt"
 	"libvirt.org/go/libvirtxml"
@@ -63,6 +64,43 @@ func TestDirectory_ValidateDisk(t *testing.T) {
 			err := pool.ValidateDisk(disk)
 			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "format must be qcow2")
+		})
+	})
+
+	t.Run("sparse modification", func(t *testing.T) {
+		t.Run("value is unset", func(t *testing.T) {
+			t.Run("enabled if format is qcow2", func(t *testing.T) {
+				disk := &disks.Disk{Format: disks.DiskFormatQcow2}
+				err := pool.ValidateDisk(disk)
+				must.NoError(t, err)
+				must.NotNil(t, disk.Sparse, must.Sprint("expected sparse to be set"))
+				must.True(t, *disk.Sparse, must.Sprint("expected sparse to be enabled"))
+			})
+
+			t.Run("unset if format is not qcow2", func(t *testing.T) {
+				disk := &disks.Disk{Format: disks.DiskFormatRaw}
+				err := pool.ValidateDisk(disk)
+				must.NoError(t, err)
+				must.Nil(t, disk.Sparse, must.Sprint("expected sparse to be unset"))
+			})
+		})
+
+		t.Run("value is set", func(t *testing.T) {
+			t.Run("unchanged when format is qcow2", func(t *testing.T) {
+				disk := &disks.Disk{Format: disks.DiskFormatQcow2, Sparse: pointer.Of(false)}
+				err := pool.ValidateDisk(disk)
+				must.NoError(t, err)
+				must.NotNil(t, disk.Sparse, must.Sprint("expected sparse to be set"))
+				must.False(t, *disk.Sparse, must.Sprint("expected sparse to be disabled"))
+			})
+
+			t.Run("unchanged when format is not qcow2", func(t *testing.T) {
+				disk := &disks.Disk{Format: disks.DiskFormatRaw, Sparse: pointer.Of(false)}
+				err := pool.ValidateDisk(disk)
+				must.NoError(t, err)
+				must.NotNil(t, disk.Sparse, must.Sprint("expected sparse to be set"))
+				must.False(t, *disk.Sparse, must.Sprint("expected sparse to be disabled"))
+			})
 		})
 	})
 }
