@@ -226,6 +226,9 @@ func TestDisk(t *testing.T) {
 		mockStorage := &mock_storage.StaticStorage{
 			DefaultDiskDriverResult:  testDriver,
 			GenerateDeviceNameResult: testDevname,
+			ImageHandlerResult: &mock_image_tools.StaticImageHandler{
+				GetImageSizeResult: 22,
+			},
 		}
 
 		t.Run("defaults", func(t *testing.T) {
@@ -376,6 +379,9 @@ func TestDisk(t *testing.T) {
 					)
 					s := &mock_storage.StaticStorage{
 						DefaultPoolResult: p,
+						ImageHandlerResult: &mock_image_tools.StaticImageHandler{
+							GetImageSizeResult: 22,
+						},
 					}
 					must.NoError(t, d.Prepare(s))
 					disk := d[0]

@@ -331,6 +331,7 @@ func (p *pool) defaultResizer(vol shims.StorageVol, sizeBytes uint64, sparse boo
 		flags = libvirtNoFlags
 	}
 
+	p.logger.Debug("resizing volume", "current-size", info.Capacity, "desired-size", sizeBytes)
 	if err := vol.Resize(sizeBytes, flags); err != nil {
 		return err
 	}
