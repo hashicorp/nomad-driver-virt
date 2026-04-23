@@ -4,9 +4,14 @@
 package virt
 
 import (
+	"fmt"
 	"path/filepath"
+	"slices"
+	"strings"
 	"time"
 
+	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/storage"
 	"github.com/hashicorp/nomad-driver-virt/virt/disks"
@@ -59,6 +64,11 @@ var (
 			"machine": hclspec.NewAttr("machine", "string", false),
 		})),
 	})
+
+	// validProviders is a list of valid provider names.
+	validProviders = []string{
+		libvirt.Name,
+	}
 )
 
 func ConfigSpec() *hclspec.Spec {
@@ -107,6 +117,24 @@ type Config struct {
 	StoragePools *storage.Config `codec:"storage_pools"`
 }
 
+// Validate validates the configuration and sets default values.
+func (c *Config) Validate() error {
+	// If no provider configuration is set, default the libvirt provider.
+	if c.Provider == nil {
+		c.Provider = &Provider{Libvirt: &libvirt.Config{}}
+	}
+
+	var mErr *multierror.Error
+
+	mErr = multierror.Append(mErr,
+		c.Provider.Validate(),
+		c.StoragePools.Validate(),
+	)
+
+	return mErr.ErrorOrNil()
+}
+
+// Compat sets appropriate configuration using deprecated options.
 func (c *Config) Compat() {
 	if c.Emulator != nil {
 		if c.Provider == nil {
@@ -154,5 +182,30 @@ func (c *Config) Compat() {
 
 // Provider contains provider specific configuration
 type Provider struct {
+	Default string          `codec:"default"`
 	Libvirt *libvirt.Config `codec:"libvirt"`
+}
+
+// Validate validates the provider configuration.
+func (p *Provider) Validate() error {
+	var mErr *multierror.Error
+
+	if p.Libvirt == nil {
+		mErr = multierror.Append(mErr,
+			fmt.Errorf("%w: no providers defined", errs.ErrInvalidConfiguration))
+	}
+
+	if p.Default != "" && slices.Contains(validProviders, p.Default) {
+		mErr = multierror.Append(mErr,
+			fmt.Errorf("%w: unknown default provider (supported: %s)",
+				errs.ErrInvalidConfiguration, strings.Join(validProviders, ", ")))
+	}
+
+	if p.Libvirt != nil {
+		if err := p.Libvirt.Validate(); err != nil {
+			mErr = multierror.Append(mErr, err)
+		}
+	}
+
+	return mErr.ErrorOrNil()
 }

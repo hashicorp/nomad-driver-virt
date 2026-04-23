@@ -98,18 +98,19 @@ func (p *providers) Setup(config *virt.Config) error {
 		}
 
 		// Add the dispenser for the libvirt provider
-		dispensers["libvirt"] = func(ctx context.Context) (virt.Virtualizer, error) {
+		dispensers[libvirt.Name] = func(ctx context.Context) (virt.Virtualizer, error) {
 			return lv.Copy(ctx), nil
-		}
-
-		// If marked as the default, set it
-		if config.Provider.Libvirt.Default {
-			p.defaultDispenser = dispensers["libvirt"]
 		}
 	}
 
 	if len(dispensers) == 0 {
 		return ErrNoProvidersEnabled
+	}
+
+	if config.Provider.Default != "" {
+		if dispenser, ok := dispensers[config.Provider.Default]; ok {
+			p.defaultDispenser = dispenser
+		}
 	}
 
 	// If no default was defined, set one

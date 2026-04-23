@@ -536,20 +536,11 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 		}
 
 		// Start with checking values that should be set for all disks.
-		if disk.BusType == "" {
-			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: bus_type", errPrefix, errs.ErrMissingAttribute))
-		}
-
-		if disk.Kind == "" {
-			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: kind", errPrefix, errs.ErrMissingAttribute))
-		}
-
-		if disk.Devname == "" {
-			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: devname", errPrefix, errs.ErrMissingAttribute))
-		}
+		mErr = multierror.Append(mErr,
+			errs.MissingAttribute("bus_type", disk.BusType, errs.WithPrefix(errPrefix)),
+			errs.MissingAttribute("kind", disk.Kind, errs.WithPrefix(errPrefix)),
+			errs.MissingAttribute("devname", disk.Devname, errs.WithPrefix(errPrefix)),
+		)
 
 		// If a source image has been set, check that it exists and it's
 		// located at an accessible location.
@@ -562,14 +553,13 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 				mErr = multierror.Append(mErr,
 					fmt.Errorf("%s %w: %s", errPrefix, ErrDisallowedPath, disk.Source.Image))
 			}
-			if disk.Source.Format == "" {
-				mErr = multierror.Append(mErr,
-					fmt.Errorf("%s %w: source.format", errPrefix, errs.ErrMissingAttribute))
-			}
 			if disk.Source.Volume != "" {
 				mErr = multierror.Append(mErr,
 					fmt.Errorf("%s %w: storage.volume and storage.image are mutually exclusive", errPrefix, errs.ErrInvalidConfiguration))
 			}
+
+			mErr = multierror.Append(mErr,
+				errs.MissingAttribute("source.format", disk.Source.Format, errs.WithPrefix(errPrefix)))
 		}
 
 		// If the disk is backed by a Nomad volume, validate that attributes which
@@ -582,15 +572,10 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 			continue
 		}
 
-		if disk.Format == "" {
-			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: format", errPrefix, errs.ErrMissingAttribute))
-		}
-
-		if disk.Size == "" {
-			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s %w: size", errPrefix, errs.ErrMissingAttribute))
-		}
+		mErr = multierror.Append(mErr,
+			errs.MissingAttribute("format", disk.Format, errs.WithPrefix(errPrefix)),
+			errs.MissingAttribute("size", disk.Size, errs.WithPrefix(errPrefix)),
+		)
 
 		// If a size for the disk is set, check that the value is a size.
 		if disk.Size != "" && !convert.ValidBytesString(disk.Size) {

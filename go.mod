@@ -16,6 +16,7 @@ require (
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/hashicorp/go-set v0.1.14
+	github.com/hashicorp/go-set/v3 v3.0.1
 	github.com/hashicorp/nomad v1.11.3
 	github.com/shoenig/test v1.13.0
 	libvirt.org/go/libvirt v1.12002.0
@@ -75,7 +76,6 @@ require (
 	github.com/hashicorp/go-secure-stdlib/strutil v0.1.2 // indirect
 	github.com/hashicorp/go-secure-stdlib/tlsutil v0.1.3 // indirect
 	github.com/hashicorp/go-set/v2 v2.1.0 // indirect
-	github.com/hashicorp/go-set/v3 v3.0.1 // indirect
 	github.com/hashicorp/go-sockaddr v1.0.7 // indirect
 	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/go-version v1.8.0 // indirect
