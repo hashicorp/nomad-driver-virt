@@ -222,11 +222,6 @@ func (d Disks) ApplyCloudInit(isoPath string) Disks {
 		d = Disks{}
 	}
 
-	f, err := os.Stat(isoPath)
-	if err != nil {
-		f = nil
-	}
-
 	newDisk := &Disk{
 		BusType: BusTypeIde,
 		Kind:    DiskKindCdrom,
@@ -236,9 +231,6 @@ func (d Disks) ApplyCloudInit(isoPath string) Disks {
 			Image:  isoPath,
 		},
 		ReadOnly: true,
-	}
-	if f != nil {
-		newDisk.Size = fmt.Sprintf("%d", f.Size())
 	}
 
 	return append(d, newDisk)

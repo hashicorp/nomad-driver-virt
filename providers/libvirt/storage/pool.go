@@ -321,9 +321,39 @@ func (p *pool) defaultResizer(vol shims.StorageVol, sizeBytes uint64, sparse boo
 		return err
 	}
 
-	// If the size hasn't changed, there is nothing to do.
+	// If the size hasn't changed, check if the resize is needed.
 	if info.Capacity == sizeBytes {
-		return nil
+		// If the volume is sparse there is no need to resize. Resizing when
+		// the size has not changed is only needed to force allocation of the
+		// volume.
+		if sparse {
+			return nil
+		}
+
+		// If the current size of the volume is 0 and the desired size is 0
+		// resizing the volume does nothing even if the volume is not sparse.
+		if sizeBytes == 0 {
+			return nil
+		}
+
+		// In some cases the allocation of a volume will be greater than the
+		// capacity. This can happen when the entire capacity of the volume
+		// is used. The excess allocation is the space for the metadata of
+		// the volume. If that is the case here, set the size to the current
+		// allocation to allow the resize request to be successful.
+		if info.Allocation > info.Capacity {
+			sizeBytes = info.Allocation
+		}
+
+		// Finally, resizing to force allocation is only allowed on raw type
+		// volumes.
+		fmt, err := getVolumeFormat(vol)
+		if err != nil {
+			return err
+		}
+		if fmt != "raw" {
+			return nil
+		}
 	}
 
 	flags := libvirt.STORAGE_VOL_RESIZE_ALLOCATE
