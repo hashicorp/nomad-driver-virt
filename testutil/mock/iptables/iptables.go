@@ -50,6 +50,13 @@ type Insert struct {
 	Err          error
 }
 
+type List struct {
+	Table  string
+	Chain  string
+	Result []string
+	Err    error
+}
+
 type ListChains struct {
 	Table  string
 	Result []string
@@ -68,6 +75,7 @@ type mockIPTables struct {
 	deleteChains   []DeleteChain
 	deleteIfExists []DeleteIfExists
 	inserts        []Insert
+	lists          []List
 	listChains     []ListChains
 	newChains      []NewChain
 	t              must.T
@@ -90,6 +98,8 @@ func (m *mockIPTables) Expect(calls ...any) *mockIPTables {
 			m.ExpectDeleteIfExists(c)
 		case Insert:
 			m.ExpectInsert(c)
+		case List:
+			m.ExpectList(c)
 		case ListChains:
 			m.ExpectListChains(c)
 		case NewChain:
@@ -153,6 +163,15 @@ func (m *mockIPTables) ExpectInsert(ins Insert) *mockIPTables {
 	defer m.m.Unlock()
 
 	m.inserts = append(m.inserts, ins)
+	return m
+}
+
+// ExpectList adds an expected List call.
+func (m *mockIPTables) ExpectList(list List) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.lists = append(m.lists, list)
 	return m
 }
 
@@ -305,6 +324,28 @@ func (m *mockIPTables) Insert(table, chain string, pos int, rulespec ...string) 
 	return call.Err
 }
 
+func (m *mockIPTables) List(table, chain string) ([]string, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.lists,
+		must.Sprintf("Unexpected call to List - List(%q, %q)", table, chain))
+	call := m.lists[0]
+	m.lists = m.lists[1:]
+	received := List{
+		Table:  table,
+		Chain:  chain,
+		Result: call.Result,
+		Err:    call.Err,
+	}
+	must.Eq(m.t, call, received,
+		must.Sprint("List received incorrect arguments"))
+
+	return call.Result, call.Err
+}
+
 func (m *mockIPTables) ListChains(table string) ([]string, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
@@ -362,6 +403,8 @@ func (m *mockIPTables) AssertExpectations() {
 		must.Sprintf("DeleteIfExists expecting %d more invocations", len(m.deleteIfExists)))
 	must.SliceEmpty(m.t, m.inserts,
 		must.Sprintf("Insert expecting %d more invocations", len(m.inserts)))
+	must.SliceEmpty(m.t, m.lists,
+		must.Sprintf("List expecting %d more invocations", len(m.lists)))
 	must.SliceEmpty(m.t, m.listChains,
 		must.Sprintf("ListChains expecting %d more invocations", len(m.listChains)))
 	must.SliceEmpty(m.t, m.newChains,

@@ -8,6 +8,8 @@ package net
 import (
 	"fmt"
 	stdnet "net"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -561,278 +563,501 @@ func TestController_discoverDHCPLeaseIP(t *testing.T) {
 	must.Eq(t, mac, "11:22:11:22:11:22")
 }
 
+// NOTE: stopping here. all the other loopback related tests are completed below. just
+// need to add in the full blown bits here to do the actual loopback forward thing.
 func TestController_configureIPTables(t *testing.T) {
 	t.Run("mocked", func(t *testing.T) {
-		mockIptables := iptables_mock.New(t).Expect(
-			iptables_mock.ListChains{Table: "nat"},
-			iptables_mock.NewChain{Table: "nat", Chain: "NOMAD_VT_PRT"},
-			iptables_mock.Insert{
-				Table:    "nat",
-				Chain:    "PREROUTING",
-				Pos:      1,
-				RuleSpec: []string{"-j", "NOMAD_VT_PRT"},
-			},
-			iptables_mock.ListChains{Table: "filter"},
-			iptables_mock.NewChain{Table: "filter", Chain: "NOMAD_VT_FW"},
-			iptables_mock.Insert{
-				Table:    "filter",
-				Chain:    "FORWARD",
-				Pos:      1,
-				RuleSpec: []string{"-j", "NOMAD_VT_FW"},
-			},
-			iptables_mock.Append{
-				Table: "nat",
-				Chain: "NOMAD_VT_PRT",
-				RuleSpec: []string{"-d", "10.0.1.161", "-i", "enp126s0", "-p", "tcp", "-m", "tcp",
-					"--dport", "27494", "-j", "DNAT", "--to-destination", "192.168.122.58:22",
-				},
-			},
-			iptables_mock.Append{
-				Table: "filter",
-				Chain: "NOMAD_VT_FW",
-				RuleSpec: []string{"-d", "192.168.122.58", "-p", "tcp", "-m", "state", "--state", "NEW",
-					"-m", "tcp", "--dport", "22", "-j", "ACCEPT",
-				},
-			},
-			iptables_mock.Append{
-				Table: "nat",
-				Chain: "NOMAD_VT_PRT",
-				RuleSpec: []string{"-d", "10.0.1.161", "-i", "enp126s0", "-p", "tcp", "-m", "tcp",
-					"--dport", "27512", "-j", "DNAT", "--to-destination", "192.168.122.58:4646",
-				},
-			},
-			iptables_mock.Append{
-				Table: "filter",
-				Chain: "NOMAD_VT_FW",
-				RuleSpec: []string{"-d", "192.168.122.58", "-p", "tcp", "-m", "state", "--state", "NEW",
-					"-m", "tcp", "--dport", "4646", "-j", "ACCEPT",
-				},
-			},
-		)
+		t.Run("loopback", func(t *testing.T) {
+			t.Run("not enabled", func(t *testing.T) {
+				mockIptables := iptables_mock.New(t)
+				defer mockIptables.AssertExpectations()
 
-		controller := &Controller{
-			logger:                  hclog.NewNullLogger(),
-			netConn:                 &libvirt_mock.StaticConnect{},
-			interfaceByIPGetter:     func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
-			iptablesInterfaceGetter: func() (IPTables, error) { return mockIptables, nil },
-		}
-
-		// Create driver and network interface request arguments. The allocated
-		// ports includes a port not specified in the task config, to ensure this
-		// does not get configured.
-		driverReq := drivers.Resources{
-			Ports: &nomadstructs.AllocatedPorts{
-				{
-					Label:  "ssh",
-					Value:  27494,
-					To:     22,
-					HostIP: "10.0.1.161",
-				},
-				{
-					Label:  "nomad",
-					Value:  27512,
-					To:     4646,
-					HostIP: "10.0.1.161",
-				},
-				{
-					Label:  "http",
-					Value:  27513,
-					To:     80,
-					HostIP: "10.0.1.161",
-				},
-			},
-		}
-
-		netInterfaceReq := net.NetworkInterfaceBridgeConfig{
-			Name:  "virbr0",
-			Ports: []string{"ssh", "nomad"},
-		}
-
-		// Init the controller, so we have the required iptables chains available.
-		must.NoError(t, controller.Init())
-
-		// Execute the function, collecting the teardown rules and building our
-		// expected output.
-		actualTeardownRules, err := controller.configureIPTables(
-			&driverReq, &netInterfaceReq, "192.168.122.58")
-		must.NoError(t, err)
-
-		expectedTeardownRules := [][]string{
-			{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58", "-p", "tcp",
-				"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
-				"22", "-j", "ACCEPT",
-			},
-			{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161", "-i", "enp126s0",
-				"-p", "tcp", "-m", "tcp", "--dport", "27494", "-j", "DNAT",
-				"--to-destination", "192.168.122.58:22",
-			},
-			{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58", "-p", "tcp",
-				"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
-				"4646", "-j", "ACCEPT",
-			},
-			{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161", "-i", "enp126s0",
-				"-p", "tcp", "-m", "tcp", "--dport", "27512", "-j", "DNAT",
-				"--to-destination", "192.168.122.58:4646",
-			},
-		}
-
-		// Perform the equality check ensuring the returned rules match exactly
-		// what we expected.
-		must.EqFunc(t, expectedTeardownRules, actualTeardownRules, func(a, b [][]string) bool {
-
-			if len(a) != len(b) {
-				return false
-			}
-
-			var found int
-
-			for _, ruleA := range a {
-				for _, ruleB := range b {
-					if !reflect.DeepEqual(ruleA, ruleB) {
-						continue
-					}
-					found++
+				controller := &Controller{
+					logger:                     hclog.NewNullLogger(),
+					netConn:                    &libvirt_mock.StaticConnect{},
+					interfaceByIPGetter:        func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
+					iptablesInterfaceGetter:    func() (IPTables, error) { return mockIptables, nil },
+					routingInterfaceByIPGetter: func(string) (string, error) { return "lo", nil },
+					routeLocalnetTemplate:      routeLocalnetFile(t, false),
 				}
-			}
-			return found == len(a)
+
+				driverReq := drivers.Resources{
+					Ports: &nomadstructs.AllocatedPorts{
+						{
+							Label:  "ssh",
+							Value:  27494,
+							To:     22,
+							HostIP: "127.0.0.1",
+						},
+					},
+				}
+
+				netInterfaceReq := net.NetworkInterfaceBridgeConfig{
+					Name:  "virbr0",
+					Ports: []string{"ssh"},
+				}
+
+				_, err := controller.configureIPTables(
+					&driverReq, &netInterfaceReq, "192.168.122.58")
+				must.ErrorContains(t, err, "loopback port forwarding not enabled")
+			})
+
+			t.Run("enabled", func(t *testing.T) {
+				mockIptables := iptables_mock.New(t).Expect(
+					iptables_mock.ListChains{Table: iptablesNATTableName},
+					iptables_mock.NewChain{Table: iptablesNATTableName, Chain: outputIPTablesChainName},
+					iptables_mock.Insert{
+						Table:    iptablesNATTableName,
+						Chain:    "OUTPUT",
+						Pos:      1,
+						RuleSpec: []string{"-j", outputIPTablesChainName},
+					},
+					iptables_mock.ListChains{Table: iptablesNATTableName},
+					iptables_mock.NewChain{Table: iptablesNATTableName, Chain: postroutingIPTablesChainName},
+					iptables_mock.Insert{
+						Table:    iptablesNATTableName,
+						Chain:    "POSTROUTING",
+						Pos:      1,
+						RuleSpec: []string{"-j", postroutingIPTablesChainName},
+					},
+					iptables_mock.List{Table: iptablesNATTableName, Chain: postroutingIPTablesChainName},
+					iptables_mock.Append{
+						Table:    iptablesNATTableName,
+						Chain:    postroutingIPTablesChainName,
+						RuleSpec: []string{"-o", "virbr0", "-m", "addrtype", "--src-type", "LOCAL", "--dst-type", "UNICAST", "-j", "MASQUERADE"},
+					},
+					iptables_mock.Append{
+						Table:    iptablesNATTableName,
+						Chain:    outputIPTablesChainName,
+						RuleSpec: []string{"-s", "127.0.0.1", "-o", "lo", "-p", "tcp", "-m", "tcp", "--dport", "27494", "-j", "DNAT", "--to-destination", "192.168.122.58:22"},
+					},
+				)
+				defer mockIptables.AssertExpectations()
+
+				controller := &Controller{
+					logger:                     hclog.NewNullLogger(),
+					netConn:                    &libvirt_mock.StaticConnect{},
+					interfaceByIPGetter:        func(_ stdnet.IP) (string, error) { return "lo", nil },
+					iptablesInterfaceGetter:    func() (IPTables, error) { return mockIptables, nil },
+					routingInterfaceByIPGetter: func(string) (string, error) { return "virbr0", nil },
+					routeLocalnetTemplate:      routeLocalnetFile(t, true),
+				}
+
+				driverReq := drivers.Resources{
+					Ports: &nomadstructs.AllocatedPorts{
+						{
+							Label:  "ssh",
+							Value:  27494,
+							To:     22,
+							HostIP: "127.0.0.1",
+						},
+					},
+				}
+
+				netInterfaceReq := net.NetworkInterfaceBridgeConfig{
+					Name:  "virbr0",
+					Ports: []string{"ssh"},
+				}
+
+				teardown, err := controller.configureIPTables(
+					&driverReq, &netInterfaceReq, "192.168.122.58")
+				must.NoError(t, err)
+				expectedTeardown := []string{iptablesNATTableName, outputIPTablesChainName, "-s", "127.0.0.1", "-o", "lo", "-p", "tcp",
+					"-m", "tcp", "--dport", "27494", "-j", "DNAT", "--to-destination", "192.168.122.58:22"}
+				must.Eq(t, [][]string{expectedTeardown}, teardown)
+			})
 		})
 
-		mockIptables.AssertExpectations()
+		t.Run("comprehensive", func(t *testing.T) {
+			mockIptables := iptables_mock.New(t).Expect(
+				iptables_mock.ListChains{Table: "nat"},
+				iptables_mock.NewChain{Table: "nat", Chain: "NOMAD_VT_PRT"},
+				iptables_mock.Insert{
+					Table:    "nat",
+					Chain:    "PREROUTING",
+					Pos:      1,
+					RuleSpec: []string{"-j", "NOMAD_VT_PRT"},
+				},
+				iptables_mock.ListChains{Table: "filter"},
+				iptables_mock.NewChain{Table: "filter", Chain: "NOMAD_VT_FW"},
+				iptables_mock.Insert{
+					Table:    "filter",
+					Chain:    "FORWARD",
+					Pos:      1,
+					RuleSpec: []string{"-j", "NOMAD_VT_FW"},
+				},
+				iptables_mock.Append{
+					Table: "nat",
+					Chain: "NOMAD_VT_PRT",
+					RuleSpec: []string{"-d", "10.0.1.161", "-i", "enp126s0", "-p", "tcp", "-m", "tcp",
+						"--dport", "27494", "-j", "DNAT", "--to-destination", "192.168.122.58:22",
+					},
+				},
+				iptables_mock.Append{
+					Table: "filter",
+					Chain: "NOMAD_VT_FW",
+					RuleSpec: []string{"-d", "192.168.122.58", "-p", "tcp", "-m", "state", "--state", "NEW",
+						"-m", "tcp", "--dport", "22", "-j", "ACCEPT",
+					},
+				},
+				iptables_mock.Append{
+					Table: "nat",
+					Chain: "NOMAD_VT_PRT",
+					RuleSpec: []string{"-d", "10.0.1.161", "-i", "enp126s0", "-p", "tcp", "-m", "tcp",
+						"--dport", "27512", "-j", "DNAT", "--to-destination", "192.168.122.58:4646",
+					},
+				},
+				iptables_mock.Append{
+					Table: "filter",
+					Chain: "NOMAD_VT_FW",
+					RuleSpec: []string{"-d", "192.168.122.58", "-p", "tcp", "-m", "state", "--state", "NEW",
+						"-m", "tcp", "--dport", "4646", "-j", "ACCEPT",
+					},
+				},
+			)
+
+			controller := &Controller{
+				logger:                  hclog.NewNullLogger(),
+				netConn:                 &libvirt_mock.StaticConnect{},
+				interfaceByIPGetter:     func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
+				iptablesInterfaceGetter: func() (IPTables, error) { return mockIptables, nil },
+			}
+
+			// Create driver and network interface request arguments. The allocated
+			// ports includes a port not specified in the task config, to ensure this
+			// does not get configured.
+			driverReq := drivers.Resources{
+				Ports: &nomadstructs.AllocatedPorts{
+					{
+						Label:  "ssh",
+						Value:  27494,
+						To:     22,
+						HostIP: "10.0.1.161",
+					},
+					{
+						Label:  "nomad",
+						Value:  27512,
+						To:     4646,
+						HostIP: "10.0.1.161",
+					},
+					{
+						Label:  "http",
+						Value:  27513,
+						To:     80,
+						HostIP: "10.0.1.161",
+					},
+				},
+			}
+
+			netInterfaceReq := net.NetworkInterfaceBridgeConfig{
+				Name:  "virbr0",
+				Ports: []string{"ssh", "nomad"},
+			}
+
+			// Init the controller, so we have the required iptables chains available.
+			must.NoError(t, controller.Init())
+
+			// Execute the function, collecting the teardown rules and building our
+			// expected output.
+			actualTeardownRules, err := controller.configureIPTables(
+				&driverReq, &netInterfaceReq, "192.168.122.58")
+			must.NoError(t, err)
+
+			expectedTeardownRules := [][]string{
+				{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58", "-p", "tcp",
+					"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
+					"22", "-j", "ACCEPT",
+				},
+				{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161", "-i", "enp126s0",
+					"-p", "tcp", "-m", "tcp", "--dport", "27494", "-j", "DNAT",
+					"--to-destination", "192.168.122.58:22",
+				},
+				{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58", "-p", "tcp",
+					"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
+					"4646", "-j", "ACCEPT",
+				},
+				{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161", "-i", "enp126s0",
+					"-p", "tcp", "-m", "tcp", "--dport", "27512", "-j", "DNAT",
+					"--to-destination", "192.168.122.58:4646",
+				},
+			}
+
+			// Perform the equality check ensuring the returned rules match exactly
+			// what we expected.
+			must.EqFunc(t, expectedTeardownRules, actualTeardownRules, func(a, b [][]string) bool {
+
+				if len(a) != len(b) {
+					return false
+				}
+
+				var found int
+
+				for _, ruleA := range a {
+					for _, ruleB := range b {
+						if !reflect.DeepEqual(ruleA, ruleB) {
+							continue
+						}
+						found++
+					}
+				}
+				return found == len(a)
+			})
+
+			mockIptables.AssertExpectations()
+		})
 	})
 
 	t.Run("direct", func(t *testing.T) {
 		testutil.RequireIPTables(t)
 
-		controller := &Controller{
-			logger:                  hclog.NewNullLogger(),
-			netConn:                 &libvirt_mock.StaticConnect{},
-			interfaceByIPGetter:     func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
-			iptablesInterfaceGetter: newIPTables,
-		}
-
-		// Create driver and network interface request arguments. The allocated
-		// ports includes a port not specified in the task config, to ensure this
-		// does not get configured.
-		driverReq := drivers.Resources{
-			Ports: &nomadstructs.AllocatedPorts{
-				{
-					Label:  "ssh",
-					Value:  27494,
-					To:     22,
-					HostIP: "10.0.1.161",
-				},
-				{
-					Label:  "nomad",
-					Value:  27512,
-					To:     4646,
-					HostIP: "10.0.1.161",
-				},
-				{
-					Label:  "http",
-					Value:  27513,
-					To:     80,
-					HostIP: "10.0.1.161",
-				},
-			},
-		}
-
-		netInterfaceReq := net.NetworkInterfaceBridgeConfig{
-			Name:  "virbr0",
-			Ports: []string{"ssh", "nomad"},
-		}
-
-		// Init the controller, so we have the required iptables chains available.
-		must.NoError(t, controller.Init())
-
-		ipt, err := iptables.New()
-		must.NoError(t, err)
-
-		// Add a cleanup function which will remove all the added iptables chain
-		// and rule entries.
-		t.Cleanup(func() { iptablesCleanup(t, ipt) })
-
-		// Execute the function, collecting the teardown rules and building our
-		// expected output.
-		actualTeardownRules, err := controller.configureIPTables(
-			&driverReq, &netInterfaceReq, "192.168.122.58")
-		must.NoError(t, err)
-
-		expectedTeardownRules := [][]string{
-			{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58", "-p", "tcp",
-				"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
-				"22", "-j", "ACCEPT",
-			},
-			{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161", "-i", "enp126s0",
-				"-p", "tcp", "-m", "tcp", "--dport", "27494", "-j", "DNAT",
-				"--to-destination", "192.168.122.58:22",
-			},
-			{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58", "-p", "tcp",
-				"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
-				"4646", "-j", "ACCEPT",
-			},
-			{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161", "-i", "enp126s0",
-				"-p", "tcp", "-m", "tcp", "--dport", "27512", "-j", "DNAT",
-				"--to-destination", "192.168.122.58:4646",
-			},
-		}
-
-		// Perform the equality check ensuring the returned rules match exactly
-		// what we expected.
-		must.EqFunc(t, expectedTeardownRules, actualTeardownRules, func(a, b [][]string) bool {
-
-			if len(a) != len(b) {
-				return false
-			}
-
-			var found int
-
-			for _, ruleA := range a {
-				for _, ruleB := range b {
-					if !reflect.DeepEqual(ruleA, ruleB) {
-						continue
-					}
-					found++
+		t.Run("loopback", func(t *testing.T) {
+			t.Run("not enabled", func(t *testing.T) {
+				controller := &Controller{
+					logger:                     hclog.NewNullLogger(),
+					netConn:                    &libvirt_mock.StaticConnect{},
+					interfaceByIPGetter:        func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
+					iptablesInterfaceGetter:    newIPTables,
+					routingInterfaceByIPGetter: func(string) (string, error) { return "lo", nil },
+					routeLocalnetTemplate:      routeLocalnetFile(t, false),
 				}
-			}
-			return found == len(a)
+				// Init the controller, so we have the required iptables chains available.
+				must.NoError(t, controller.Init())
+				ipt, err := iptables.New()
+				must.NoError(t, err)
+
+				// Add a cleanup function which will remove all the added iptables chain
+				// and rule entries along with resetting the loopback init.
+				t.Cleanup(func() {
+					iptablesCleanup(t, ipt)
+				})
+
+				driverReq := drivers.Resources{
+					Ports: &nomadstructs.AllocatedPorts{
+						{
+							Label:  "ssh",
+							Value:  27494,
+							To:     22,
+							HostIP: "127.0.0.1",
+						},
+					},
+				}
+
+				netInterfaceReq := net.NetworkInterfaceBridgeConfig{
+					Name:  "virbr0",
+					Ports: []string{"ssh"},
+				}
+
+				_, err = controller.configureIPTables(
+					&driverReq, &netInterfaceReq, "192.168.122.58")
+				must.ErrorContains(t, err, "loopback port forwarding not enabled")
+
+				chains, err := ipt.ListChains(iptablesNATTableName)
+				must.NoError(t, err)
+				must.SliceNotContains(t, chains, outputIPTablesChainName)
+				must.SliceNotContains(t, chains, postroutingIPTablesChainName)
+			})
+
+			t.Run("enabled", func(t *testing.T) {
+				controller := &Controller{
+					logger:                     hclog.NewNullLogger(),
+					netConn:                    &libvirt_mock.StaticConnect{},
+					interfaceByIPGetter:        func(_ stdnet.IP) (string, error) { return "lo", nil },
+					iptablesInterfaceGetter:    newIPTables,
+					routingInterfaceByIPGetter: func(string) (string, error) { return "virbr0", nil },
+					routeLocalnetTemplate:      routeLocalnetFile(t, true),
+				}
+				// Init the controller, so we have the required iptables chains available.
+				must.NoError(t, controller.Init())
+				ipt, err := iptables.New()
+				must.NoError(t, err)
+
+				// Add a cleanup function which will remove all the added iptables chain
+				// and rule entries along with resetting the loopback init.
+				t.Cleanup(func() {
+					iptablesCleanup(t, ipt)
+				})
+
+				driverReq := drivers.Resources{
+					Ports: &nomadstructs.AllocatedPorts{
+						{
+							Label:  "ssh",
+							Value:  27494,
+							To:     22,
+							HostIP: "127.0.0.1",
+						},
+					},
+				}
+
+				netInterfaceReq := net.NetworkInterfaceBridgeConfig{
+					Name:  "virbr0",
+					Ports: []string{"ssh"},
+				}
+
+				teardown, err := controller.configureIPTables(
+					&driverReq, &netInterfaceReq, "192.168.122.58")
+				must.NoError(t, err)
+				expectedTeardown := []string{iptablesNATTableName, outputIPTablesChainName, "-s", "127.0.0.1", "-o", "lo", "-p", "tcp",
+					"-m", "tcp", "--dport", "27494", "-j", "DNAT", "--to-destination", "192.168.122.58:22"}
+				must.Eq(t, [][]string{expectedTeardown}, teardown)
+
+				// Validate that the expected chains for localnet routing exist
+				chains, err := ipt.ListChains(iptablesNATTableName)
+				must.NoError(t, err)
+				must.SliceContains(t, chains, outputIPTablesChainName)
+				must.SliceContains(t, chains, postroutingIPTablesChainName)
+
+				// Validate the routing is applied for the device
+				rules, err := ipt.List(iptablesNATTableName, postroutingIPTablesChainName)
+				must.NoError(t, err)
+				expectedRules := []string{
+					"-N NOMAD_VT_PST",
+					"-A NOMAD_VT_PST -o virbr0 -m addrtype --src-type LOCAL --dst-type UNICAST -j MASQUERADE",
+				}
+				must.Eq(t, expectedRules, rules)
+
+				// Validate the rule exists
+				rules, err = ipt.List(iptablesNATTableName, outputIPTablesChainName)
+				must.NoError(t, err)
+				expectedRules = []string{
+					"-N NOMAD_VT_OUT",
+					"-A NOMAD_VT_OUT -s 127.0.0.1/32 -o lo -p tcp -m tcp --dport 27494 -j DNAT --to-destination 192.168.122.58:22",
+				}
+				must.Eq(t, expectedRules, rules)
+			})
 		})
 
-		// List the rules directly from the host to ensure we have also made
-		// changes there rather than just populate a return object.
-		//
-		// We can't use expectedTeardownRules as the iptables return includes
-		// bit length of the subnet mask.
-		expectedNATRules := [][]string{
-			{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161/32", "-i", "enp126s0",
-				"-p", "tcp", "-m", "tcp", "--dport", "27494", "-j", "DNAT",
-				"--to-destination", "192.168.122.58:22",
-			},
-			{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161/32", "-i", "enp126s0",
-				"-p", "tcp", "-m", "tcp", "--dport", "27512", "-j", "DNAT",
-				"--to-destination", "192.168.122.58:4646",
-			},
-		}
+		t.Run("comprehensive", func(t *testing.T) {
+			controller := &Controller{
+				logger:                  hclog.NewNullLogger(),
+				netConn:                 &libvirt_mock.StaticConnect{},
+				interfaceByIPGetter:     func(_ stdnet.IP) (string, error) { return "enp126s0", nil },
+				iptablesInterfaceGetter: newIPTables,
+			}
 
-		natRules, err := ipt.List("nat", "NOMAD_VT_PRT")
-		must.NoError(t, err)
-		must.SliceContains(t, natRules, "-A "+strings.Join(expectedNATRules[0][1:], " "))
-		must.SliceContains(t, natRules, "-A "+strings.Join(expectedNATRules[1][1:], " "))
+			// Create driver and network interface request arguments. The allocated
+			// ports includes a port not specified in the task config, to ensure this
+			// does not get configured.
+			driverReq := drivers.Resources{
+				Ports: &nomadstructs.AllocatedPorts{
+					{
+						Label:  "ssh",
+						Value:  27494,
+						To:     22,
+						HostIP: "10.0.1.161",
+					},
+					{
+						Label:  "nomad",
+						Value:  27512,
+						To:     4646,
+						HostIP: "10.0.1.161",
+					},
+					{
+						Label:  "http",
+						Value:  27513,
+						To:     80,
+						HostIP: "10.0.1.161",
+					},
+				},
+			}
 
-		expectedFilterRules := [][]string{
-			{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58/32", "-p", "tcp",
-				"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
-				"22", "-j", "ACCEPT",
-			},
-			{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58/32", "-p", "tcp",
-				"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
-				"4646", "-j", "ACCEPT",
-			},
-		}
+			netInterfaceReq := net.NetworkInterfaceBridgeConfig{
+				Name:  "virbr0",
+				Ports: []string{"ssh", "nomad"},
+			}
 
-		filterRules, err := ipt.List("filter", "NOMAD_VT_FW")
-		must.NoError(t, err)
-		must.SliceContains(t, filterRules, "-A "+strings.Join(expectedFilterRules[0][1:], " "))
-		must.SliceContains(t, filterRules, "-A "+strings.Join(expectedFilterRules[1][1:], " "))
+			// Init the controller, so we have the required iptables chains available.
+			must.NoError(t, controller.Init())
+
+			ipt, err := iptables.New()
+			must.NoError(t, err)
+
+			// Add a cleanup function which will remove all the added iptables chain
+			// and rule entries.
+			t.Cleanup(func() { iptablesCleanup(t, ipt) })
+
+			// Execute the function, collecting the teardown rules and building our
+			// expected output.
+			actualTeardownRules, err := controller.configureIPTables(
+				&driverReq, &netInterfaceReq, "192.168.122.58")
+			must.NoError(t, err)
+
+			expectedTeardownRules := [][]string{
+				{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58", "-p", "tcp",
+					"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
+					"22", "-j", "ACCEPT",
+				},
+				{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161", "-i", "enp126s0",
+					"-p", "tcp", "-m", "tcp", "--dport", "27494", "-j", "DNAT",
+					"--to-destination", "192.168.122.58:22",
+				},
+				{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58", "-p", "tcp",
+					"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
+					"4646", "-j", "ACCEPT",
+				},
+				{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161", "-i", "enp126s0",
+					"-p", "tcp", "-m", "tcp", "--dport", "27512", "-j", "DNAT",
+					"--to-destination", "192.168.122.58:4646",
+				},
+			}
+
+			// Perform the equality check ensuring the returned rules match exactly
+			// what we expected.
+			must.EqFunc(t, expectedTeardownRules, actualTeardownRules, func(a, b [][]string) bool {
+
+				if len(a) != len(b) {
+					return false
+				}
+
+				var found int
+
+				for _, ruleA := range a {
+					for _, ruleB := range b {
+						if !reflect.DeepEqual(ruleA, ruleB) {
+							continue
+						}
+						found++
+					}
+				}
+				return found == len(a)
+			})
+
+			// List the rules directly from the host to ensure we have also made
+			// changes there rather than just populate a return object.
+			//
+			// We can't use expectedTeardownRules as the iptables return includes
+			// bit length of the subnet mask.
+			expectedNATRules := [][]string{
+				{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161/32", "-i", "enp126s0",
+					"-p", "tcp", "-m", "tcp", "--dport", "27494", "-j", "DNAT",
+					"--to-destination", "192.168.122.58:22",
+				},
+				{"nat", "NOMAD_VT_PRT", "-d", "10.0.1.161/32", "-i", "enp126s0",
+					"-p", "tcp", "-m", "tcp", "--dport", "27512", "-j", "DNAT",
+					"--to-destination", "192.168.122.58:4646",
+				},
+			}
+
+			natRules, err := ipt.List("nat", "NOMAD_VT_PRT")
+			must.NoError(t, err)
+			must.SliceContains(t, natRules, "-A "+strings.Join(expectedNATRules[0][1:], " "))
+			must.SliceContains(t, natRules, "-A "+strings.Join(expectedNATRules[1][1:], " "))
+
+			expectedFilterRules := [][]string{
+				{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58/32", "-p", "tcp",
+					"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
+					"22", "-j", "ACCEPT",
+				},
+				{"filter", "NOMAD_VT_FW", "-d", "192.168.122.58/32", "-p", "tcp",
+					"-m", "state", "--state", "NEW", "-m", "tcp", "--dport",
+					"4646", "-j", "ACCEPT",
+				},
+			}
+
+			filterRules, err := ipt.List("filter", "NOMAD_VT_FW")
+			must.NoError(t, err)
+			must.SliceContains(t, filterRules, "-A "+strings.Join(expectedFilterRules[0][1:], " "))
+			must.SliceContains(t, filterRules, "-A "+strings.Join(expectedFilterRules[1][1:], " "))
+		})
 	})
 }
 
@@ -989,7 +1214,7 @@ func TestController_VMTerminatedTeardown(t *testing.T) {
 	})
 }
 
-func Test_removeIPReservation(t *testing.T) {
+func TestController_removeIPReservation(t *testing.T) {
 	controller := &Controller{
 		logger:  hclog.NewNullLogger(),
 		netConn: &libvirt_mock.StaticConnect{},
@@ -1044,7 +1269,7 @@ func Test_removeIPReservation(t *testing.T) {
 	}
 }
 
-func Test_ipReservationExists(t *testing.T) {
+func TestController_ipReservationExists(t *testing.T) {
 	controller := &Controller{
 		logger:  hclog.NewNullLogger(),
 		netConn: &libvirt_mock.StaticConnect{},
@@ -1105,7 +1330,7 @@ func Test_ipReservationExists(t *testing.T) {
 	}
 }
 
-func Test_releaseDHCPLease(t *testing.T) {
+func TestController_releaseDHCPLease(t *testing.T) {
 	controller := &Controller{
 		logger:              hclog.NewNullLogger(),
 		netConn:             &libvirt_mock.StaticConnect{},
@@ -1175,6 +1400,328 @@ func Test_releaseDHCPLease(t *testing.T) {
 	}
 }
 
+func TestController_enableLoopbackForDevice(t *testing.T) {
+	deviceName := "test-dev"
+	expectedRule := fmt.Sprintf("-A %s -o %s -m addrtype --src-type LOCAL --dst-type UNICAST -j MASQUERADE", postroutingIPTablesChainName, deviceName)
+
+	t.Run("mocked", func(t *testing.T) {
+		t.Run("added", func(t *testing.T) {
+			ipt := iptables_mock.New(t).Expect(
+				iptables_mock.List{
+					Table: iptablesNATTableName,
+					Chain: postroutingIPTablesChainName,
+				},
+				iptables_mock.Append{
+					Table: iptablesNATTableName,
+					Chain: postroutingIPTablesChainName,
+					RuleSpec: []string{
+						"-o", deviceName,
+						"-m", "addrtype",
+						"--src-type", "LOCAL",
+						"--dst-type", "UNICAST",
+						"-j", "MASQUERADE",
+					},
+				},
+			)
+			defer ipt.AssertExpectations()
+
+			controller := &Controller{
+				logger:                  hclog.NewNullLogger(),
+				iptablesInterfaceGetter: func() (IPTables, error) { return ipt, nil },
+			}
+
+			must.NoError(t, controller.enableLoopbackForDevice(ipt, deviceName))
+		})
+
+		t.Run("already exists", func(t *testing.T) {
+			ipt := iptables_mock.New(t).Expect(
+				iptables_mock.List{
+					Table:  iptablesNATTableName,
+					Chain:  postroutingIPTablesChainName,
+					Result: []string{expectedRule},
+				},
+			)
+			defer ipt.AssertExpectations()
+
+			controller := &Controller{
+				logger:                  hclog.NewNullLogger(),
+				iptablesInterfaceGetter: func() (IPTables, error) { return ipt, nil },
+			}
+
+			must.NoError(t, controller.enableLoopbackForDevice(ipt, deviceName))
+		})
+	})
+
+	t.Run("direct", func(t *testing.T) {
+		testutil.RequireIPTables(t)
+
+		t.Run("added", func(t *testing.T) {
+			ipt, err := iptables.New()
+			must.NoError(t, err)
+			t.Cleanup(func() { iptablesCleanup(t, ipt) })
+
+			controller := &Controller{
+				logger:                  hclog.NewNullLogger(),
+				iptablesInterfaceGetter: func() (IPTables, error) { return ipt, nil },
+				routeLocalnetTemplate:   routeLocalnetFile(t, true),
+			}
+			controller.enableLoopbackPortForwards()
+			must.True(t, controller.loopbackPortForwardsEnabled(ipt))
+
+			must.NoError(t, controller.enableLoopbackForDevice(ipt, deviceName))
+
+			rules, err := ipt.List(iptablesNATTableName, postroutingIPTablesChainName)
+			must.NoError(t, err)
+			must.SliceContains(t, rules, expectedRule)
+		})
+
+		t.Run("already exists", func(t *testing.T) {
+			ipt, err := iptables.New()
+			must.NoError(t, err)
+			t.Cleanup(func() { iptablesCleanup(t, ipt) })
+
+			controller := &Controller{
+				logger:                  hclog.NewNullLogger(),
+				iptablesInterfaceGetter: func() (IPTables, error) { return ipt, nil },
+				routeLocalnetTemplate:   routeLocalnetFile(t, true),
+			}
+			controller.enableLoopbackPortForwards()
+			must.True(t, controller.loopbackPortForwardsEnabled(ipt))
+
+			must.NoError(t, controller.enableLoopbackForDevice(ipt, deviceName))
+
+			rules, err := ipt.List(iptablesNATTableName, postroutingIPTablesChainName)
+			must.NoError(t, err)
+			must.SliceContains(t, rules, expectedRule)
+
+			must.NoError(t, controller.enableLoopbackForDevice(ipt, deviceName))
+
+			newRules, err := ipt.List(iptablesNATTableName, postroutingIPTablesChainName)
+			must.Eq(t, rules, newRules)
+		})
+	})
+}
+
+func TestController_enableLoopbackPortForwards(t *testing.T) {
+	t.Run("mocked", func(t *testing.T) {
+		ipt := iptables_mock.New(t).Expect(
+			iptables_mock.ListChains{
+				Table:  iptablesNATTableName,
+				Result: []string{preroutingIPTablesChainName},
+			},
+			iptables_mock.NewChain{
+				Table: iptablesNATTableName,
+				Chain: outputIPTablesChainName,
+			},
+			iptables_mock.Insert{
+				Table:    iptablesNATTableName,
+				Chain:    "OUTPUT",
+				Pos:      1,
+				RuleSpec: []string{"-j", outputIPTablesChainName},
+			},
+			iptables_mock.ListChains{
+				Table: iptablesNATTableName,
+				Result: []string{
+					preroutingIPTablesChainName,
+					outputIPTablesChainName,
+				},
+			},
+			iptables_mock.NewChain{
+				Table: iptablesNATTableName,
+				Chain: postroutingIPTablesChainName,
+			},
+			iptables_mock.Insert{
+				Table:    iptablesNATTableName,
+				Chain:    "POSTROUTING",
+				Pos:      1,
+				RuleSpec: []string{"-j", postroutingIPTablesChainName},
+			},
+		)
+		defer ipt.AssertExpectations()
+
+		controller := &Controller{
+			logger:                  hclog.NewNullLogger(),
+			iptablesInterfaceGetter: func() (IPTables, error) { return ipt, nil },
+			routeLocalnetTemplate:   routeLocalnetFile(t, true),
+		}
+		controller.enableLoopbackPortForwards()
+	})
+
+	t.Run("direct", func(t *testing.T) {
+		testutil.RequireIPTables(t)
+
+		ipt, err := iptables.New()
+		must.NoError(t, err)
+		t.Cleanup(func() { iptablesCleanup(t, ipt) })
+
+		controller := &Controller{
+			logger:                  hclog.NewNullLogger(),
+			iptablesInterfaceGetter: func() (IPTables, error) { return ipt, nil },
+			routeLocalnetTemplate:   routeLocalnetFile(t, true),
+		}
+		controller.enableLoopbackPortForwards()
+
+		chains, err := ipt.ListChains(iptablesNATTableName)
+		must.NoError(t, err)
+		must.SliceContains(t, chains, outputIPTablesChainName)
+		must.SliceContains(t, chains, postroutingIPTablesChainName)
+	})
+}
+
+func TestController_loopbackPortForwardsEnabled(t *testing.T) {
+	t.Run("mocked", func(t *testing.T) {
+		t.Run("not enabled", func(t *testing.T) {
+			ipt := iptables_mock.New(t).Expect(
+				iptables_mock.ListChains{
+					Table: iptablesNATTableName,
+					Result: []string{
+						preroutingIPTablesChainName,
+						forwardIPTablesChainName,
+					},
+				},
+			)
+			defer ipt.AssertExpectations()
+
+			controller := &Controller{logger: hclog.NewNullLogger()}
+			must.False(t, controller.loopbackPortForwardsEnabled(ipt))
+		})
+
+		t.Run("enabled", func(t *testing.T) {
+			ipt := iptables_mock.New(t).Expect(
+				iptables_mock.ListChains{
+					Table: iptablesNATTableName,
+					Result: []string{
+						preroutingIPTablesChainName,
+						postroutingIPTablesChainName,
+						forwardIPTablesChainName,
+					},
+				},
+			)
+			defer ipt.AssertExpectations()
+
+			controller := &Controller{logger: hclog.NewNullLogger()}
+			must.True(t, controller.loopbackPortForwardsEnabled(ipt))
+		})
+	})
+
+	t.Run("direct", func(t *testing.T) {
+		testutil.RequireIPTables(t)
+
+		t.Run("not enabled", func(t *testing.T) {
+			ipt, err := iptables.New()
+			must.NoError(t, err)
+
+			controller := &Controller{logger: hclog.NewNullLogger()}
+			must.False(t, controller.loopbackPortForwardsEnabled(ipt))
+		})
+
+		t.Run("enabled", func(t *testing.T) {
+			ipt, err := iptables.New()
+			must.NoError(t, err)
+			t.Cleanup(func() { iptablesCleanup(t, ipt) })
+
+			controller := &Controller{
+				logger:                  hclog.NewNullLogger(),
+				iptablesInterfaceGetter: func() (IPTables, error) { return ipt, nil },
+				routeLocalnetTemplate:   routeLocalnetFile(t, true),
+			}
+			controller.enableLoopbackPortForwards()
+			must.True(t, controller.loopbackPortForwardsEnabled(ipt))
+		})
+	})
+}
+
+func TestController_loopbackPortForwardsSupported(t *testing.T) {
+	testCases := []struct {
+		desc          string
+		deviceContent string // empty string will result in no file
+		globalContent string // empty string will result in no file
+		result        bool
+	}{
+		{
+			desc:          "global only enabled",
+			globalContent: "1",
+			result:        true,
+		},
+		{
+			desc:          "global only disabled",
+			globalContent: "0",
+			result:        false,
+		},
+		{
+			desc:          "device only route localnet enabled",
+			deviceContent: "1",
+			result:        true,
+		},
+		{
+			desc:          "device only route localnet disabled",
+			deviceContent: "0",
+			result:        false,
+		},
+		{
+			desc:          "global enabled device enabled",
+			globalContent: "1",
+			deviceContent: "1",
+			result:        true,
+		},
+		{
+			desc:          "global enabled device disabled",
+			globalContent: "1",
+			deviceContent: "0",
+			result:        true,
+		},
+		{
+			desc:          "global disabled device enabled",
+			globalContent: "0",
+			deviceContent: "1",
+			result:        true,
+		},
+		{
+			desc:          "global disabled device disabled",
+			globalContent: "0",
+			deviceContent: "0",
+			result:        false,
+		},
+		{
+			desc:   "all route localnet missing",
+			result: false,
+		},
+	}
+
+	deviceName := "test-dev"
+
+	for _, tc := range testCases {
+		t.Run(tc.desc, func(t *testing.T) {
+			tdir := t.TempDir()
+			tmpl := filepath.Join(tdir, "/%s_route_localnet")
+			devPath := fmt.Sprintf(tmpl, deviceName)
+			globalPath := fmt.Sprintf(tmpl, routeLocalnetGlobalName)
+			if tc.globalContent != "" {
+				f, err := os.Create(globalPath)
+				must.NoError(t, err)
+				_, err = f.WriteString(tc.globalContent)
+				must.NoError(t, err)
+				f.Close()
+			}
+
+			if tc.deviceContent != "" {
+				f, err := os.Create(devPath)
+				must.NoError(t, err)
+				_, err = f.WriteString(tc.deviceContent)
+				must.NoError(t, err)
+				f.Close()
+			}
+
+			controller := &Controller{
+				logger:                hclog.NewNullLogger(),
+				routeLocalnetTemplate: tmpl,
+			}
+
+			must.Eq(t, tc.result, controller.loopbackPortForwardsSupported(deviceName))
+		})
+	}
+}
+
 // iptablesCleanup can be used as a cleanup function which will remove all the
 // added iptables chain and rule entries. This avoids polluting the machine
 // that runs the test, so our development machines do not require manual
@@ -1188,6 +1735,12 @@ func Test_releaseDHCPLease(t *testing.T) {
 //   - sudo iptables -t nat -D PREROUTING -j NOMAD_VT_PRT
 //   - sudo iptables -F NOMAD_VT_PRT -t nat
 //   - sudo iptables -X NOMAD_VT_PRT -t nat
+//   - sudo iptables -t nat -D POSTROUTING -j NOMAD_VT_PST
+//   - sudo iptables -F NOMAD_VT_PST -t nat
+//   - sudo iptables -X NOMAD_VT_PST -t nat
+//   - sudo iptables -t nat -D POSTROUTING -j NOMAD_VT_OUT
+//   - sudo iptables -F NOMAD_VT_OUT -t nat
+//   - sudo iptables -X NOMAD_VT_OUT -t nat
 func iptablesCleanup(t *testing.T, ipt *iptables.IPTables) {
 	fn := func(e error) {
 		if e != nil {
@@ -1202,4 +1755,28 @@ func iptablesCleanup(t *testing.T, ipt *iptables.IPTables) {
 	fn(ipt.Delete(iptablesFilterTableName, "FORWARD", []string{"-j", forwardIPTablesChainName}...))
 	fn(ipt.ClearChain(iptablesFilterTableName, forwardIPTablesChainName))
 	fn(ipt.DeleteChain(iptablesFilterTableName, forwardIPTablesChainName))
+
+	fn(ipt.Delete(iptablesNATTableName, "POSTROUTING", []string{"-j", postroutingIPTablesChainName}...))
+	fn(ipt.ClearChain(iptablesNATTableName, postroutingIPTablesChainName))
+	fn(ipt.DeleteChain(iptablesNATTableName, postroutingIPTablesChainName))
+
+	fn(ipt.Delete(iptablesNATTableName, "OUTPUT", []string{"-j", outputIPTablesChainName}...))
+	fn(ipt.ClearChain(iptablesNATTableName, outputIPTablesChainName))
+	fn(ipt.DeleteChain(iptablesNATTableName, outputIPTablesChainName))
+}
+
+func routeLocalnetFile(t *testing.T, enabled bool) string {
+	content := "0"
+	if enabled {
+		content = "1"
+	}
+	tmpl := filepath.Join(t.TempDir(), "%s_route_localnet")
+	path := fmt.Sprintf(tmpl, routeLocalnetGlobalName)
+	f, err := os.Create(path)
+	must.NoError(t, err)
+	_, err = f.WriteString(content)
+	must.NoError(t, err)
+	f.Close()
+
+	return tmpl
 }

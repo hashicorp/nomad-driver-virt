@@ -5,7 +5,6 @@ package net
 
 import (
 	stdnet "net"
-	"sync"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -32,7 +31,9 @@ type Controller struct {
 	dhcpLeaseDiscoveryInterval time.Duration
 	dhcpLeaseDiscoveryTimeout  time.Duration
 
-	init sync.Once
+	// routeLocalnetTemplate is a template for creating the path to the kernel
+	// runtime configuration for device localnet routing.
+	routeLocalnetTemplate string
 
 	// interfaceByIPGetter is the function that queries the host using the
 	// passed IP address and identifies the interface it is assigned to. It is
@@ -46,6 +47,10 @@ type Controller struct {
 	// iptablesInterfaceGetter is the function that returns an interface
 	// for IPTables.
 	iptablesInterfaceGetter
+
+	// routingIngerfaceByIPGetter is the function that queries the host using
+	// the passed IP address and identifies the interface used to reach it.
+	routingInterfaceByIPGetter
 }
 
 // NewController returns a Controller which implements the net.Net interface
@@ -60,6 +65,8 @@ func NewController(logger hclog.Logger, conn shims.Connect) *Controller {
 		iptablesInterfaceGetter:    newIPTables,
 		logger:                     logger.Named("net"),
 		netConn:                    conn,
+		routingInterfaceByIPGetter: getRoutingInterfaceByIP,
+		routeLocalnetTemplate:      routeLocalnetPathTemplate,
 	}
 }
 
@@ -76,3 +83,7 @@ type ipByInterfaceGetter func(name string) (stdnet.IP, error)
 // iptablesInterfaceGetter is the function that returns an interface
 // for IPTables.
 type iptablesInterfaceGetter func() (IPTables, error)
+
+// routingInterfaceByIPGetter is the function signature used to identify
+// the host interface used for an IP address.
+type routingInterfaceByIPGetter func(ip string) (string, error)
