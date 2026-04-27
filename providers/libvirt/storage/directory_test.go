@@ -36,12 +36,12 @@ func TestDirectory_ValidateDisk(t *testing.T) {
 
 	t.Run("format support", func(t *testing.T) {
 		t.Run("qcow2", func(t *testing.T) {
-			disk := &disks.Disk{Format: disks.DiskFormatQcow2}
+			disk := &disks.Disk{Format: storage.DiskFormatQcow2}
 			must.NoError(t, pool.ValidateDisk(disk))
 		})
 
 		t.Run("raw", func(t *testing.T) {
-			disk := &disks.Disk{Format: disks.DiskFormatRaw}
+			disk := &disks.Disk{Format: storage.DiskFormatRaw}
 			must.NoError(t, pool.ValidateDisk(disk))
 		})
 
@@ -55,12 +55,12 @@ func TestDirectory_ValidateDisk(t *testing.T) {
 
 	t.Run("chained support", func(t *testing.T) {
 		t.Run("qcow2 format", func(t *testing.T) {
-			disk := &disks.Disk{Format: disks.DiskFormatQcow2, Chained: true}
+			disk := &disks.Disk{Format: storage.DiskFormatQcow2, Chained: true}
 			must.NoError(t, pool.ValidateDisk(disk))
 		})
 
 		t.Run("raw format", func(t *testing.T) {
-			disk := &disks.Disk{Format: disks.DiskFormatRaw, Chained: true}
+			disk := &disks.Disk{Format: storage.DiskFormatRaw, Chained: true}
 			err := pool.ValidateDisk(disk)
 			must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
 			must.ErrorContains(t, err, "format must be qcow2")
@@ -70,7 +70,7 @@ func TestDirectory_ValidateDisk(t *testing.T) {
 	t.Run("sparse modification", func(t *testing.T) {
 		t.Run("value is unset", func(t *testing.T) {
 			t.Run("enabled if format is qcow2", func(t *testing.T) {
-				disk := &disks.Disk{Format: disks.DiskFormatQcow2}
+				disk := &disks.Disk{Format: storage.DiskFormatQcow2}
 				err := pool.ValidateDisk(disk)
 				must.NoError(t, err)
 				must.NotNil(t, disk.Sparse, must.Sprint("expected sparse to be set"))
@@ -78,7 +78,7 @@ func TestDirectory_ValidateDisk(t *testing.T) {
 			})
 
 			t.Run("unset if format is not qcow2", func(t *testing.T) {
-				disk := &disks.Disk{Format: disks.DiskFormatRaw}
+				disk := &disks.Disk{Format: storage.DiskFormatRaw}
 				err := pool.ValidateDisk(disk)
 				must.NoError(t, err)
 				must.Nil(t, disk.Sparse, must.Sprint("expected sparse to be unset"))
@@ -87,7 +87,7 @@ func TestDirectory_ValidateDisk(t *testing.T) {
 
 		t.Run("value is set", func(t *testing.T) {
 			t.Run("unchanged when format is qcow2", func(t *testing.T) {
-				disk := &disks.Disk{Format: disks.DiskFormatQcow2, Sparse: pointer.Of(false)}
+				disk := &disks.Disk{Format: storage.DiskFormatQcow2, Sparse: pointer.Of(false)}
 				err := pool.ValidateDisk(disk)
 				must.NoError(t, err)
 				must.NotNil(t, disk.Sparse, must.Sprint("expected sparse to be set"))
@@ -95,7 +95,7 @@ func TestDirectory_ValidateDisk(t *testing.T) {
 			})
 
 			t.Run("unchanged when format is not qcow2", func(t *testing.T) {
-				disk := &disks.Disk{Format: disks.DiskFormatRaw, Sparse: pointer.Of(false)}
+				disk := &disks.Disk{Format: storage.DiskFormatRaw, Sparse: pointer.Of(false)}
 				err := pool.ValidateDisk(disk)
 				must.NoError(t, err)
 				must.NotNil(t, disk.Sparse, must.Sprint("expected sparse to be set"))

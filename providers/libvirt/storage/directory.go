@@ -18,7 +18,7 @@ import (
 	"libvirt.org/go/libvirtxml"
 )
 
-const defaultDirectoryImageFormat = disks.DiskFormatQcow2
+const defaultDirectoryImageFormat = storage.DiskFormatQcow2
 
 // directory provides a local directory based implementation
 // of a storage pool.
@@ -69,18 +69,18 @@ func (d *directory) ValidateDisk(disk *disks.Disk) error {
 
 	// If the format of the disk is qcow2 and the sparse attribute has not
 	// been set to any value, set it as true.
-	if disk.Sparse == nil && disk.Format == disks.DiskFormatQcow2 {
+	if disk.Sparse == nil && disk.Format == storage.DiskFormatQcow2 {
 		disk.Sparse = pointer.Of(true)
 	}
 
 	// Directory pool currently supports qcow2 and raw volumes
-	if disk.Format != disks.DiskFormatQcow2 && disk.Format != disks.DiskFormatRaw {
+	if disk.Format != storage.DiskFormatQcow2 && disk.Format != storage.DiskFormatRaw {
 		mErr = multierror.Append(mErr,
 			fmt.Errorf("%w: format only supports raw or qcow2 for directory volumes", errs.ErrInvalidConfiguration))
 	}
 
 	// Disk chaining is only supported with qcow2 images.
-	if disk.Format != disks.DiskFormatQcow2 && disk.Chained {
+	if disk.Format != storage.DiskFormatQcow2 && disk.Chained {
 		mErr = multierror.Append(mErr,
 			fmt.Errorf("%w: format must be qcow2 for chained directory volumes", errs.ErrInvalidConfiguration))
 	}

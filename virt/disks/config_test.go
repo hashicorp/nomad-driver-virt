@@ -245,13 +245,13 @@ func TestDisk(t *testing.T) {
 		})
 
 		t.Run("defaults cdrom", func(t *testing.T) {
-			d := Disks{{Kind: DiskKindCdrom}}
+			d := Disks{{Kind: storage.DiskKindCdrom}}
 			must.NoError(t, d.Prepare(mockStorage))
 			disk := d[0]
 
-			must.Eq(t, DiskKindCdrom, disk.Kind)
+			must.Eq(t, storage.DiskKindCdrom, disk.Kind)
 			must.Eq(t, testDriver, disk.Driver)
-			must.Eq(t, BusTypeIde, disk.BusType)
+			must.Eq(t, storage.BusTypeIde, disk.BusType)
 			must.Eq(t, testDevname, disk.Devname)
 			must.Eq(t, "testing-image-format", disk.Format)
 			must.False(t, disk.Primary) // Single disk cdrom are not automatically set to primary
@@ -437,8 +437,8 @@ func TestDisk(t *testing.T) {
 
 	t.Run("Generate", func(t *testing.T) {
 		t.Run("creates volume", func(t *testing.T) {
-			d := Disks{{Kind: DiskKindDisk, Driver: "test-driver", Format: DiskFormatRaw,
-				Devname: "test-device", BusType: BusTypeSata, Size: "20MB", Source: &Source{Image: "image-path"}}}
+			d := Disks{{Kind: storage.DiskKindDisk, Driver: "test-driver", Format: storage.DiskFormatRaw,
+				Devname: "test-device", BusType: storage.BusTypeSata, Size: "20MB", Source: &Source{Image: "image-path"}}}
 
 			pool := mock_storage.NewMockPool(t)
 			pool.ExpectAddVolume(mock_storage.AddVolume{
@@ -447,7 +447,7 @@ func TestDisk(t *testing.T) {
 					Chained: false,
 					Size:    20000000,
 					Target: storage.Target{
-						Format: DiskFormatRaw,
+						Format: storage.DiskFormatRaw,
 					},
 					Source: storage.Source{
 						Path: "image-path",
@@ -465,11 +465,11 @@ func TestDisk(t *testing.T) {
 			expectedVolume := &storage.Volume{
 				Pool:       "test-pool",
 				Name:       "test-volume",
-				Kind:       DiskKindDisk,
+				Kind:       storage.DiskKindDisk,
 				Driver:     "test-driver",
-				Format:     DiskFormatRaw,
+				Format:     storage.DiskFormatRaw,
 				DeviceName: "test-device",
-				BusType:    BusTypeSata,
+				BusType:    storage.BusTypeSata,
 				Primary:    false,
 			}
 
@@ -486,8 +486,8 @@ func TestDisk(t *testing.T) {
 			srcPath := src.Name()
 
 			t.Run("does not create block volumes", func(t *testing.T) {
-				d := Disks{{Kind: DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: DiskFormatRaw,
-					Devname: "test-device", BusType: BusTypeSata, blockDevicePath: "/dev/null"}}
+				d := Disks{{Kind: storage.DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: storage.DiskFormatRaw,
+					Devname: "test-device", BusType: storage.BusTypeSata, blockDevicePath: "/dev/null"}}
 
 				pool := mock_storage.NewStaticPool()
 				store := &mock_storage.StaticStorage{
@@ -500,11 +500,11 @@ func TestDisk(t *testing.T) {
 				expectedVolume := &storage.Volume{
 					Block:      "/dev/null",
 					Name:       "task_test-device.img",
-					Kind:       DiskKindDisk,
+					Kind:       storage.DiskKindDisk,
 					Driver:     "test-driver",
-					Format:     DiskFormatRaw,
+					Format:     storage.DiskFormatRaw,
 					DeviceName: "test-device",
-					BusType:    BusTypeSata,
+					BusType:    storage.BusTypeSata,
 					Primary:    false,
 				}
 
@@ -513,8 +513,8 @@ func TestDisk(t *testing.T) {
 			})
 
 			t.Run("errors if no block device path is set", func(t *testing.T) {
-				d := Disks{{Kind: DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: DiskFormatRaw,
-					Devname: "test-device", BusType: BusTypeSata}}
+				d := Disks{{Kind: storage.DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: storage.DiskFormatRaw,
+					Devname: "test-device", BusType: storage.BusTypeSata}}
 
 				pool := mock_storage.NewStaticPool()
 				store := &mock_storage.StaticStorage{
@@ -530,9 +530,9 @@ func TestDisk(t *testing.T) {
 				must.NoError(t, err)
 				device.Close()
 
-				d := Disks{{Kind: DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: DiskFormatRaw,
-					Devname: "test-device", BusType: BusTypeSata, blockDevicePath: device.Name(), Source: &Source{Image: srcPath,
-						Format: DiskFormatRaw}}}
+				d := Disks{{Kind: storage.DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: storage.DiskFormatRaw,
+					Devname: "test-device", BusType: storage.BusTypeSata, blockDevicePath: device.Name(), Source: &Source{Image: srcPath,
+						Format: storage.DiskFormatRaw}}}
 				pool := mock_storage.NewStaticPool()
 				store := &mock_storage.StaticStorage{
 					DefaultPoolResult: pool,
@@ -558,8 +558,8 @@ func TestDisk(t *testing.T) {
 				_, err = src.WriteString(srcContent)
 				must.NoError(t, err)
 
-				d := Disks{{Kind: DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: DiskFormatRaw,
-					Devname: "test-device", BusType: BusTypeSata, blockDevicePath: device.Name(), Source: &Source{Image: srcPath}}}
+				d := Disks{{Kind: storage.DiskKindDisk, Driver: "test-driver", VolumeName: "nomad-volume", Format: storage.DiskFormatRaw,
+					Devname: "test-device", BusType: storage.BusTypeSata, blockDevicePath: device.Name(), Source: &Source{Image: srcPath}}}
 				pool := mock_storage.NewStaticPool()
 				imageHandler := mock_image_tools.NewStaticImageHandler()
 				store := &mock_storage.StaticStorage{
