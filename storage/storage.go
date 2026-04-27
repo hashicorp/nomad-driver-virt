@@ -11,6 +11,19 @@ import (
 const (
 	PoolTypeDirectory = "directory"
 	PoolTypeCeph      = "ceph"
+
+	BusTypeVirtio = "virtio"
+	BusTypeIde    = "ide"
+	BusTypeScsi   = "scsi"
+	BusTypeSata   = "sata"
+
+	DiskFormatIso   = "iso"
+	DiskFormatQcow2 = "qcow2"
+	DiskFormatRaw   = "raw"
+
+	DiskKindDisk  = "disk"
+	DiskKindLun   = "lun"
+	DiskKindCdrom = "cdrom"
 )
 
 // Storage defines the required interface for support storage

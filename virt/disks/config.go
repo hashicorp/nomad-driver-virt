@@ -50,20 +50,8 @@ var (
 )
 
 const (
-	BusTypeVirtio = "virtio"
-	BusTypeIde    = "ide"
-	BusTypeScsi   = "scsi"
-	BusTypeSata   = "sata"
-
-	DiskFormatRaw   = "raw"
-	DiskFormatQcow2 = "qcow2"
-
-	DiskKindDisk  = "disk"
-	DiskKindLun   = "lun"
-	DiskKindCdrom = "cdrom"
-
-	BusTypeDefault  = "virtio"
-	DiskKindDefault = "disk"
+	BusTypeDefault  = storage.BusTypeVirtio
+	DiskKindDefault = storage.DiskKindDisk
 
 	identifierPrefix = "nmdsrc"
 )
@@ -160,7 +148,7 @@ func (d *Disk) ValidateNomadVolume() error {
 
 	var mErr *multierror.Error
 
-	if d.Format != "" && d.Format != DiskFormatRaw {
+	if d.Format != "" && d.Format != storage.DiskFormatRaw {
 		mErr = multierror.Append(mErr,
 			fmt.Errorf("%w - format cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
@@ -223,8 +211,8 @@ func (d Disks) ApplyCloudInit(isoPath string) Disks {
 	}
 
 	newDisk := &Disk{
-		BusType: BusTypeIde,
-		Kind:    DiskKindCdrom,
+		BusType: storage.BusTypeIde,
+		Kind:    storage.DiskKindCdrom,
 		Format:  "raw",
 		Source: &Source{
 			Format: "raw",
@@ -243,7 +231,7 @@ func (d Disks) CompatAddImage(image string, size int64, thinCopy bool) Disks {
 	}
 
 	newDisk := &Disk{
-		BusType: BusTypeVirtio,
+		BusType: storage.BusTypeVirtio,
 		Primary: true,
 		Source: &Source{
 			Image: image,
@@ -255,7 +243,7 @@ func (d Disks) CompatAddImage(image string, size int64, thinCopy bool) Disks {
 	// For proper compatibility, set the format to qcow2
 	// if making a thin copy.
 	if thinCopy {
-		newDisk.Format = DiskFormatQcow2
+		newDisk.Format = storage.DiskFormatQcow2
 	}
 
 	return append(d, newDisk)
@@ -323,7 +311,7 @@ func (d Disks) ApplyMounts(mounts []*drivers.MountConfig) error {
 
 		disk.blockDevicePath = m.HostPath
 		disk.ReadOnly = m.Readonly
-		disk.Format = DiskFormatRaw // block device will always be raw
+		disk.Format = storage.DiskFormatRaw // block device will always be raw
 
 		// If a device name is set directly on the disk, then it is the value
 		// used. Otherwise extract the device name from the task path.
@@ -359,8 +347,8 @@ func (d Disks) Prepare(s storage.Storage) error {
 		// If the kind of disk is a cdrom, set the bus to IDE, otherwise.
 		// just default to virtio.
 		if disk.BusType == "" {
-			if disk.Kind == DiskKindCdrom {
-				disk.BusType = BusTypeIde
+			if disk.Kind == storage.DiskKindCdrom {
+				disk.BusType = storage.BusTypeIde
 			} else {
 				disk.BusType = BusTypeDefault
 			}
@@ -384,7 +372,7 @@ func (d Disks) Prepare(s storage.Storage) error {
 			primaryFound = true
 		}
 
-		if disk.Kind != DiskKindCdrom {
+		if disk.Kind != storage.DiskKindCdrom {
 			validPrimaryDisks = append(validPrimaryDisks, disk)
 		}
 

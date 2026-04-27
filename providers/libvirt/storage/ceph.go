@@ -24,7 +24,7 @@ import (
 
 const (
 	// default format used for ceph based volumes
-	defaultCephImageFormat = disks.DiskFormatRaw
+	defaultCephImageFormat = storage.DiskFormatRaw
 )
 
 // cephPlugin holds the plugin for direct volume uploads.
@@ -165,7 +165,7 @@ func (c *ceph) ValidateDisk(disk *disks.Disk) error {
 	var mErr *multierror.Error
 
 	// Only raw format is supported for ceph volumes
-	if disk.Format != disks.DiskFormatRaw {
+	if disk.Format != storage.DiskFormatRaw {
 		mErr = multierror.Append(mErr,
 			fmt.Errorf("%w: format can only be raw for ceph volumes", errs.ErrInvalidConfiguration))
 	}

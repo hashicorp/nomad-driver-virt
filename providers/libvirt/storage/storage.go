@@ -229,8 +229,8 @@ func (s *Storage) VolumeToDisk(vol storage.Volume) (*libvirtxml.DomainDisk, erro
 	// Sometimes after uploading an image into a volume, libvirt will overwrite
 	// the volume type from raw to iso. Check for that when setting the format.
 	diskFmt := vol.Format
-	if diskFmt == "iso" {
-		diskFmt = "raw"
+	if diskFmt == storage.DiskFormatIso {
+		diskFmt = storage.DiskFormatRaw
 	}
 
 	disk := &libvirtxml.DomainDisk{
