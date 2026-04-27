@@ -19,6 +19,7 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/providers"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/storage"
+	"github.com/hashicorp/nomad-driver-virt/testutil"
 	mock_cloudinit "github.com/hashicorp/nomad-driver-virt/testutil/mock/cloudinit"
 	mock_providers "github.com/hashicorp/nomad-driver-virt/testutil/mock/providers"
 	mock_storage "github.com/hashicorp/nomad-driver-virt/testutil/mock/storage"
@@ -867,6 +868,7 @@ func TestVirtDriver(t *testing.T) {
 
 func TestVirtDriver_Libvirt(t *testing.T) {
 	ci.Parallel(t)
+	testutil.RequireQemuImg(t)
 
 	dir := t.TempDir()
 	virtcfg := testVirtTaskConfig(t, filepath.Join(dir, "images"))

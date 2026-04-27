@@ -13,7 +13,8 @@ import (
 	"github.com/coreos/go-iptables/iptables"
 )
 
-// RequireRoot will skip the test if not running as root.
+// RequireRoot will skip the test if not running as root. If the
+// test is detected as running within CI it will error.
 func RequireRoot(t *testing.T) {
 	if syscall.Geteuid() != 0 {
 		if isCI() {
@@ -26,7 +27,8 @@ func RequireRoot(t *testing.T) {
 }
 
 // RequireIPTables will skip the test if not running as
-// root or if iptables is not available.
+// root or if iptables is not available. If the test is
+// detected as running within CI it will error.
 func RequireIPTables(t *testing.T) {
 	RequireRoot(t)
 
@@ -38,6 +40,15 @@ func RequireIPTables(t *testing.T) {
 		}
 
 		t.Skip("Test requires iptables")
+	}
+}
+
+// RequireQemuImg will check if the qemu-img executable is
+// available and error if it is not found.
+func RequireQemuImg(t *testing.T) {
+	_, err := exec.LookPath("qemu-img")
+	if err != nil {
+		t.Fatalf("Test requires qemu-img executable (%s)", err)
 	}
 }
 
