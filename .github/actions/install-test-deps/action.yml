@@ -1,0 +1,13 @@
+name: install-test-deps
+description: install test depenency packages
+runs:
+  using: composite
+  steps:
+  - name: install dependencies
+    run: |-
+      set -x
+      
+      sudo apt-get update
+      sudo apt-get install libvirt-dev librados-dev librbd-dev qemu-utils
+
+    shell: bash
