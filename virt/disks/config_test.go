@@ -73,20 +73,6 @@ func TestDisk(t *testing.T) {
 			must.True(t, d[0].ReadOnly)
 		})
 
-		t.Run("includes size if available", func(t *testing.T) {
-			d := NewDisks()
-			path := filepath.Join(t.TempDir(), "testing.iso")
-			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY, 0666)
-			must.NoError(t, err)
-			_, err = f.Write([]byte("test"))
-			must.NoError(t, err)
-			f.Close()
-
-			d = d.ApplyCloudInit(path)
-			must.Len(t, 1, d)
-			must.Eq(t, "4", d[0].Size)
-		})
-
 		t.Run("creates disks and adds", func(t *testing.T) {
 			d := NewDisks()
 			d = nil

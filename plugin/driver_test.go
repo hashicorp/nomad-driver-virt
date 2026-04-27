@@ -217,6 +217,7 @@ func TestVirtDriver(t *testing.T) {
 		// Set all the expectations for the mocks
 		st.Expect(
 			mock_storage.ImageHandler{Result: ih},
+			mock_storage.ImageHandler{Result: ih},
 			mock_storage.DefaultPool{Result: pl},
 			mock_storage.DefaultPool{Result: pl},
 			mock_storage.DefaultPool{Result: pl},

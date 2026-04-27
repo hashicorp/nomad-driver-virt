@@ -249,10 +249,17 @@ func TestPool_AddVolume(t *testing.T) {
 
 			lvParentVol := mock_libvirt_storage.NewStaticStorageVol()
 			lvVol := mock_libvirt_storage.NewMockStorageVol(t).Expect(
+				mock_libvirt_storage.Resize{
+					Size:  200,
+					Flags: libvirt.STORAGE_VOL_RESIZE_ALLOCATE,
+				},
 				mock_libvirt_storage.GetInfo{
 					Result: &libvirt.StorageVolInfo{
 						Capacity: 200,
 					},
+				},
+				mock_libvirt_storage.GetXMLDesc{
+					Result: expectedData,
 				},
 				mock_libvirt_storage.GetXMLDesc{
 					Result: expectedData,
@@ -661,6 +668,13 @@ func TestPool_AddVolume(t *testing.T) {
 					mock_libvirt_storage.GetXMLDesc{
 						Result: expectedData,
 					},
+					mock_libvirt_storage.Resize{
+						Size:  200,
+						Flags: libvirt.STORAGE_VOL_RESIZE_ALLOCATE,
+					},
+					mock_libvirt_storage.GetXMLDesc{
+						Result: expectedData,
+					},
 					mock_libvirt_storage.Free{},
 				)
 				defer lvVol.AssertExpectations()
@@ -705,6 +719,13 @@ func TestPool_AddVolume(t *testing.T) {
 						Result: &libvirt.StorageVolInfo{
 							Capacity: 200,
 						},
+					},
+					mock_libvirt_storage.Resize{
+						Size:  200,
+						Flags: libvirt.STORAGE_VOL_RESIZE_ALLOCATE,
+					},
+					mock_libvirt_storage.GetXMLDesc{
+						Result: expectedData,
 					},
 					mock_libvirt_storage.GetXMLDesc{
 						Result: expectedData,
@@ -767,6 +788,13 @@ func TestPool_AddVolume(t *testing.T) {
 							Capacity: 200,
 						},
 					},
+					mock_libvirt_storage.Resize{
+						Size:  200,
+						Flags: libvirt.STORAGE_VOL_RESIZE_ALLOCATE,
+					},
+					mock_libvirt_storage.GetXMLDesc{
+						Result: expectedData,
+					},
 					mock_libvirt_storage.GetXMLDesc{
 						Result: expectedData,
 					},
@@ -804,7 +832,8 @@ func TestPool_AddVolume(t *testing.T) {
 				must.Eq(t, &storage.Volume{Name: name, Pool: "test-pool", Size: 200, Format: "raw"}, vol)
 			})
 
-			t.Run("standard image", func(t *testing.T) {
+			// This should not resize due to ISO type
+			t.Run("standard image iso", func(t *testing.T) {
 				imgPath := filepath.Join(t.TempDir(), "volume-image")
 				f, err := os.Create(imgPath)
 				must.NoError(t, err)
@@ -814,6 +843,25 @@ func TestPool_AddVolume(t *testing.T) {
 				f.Close()
 
 				opts.Source.Path = imgPath
+
+				expectedVolIso := &libvirtxml.StorageVolume{
+					Name: name,
+					Target: &libvirtxml.StorageVolumeTarget{
+						Format: &libvirtxml.StorageVolumeTargetFormat{
+							Type: "iso",
+						},
+					},
+					Capacity: &libvirtxml.StorageVolumeSize{
+						Unit:  "B",
+						Value: 200,
+					},
+					Allocation: &libvirtxml.StorageVolumeSize{
+						Unit:  "B",
+						Value: 200,
+					},
+				}
+				expectedDataIso, err := expectedVolIso.Marshal()
+				must.NoError(t, err)
 
 				lvStream := mock_libvirt.NewMockStream(t).Expect(
 					mock_libvirt.Send{
@@ -830,6 +878,9 @@ func TestPool_AddVolume(t *testing.T) {
 						Result: &libvirt.StorageVolInfo{
 							Capacity: 200,
 						},
+					},
+					mock_libvirt_storage.GetXMLDesc{
+						Result: expectedDataIso,
 					},
 					mock_libvirt_storage.GetXMLDesc{
 						Result: expectedData,

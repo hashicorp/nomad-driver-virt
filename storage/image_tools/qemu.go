@@ -136,14 +136,15 @@ func (q *QemuTools) CreateChainedCopy(src string, destination string, sizeM int6
 // file itself.
 func (q *QemuTools) GetImageSize(path string) (uint64, error) {
 	var output = struct {
-		Size uint64 `json:"virtual-size"`
+		VirtualSize uint64 `json:"virtual-size"`
+		ActualSize  uint64 `json:"actual-size"`
 	}{}
 
 	if err := q.getImageInfo(path, &output); err != nil {
 		return 0, err
 	}
 
-	return output.Size, nil
+	return max(output.ActualSize, output.VirtualSize), nil
 }
 
 // getImageInfo reads information about the image file and unmarshals the result

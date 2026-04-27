@@ -77,8 +77,7 @@ jobs:
       - uses: hashicorp/setup-golang@v3
         with:
           version-file: go.mod
-      - uses: ./.github/actions/install-libvirt-dev
-      - uses: ./.github/actions/install-librados-dev        
+      - uses: ./.github/actions/install-test-deps
 
       - name: "Compile binary"
         env:
