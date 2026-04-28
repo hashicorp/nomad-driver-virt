@@ -453,6 +453,7 @@ func TestDirectory_DeleteVolume(t *testing.T) {
 	mkDirPool := func() *directory {
 		return &directory{
 			pool: &pool{
+				ctx:    t.Context(),
 				name:   testPoolName,
 				logger: hclog.NewNullLogger(),
 				l:      mock_libvirt.NewStaticLibvirt(),

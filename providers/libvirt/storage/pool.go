@@ -72,7 +72,7 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 	defer pool.Free()
 
 	// Always start with refreshing the pool.
-	if err := pool.Refresh(libvirtNoFlags); err != nil {
+	if err := refreshPool(p.ctx, pool, asyncJobErrRetryDefaultInterval, asyncJobErrRetryDefaultTimeout); err != nil {
 		return nil, err
 	}
 
@@ -239,7 +239,7 @@ func (p *pool) DeleteVolume(name string) error {
 	defer pool.Free()
 
 	// Refresh the pool to ensure volume list is up-to-date
-	if err := pool.Refresh(libvirtNoFlags); err != nil {
+	if err := refreshPool(p.ctx, pool, asyncJobErrRetryDefaultInterval, asyncJobErrRetryDefaultTimeout); err != nil {
 		return err
 	}
 
