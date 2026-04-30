@@ -125,14 +125,14 @@ func (p *provider) parseConfiguration(config *vm.Config) (string, error) {
 		OnPoweroff: "destroy",
 		OnReboot:   "restart",
 		OnCrash:    "destroy",
-		PM: &libvirtxml.DomainPM{
-			SuspendToMem: &libvirtxml.DomainPMPolicy{
-				Enabled: "no",
-			},
-			SuspendToDisk: &libvirtxml.DomainPMPolicy{
-				Enabled: "no",
-			},
-		},
+		// PM: &libvirtxml.DomainPM{
+		// 	SuspendToMem: &libvirtxml.DomainPMPolicy{
+		// 		Enabled: "no",
+		// 	},
+		// 	SuspendToDisk: &libvirtxml.DomainPMPolicy{
+		// 		Enabled: "no",
+		// 	},
+		// },
 		Features: &libvirtxml.DomainFeatureList{
 			VMPort: &libvirtxml.DomainFeatureState{
 				State: "off",
