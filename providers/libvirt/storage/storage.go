@@ -181,6 +181,8 @@ func (s *Storage) GenerateDeviceName(busType string, existingNames []string) str
 		prefix = "hd"
 	case "virtio":
 		prefix = "vd"
+	case "usb":
+		prefix = "sd"
 	default:
 		prefix = "sr"
 	}
