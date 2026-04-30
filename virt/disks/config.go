@@ -211,7 +211,7 @@ func (d Disks) ApplyCloudInit(isoPath string) Disks {
 	}
 
 	newDisk := &Disk{
-		BusType: storage.BusTypeIde,
+		BusType: storage.BusTypeVirtio,
 		Kind:    storage.DiskKindCdrom,
 		Format:  "raw",
 		Source: &Source{
