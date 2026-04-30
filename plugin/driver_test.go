@@ -43,15 +43,11 @@ const (
 	testOsMachine = "pc-i440fx-jammy"
 )
 
-func modulesPath(t *testing.T) string {
-	return filepath.Join(filepath.Dir(t.TempDir()), "test-modules")
-}
-
 func testHarness(t *testing.T, config *virt.Config, p providers.Providers, ci cloudinit.CloudInit, task *drivers.TaskConfig, timeout time.Duration) *driver_testutils.DriverHarness {
 	t.Helper()
 
 	libvirt.ModifyMountFsAvailability(func() (map[string]struct{}, error) {
-		return map[string]struct{}{"virtio-9p-pci": {}}, nil
+		return map[string]struct{}{"virtio-9p-device": {}}, nil
 	})
 	t.Cleanup(func() { libvirt.ModifyMountFsAvailability(nil) })
 
@@ -874,11 +870,6 @@ func TestVirtDriver_Libvirt(t *testing.T) {
 	virtcfg := testVirtTaskConfig(t, filepath.Join(dir, "images"))
 	task := testTaskConfig()
 
-	f, err := os.Create(modulesPath(t))
-	must.NoError(t, err)
-	f.WriteString("9pnet_virtio")
-	f.Close()
-
 	// NOTE: Setting size to zero to prevent a volume resize
 	// which the libvirt test driver doesn't support.
 	virtcfg.Disks[0].Size = "0"
@@ -916,7 +907,7 @@ func TestVirtDriver_Libvirt(t *testing.T) {
 	driver := testHarness(t, config, prv, cloudinitMock, task, 5*time.Second)
 
 	// Stub the cloudinit generated file
-	f, err = os.Create(filepath.Join(task.AllocDir, "cloudinit.iso"))
+	f, err := os.Create(filepath.Join(task.AllocDir, "cloudinit.iso"))
 	must.NoError(t, err)
 	f.Close()
 
