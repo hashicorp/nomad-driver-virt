@@ -39,7 +39,7 @@ const (
 	defaultInterfaceModel     = "virtio"
 	libvirtVirtioChannel      = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
 	libvirtNoFlags            = 0
-	mountFsVirtiofs           = "vhost-user-fs-pci"
+	mountFsVirtiofs           = "vhost-user-fs"
 	mountFs9p                 = "virtio-9p-pci"
 	virtiofsQueueSize         = 1024
 	virtiofsSecurityMode      = "passthrough"
