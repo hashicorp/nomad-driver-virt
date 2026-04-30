@@ -1144,7 +1144,7 @@ func (p *provider) findAvailableMountFs() (map[string]struct{}, error) {
 			if strings.HasPrefix(line, fmt.Sprintf(`name "%s"`, mountFs9p)) {
 				avail[mountFs9p] = struct{}{}
 			}
-			if strings.HasPrefix(line, fmt.Sprintf(`name "%s"`, mountFsVirtiofs)) {
+			if strings.HasPrefix(line, fmt.Sprintf(`name "%s`, mountFsVirtiofs)) {
 				avail[mountFsVirtiofs] = struct{}{}
 			}
 		}
