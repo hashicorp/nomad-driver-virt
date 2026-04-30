@@ -133,11 +133,11 @@ func (p *provider) parseConfiguration(config *vm.Config) (string, error) {
 		// 		Enabled: "no",
 		// 	},
 		// },
-		Features: &libvirtxml.DomainFeatureList{
-			VMPort: &libvirtxml.DomainFeatureState{
-				State: "off",
-			},
-		},
+		// Features: &libvirtxml.DomainFeatureList{
+		// 	VMPort: &libvirtxml.DomainFeatureState{
+		// 		State: "off",
+		// 	},
+		// },
 		SysInfo: []libvirtxml.DomainSysInfo{
 			{
 				SMBIOS: &libvirtxml.DomainSysInfoSMBIOS{
