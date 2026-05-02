@@ -658,7 +658,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 	// invisible to Nomad's port mapping machinery. Only bridge interfaces
 	// participate in host-side port allocation, so we filter the config down
 	// to those before handing it to the networking layer.
-	bridgeOnlyConfig := driverConfig.NetworkInterfacesConfig.BridgeOnly()
+	bridgeOnlyConfig := driverConfig.NetworkInterfacesConfig.ConfigurableOnly()
 
 	// Build our network request to send now that the VM has been started. The
 	// response will contain our teardown spec, which gets stored in the task

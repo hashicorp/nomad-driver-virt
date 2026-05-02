@@ -227,16 +227,19 @@ func NetworkInterfaceHCLSpec() *hclspec.Spec {
 		})),
 		"macvtap": hclspec.NewBlock("macvtap", false, hclspec.NewObject(map[string]*hclspec.Spec{
 			"device": hclspec.NewAttr("device", "string", true),
-			"mode":   hclspec.NewAttr("mode", "string", false),
+			"mode": hclspec.NewDefault(
+				hclspec.NewAttr("mode", "string", false),
+				hclspec.NewLiteral(fmt.Sprintf("%q", MacvtapModeBridge)),
+			),
 		})),
 	}))
 }
 
-// BridgeOnly returns a new NetworkInterfacesConfig containing only bridge
-// interfaces. This is used to filter out interface types — such as macvtap —
-// that manage their own network identity and have no interaction with Nomad's
-// host-side port mapping machinery.
-func (n NetworkInterfacesConfig) BridgeOnly() NetworkInterfacesConfig {
+// ConfigurableOnly returns a new NetworkInterfacesConfig containing only configurable
+// interfaces. This is used to filter out interface types such as macvtap that manage
+// their own network identity and have no interaction with Nomad's host-side port
+// mapping machinery.
+func (n NetworkInterfacesConfig) ConfigurableOnly() NetworkInterfacesConfig {
 	var out NetworkInterfacesConfig
 	for _, iface := range n {
 		if iface.Bridge != nil {
