@@ -96,6 +96,18 @@ func (p *provider) parseConfiguration(config *vm.Config) (string, error) {
 						Type: defaultInterfaceModel,
 					},
 				})
+			} else if networkInterface.Macvtap != nil {
+				interfaces = append(interfaces, libvirtxml.DomainInterface{
+					Source: &libvirtxml.DomainInterfaceSource{
+						Direct: &libvirtxml.DomainInterfaceSourceDirect{
+							Dev:  networkInterface.Macvtap.Device,
+							Mode: string(networkInterface.Macvtap.Mode),
+						},
+					},
+					Model: &libvirtxml.DomainInterfaceModel{
+						Type: defaultInterfaceModel,
+					},
+				})
 			}
 		}
 	}
