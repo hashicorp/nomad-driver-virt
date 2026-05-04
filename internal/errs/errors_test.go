@@ -75,28 +75,28 @@ func TestMissingAttribute(t *testing.T) {
 			desc:       "missing - message",
 			value:      "",
 			attrName:   "test.value",
-			errContent: "invalid configuration - missing required attribute: test.value",
+			errContent: "invalid configuration: missing required attribute: test.value",
 		},
 		{
 			desc:       "missing - prefix",
 			value:      "",
 			attrName:   "test.value",
 			options:    []optionFn{WithPrefix("test-prefix -")},
-			errContent: "invalid configuration - missing required attribute: test-prefix - test.value",
+			errContent: "test-prefix - invalid configuration: missing required attribute: test.value",
 		},
 		{
 			desc:       "missing - suffix",
 			value:      "",
 			attrName:   "test.value",
 			options:    []optionFn{WithSuffix("- test-suffix")},
-			errContent: "invalid configuration - missing required attribute: test.value - test-suffix",
+			errContent: "invalid configuration: missing required attribute: test.value - test-suffix",
 		},
 		{
 			desc:       "missing - prefix and suffix",
 			value:      "",
 			attrName:   "test.value",
 			options:    []optionFn{WithPrefix("test-prefix -"), WithSuffix("- test-suffix")},
-			errContent: "invalid configuration - missing required attribute: test-prefix - test.value - test-suffix",
+			errContent: "test-prefix - invalid configuration: missing required attribute: test.value - test-suffix",
 		},
 	}
 

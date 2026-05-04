@@ -17,7 +17,7 @@ var (
 	ErrNotSupported         = errors.New("not supported")
 	ErrInvalidConfiguration = errors.New("invalid configuration")
 
-	ErrMissingAttribute = fmt.Errorf("%w - missing required attribute", ErrInvalidConfiguration)
+	ErrMissingAttribute = fmt.Errorf("%w: missing required attribute", ErrInvalidConfiguration)
 )
 
 // options are optional arguments used by helper functions.
@@ -66,8 +66,8 @@ func MissingAttribute(attrName string, value any, opts ...optionFn) error {
 	tmpl := []string{"%w:"}
 	args := []any{ErrMissingAttribute}
 	if o.prefix != "" {
-		tmpl = append(tmpl, "%s")
-		args = append(args, o.prefix)
+		tmpl = append([]string{"%s"}, tmpl...)
+		args = append([]any{o.prefix}, args...)
 	}
 	tmpl = append(tmpl, "%s")
 	args = append(args, attrName)
