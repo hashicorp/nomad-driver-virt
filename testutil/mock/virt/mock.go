@@ -46,6 +46,7 @@ type GetInfo struct {
 }
 
 type GenerateMountCommands struct {
+	Config *vm.Config
 	Mounts []*vm.MountFileConfig
 	Result []string
 	Err    error
@@ -362,7 +363,7 @@ func (m *MockVirt) GetNetworkInterfaces(name string) ([]vm.NetworkInterface, err
 	return call.Result, call.Err
 }
 
-func (m *MockVirt) GenerateMountCommands(mounts []*vm.MountFileConfig) ([]string, error) {
+func (m *MockVirt) GenerateMountCommands(config *vm.Config, mounts []*vm.MountFileConfig) ([]string, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -374,7 +375,7 @@ func (m *MockVirt) GenerateMountCommands(mounts []*vm.MountFileConfig) ([]string
 	m.generateMountCommands = m.generateMountCommands[1:]
 
 	if call.Mounts != nil {
-		must.Eq(m.t, call, GenerateMountCommands{Mounts: mounts, Result: call.Result, Err: call.Err},
+		must.Eq(m.t, call, GenerateMountCommands{Config: config, Mounts: mounts, Result: call.Result, Err: call.Err},
 			must.Sprint("GenerateMountCommands received incorrect argument"))
 	}
 

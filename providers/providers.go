@@ -47,12 +47,14 @@ type Providers interface {
 
 type dispenseProvider func(context.Context) (virt.Virtualizer, error)
 
-// New creates a new providers instance.
-func New(ctx context.Context, logger hclog.Logger) Providers {
+// New creates a new providers instance. Provider specific options can
+// be included and will be used when creating the provider if present.
+func New(ctx context.Context, logger hclog.Logger, opts ...any) Providers {
 	return &providers{
 		ctx:        ctx,
 		dispensers: make(map[string]dispenseProvider),
 		logger:     logger.Named("providers"),
+		opts:       opts,
 	}
 }
 
@@ -61,6 +63,7 @@ type providers struct {
 	logger           hclog.Logger
 	defaultDispenser dispenseProvider
 	dispensers       map[string]dispenseProvider
+	opts             []any
 	l                sync.RWMutex
 }
 
@@ -76,9 +79,19 @@ func (p *providers) Setup(config *virt.Config) error {
 	dispensers := make(map[string]dispenseProvider)
 
 	if config.Provider.Libvirt != nil {
-		// Create an instance and perform initialization
-		lv := libvirt.New(p.ctx, p.logger,
-			libvirt.WithConfig(config.Provider.Libvirt))
+		// Collect any options that are available for libvirt. Start
+		// with the config and append any other options.
+		lvOpts := []libvirt.Option{libvirt.WithConfig(config.Provider.Libvirt)}
+		for _, o := range p.opts {
+			switch lvOpt := o.(type) {
+			case libvirt.Option:
+				lvOpts = append(lvOpts, lvOpt)
+			}
+		}
+
+		// Create an instance and perform initialization. Any options
+		// provided are appended to setting the configuration.
+		lv := libvirt.New(p.ctx, p.logger, lvOpts...)
 		if err := lv.Init(); err != nil {
 			return err
 		}

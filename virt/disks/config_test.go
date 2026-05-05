@@ -144,10 +144,11 @@ func TestDisk(t *testing.T) {
 						TaskPath: "/dev/sda",
 					},
 				}
-				err := d.ApplyMounts(m)
+				remaining, err := d.ApplyMounts(m)
 				must.NoError(t, err)
 				must.Eq(t, "sda", d[0].Devname)
 				must.Eq(t, "/dev/null/volume/device", d[0].blockDevicePath)
+				must.SliceEmpty(t, remaining)
 			})
 
 			t.Run("does not override device name using task path", func(t *testing.T) {
@@ -159,10 +160,31 @@ func TestDisk(t *testing.T) {
 						TaskPath: "/dev/sda",
 					},
 				}
-				err := d.ApplyMounts(m)
+				remaining, err := d.ApplyMounts(m)
 				must.NoError(t, err)
 				must.Eq(t, "sdc", d[0].Devname)
 				must.Eq(t, "/dev/null/volume/device", d[0].blockDevicePath)
+				must.SliceEmpty(t, remaining)
+			})
+
+			t.Run("returns mounts that are not disk volumes", func(t *testing.T) {
+				d := Disks{{VolumeName: "/dev/sda"}}
+				m := []*drivers.MountConfig{
+					{
+						// RequestName: "nomad-volume",
+						HostPath: "/dev/null/volume/device",
+						TaskPath: "/dev/sda",
+					},
+					{
+						HostPath: "/dev/null/volume/device",
+						TaskPath: "/mnt/path",
+					},
+				}
+				remaining, err := d.ApplyMounts(m)
+				must.NoError(t, err)
+				must.Eq(t, "sda", d[0].Devname)
+				must.Eq(t, "/dev/null/volume/device", d[0].blockDevicePath)
+				must.Eq(t, []*drivers.MountConfig{m[1]}, remaining)
 			})
 		})
 	})

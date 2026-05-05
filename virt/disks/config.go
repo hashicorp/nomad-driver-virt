@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/go-set/v3"
 	"github.com/hashicorp/nomad-driver-virt/internal/convert"
 	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad-driver-virt/storage"
@@ -276,9 +277,9 @@ func (d Disks) ResolveImages(dirs []string) {
 
 // ApplyMounts updates any disk entries that define a VolumeName with
 // the required information for the associated mount config.
-func (d Disks) ApplyMounts(mounts []*drivers.MountConfig) error {
+func (d Disks) ApplyMounts(mounts []*drivers.MountConfig) ([]*drivers.MountConfig, error) {
 	if d == nil {
-		return nil
+		return mounts, nil
 	}
 
 	// Make a map of the valid mounts configs that can be used for Nomad volumes
@@ -299,6 +300,13 @@ func (d Disks) ApplyMounts(mounts []*drivers.MountConfig) error {
 		}
 	}
 
+	// If there are no applicable mount definitions, there's nothing to do.
+	if len(mnts) == 0 {
+		return mounts, nil
+	}
+
+	used := set.New[*drivers.MountConfig](0)
+
 	for _, disk := range d {
 		if !disk.IsNomadVolume() {
 			continue
@@ -309,6 +317,10 @@ func (d Disks) ApplyMounts(mounts []*drivers.MountConfig) error {
 			continue
 		}
 
+		// Add the mount config to the used list.
+		used.Insert(m)
+
+		// Configure the disk.
 		disk.blockDevicePath = m.HostPath
 		disk.ReadOnly = m.Readonly
 		disk.Format = storage.DiskFormatRaw // block device will always be raw
@@ -320,7 +332,16 @@ func (d Disks) ApplyMounts(mounts []*drivers.MountConfig) error {
 		}
 	}
 
-	return nil
+	// Collect the unused mount configs to return.
+	remain := []*drivers.MountConfig{}
+	for _, m := range mounts {
+		if used.Contains(m) {
+			continue
+		}
+		remain = append(remain, m)
+	}
+
+	return remain, nil
 }
 
 // Prepare will prepare the disks configuration for validation and generation. It

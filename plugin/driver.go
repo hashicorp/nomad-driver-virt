@@ -525,40 +525,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
-	// The process to have directories mounted on the VM consists of two steps,
-	// one is declaring them in the virtual machine configuration and the second
-	// is the commands to for mounting them.
-	allocFSMounts := createAllocFileMounts(cfg)
-
-	// Add any host mounts that have been defined
-	// NOTE: selinux and propagation settings currently ignored
-	// TODO: selinux settings look to be supported in domain config
-	for _, m := range cfg.Mounts {
-		// If the task path has a /dev/ prefix, it signals that it is a
-		// block device so it is ignored here and processed below when
-		// applied to the disks collection.
-		if strings.HasPrefix(m.TaskPath, "/dev/") {
-			continue
-		}
-
-		allocFSMounts = append(allocFSMounts, &vm.MountFileConfig{
-			Source:      m.HostPath,
-			Destination: m.TaskPath,
-			ReadOnly:    m.Readonly,
-			Tag:         strings.ReplaceAll(m.TaskPath, string(filepath.Separator), "_"),
-		})
-	}
-
-	bootCMDs, err := virtualizer.GenerateMountCommands(allocFSMounts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
-	}
-
-	mounts := make([]vm.MountFileConfig, len(allocFSMounts))
-	for i := range len(allocFSMounts) {
-		mounts[i] = *allocFSMounts[i]
-	}
-
 	dc := &vm.Config{
 		RemoveConfigFiles: true,
 		Name:              taskName,
@@ -567,9 +533,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 		CPUset:            cfg.Resources.LinuxResources.CpusetCpus,
 		OsVariant:         osVariant,
 		HostName:          hostname,
-		Mounts:            mounts,
 		CMDs:              driverConfig.CMDs,
-		BOOTCMDs:          bootCMDs,
 		CIUserData:        driverConfig.UserData,
 		Password:          driverConfig.DefaultUserPassword,
 		SSHKey:            driverConfig.DefaultUserSSHKey,
@@ -587,7 +551,40 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 
 	// Apply any mount configurations needed for disks
 	// using nomad volumes
-	vdisks.ApplyMounts(cfg.Mounts)
+	remainingMounts, err := vdisks.ApplyMounts(cfg.Mounts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to configure volumes: %s: %w", cfg.AllocID, err)
+	}
+
+	// The process to have directories mounted on the VM consists of two steps,
+	// one is declaring them in the virtual machine configuration and the second
+	// is the commands for mounting them.
+	allocFSMounts := createAllocFileMounts(cfg)
+
+	// Add any host mounts that have been defined
+	// NOTE: selinux and propagation settings currently ignored
+	// TODO: selinux settings look to be supported in domain config
+	for _, m := range remainingMounts {
+		allocFSMounts = append(allocFSMounts, &vm.MountFileConfig{
+			Source:      m.HostPath,
+			Destination: m.TaskPath,
+			ReadOnly:    m.Readonly,
+			Tag:         strings.ReplaceAll(m.TaskPath, string(filepath.Separator), "_"),
+		})
+	}
+
+	bootCMDs, err := virtualizer.GenerateMountCommands(dc, allocFSMounts)
+	if err != nil {
+		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
+	}
+
+	mounts := make([]vm.MountFileConfig, len(allocFSMounts))
+	for i := range len(allocFSMounts) {
+		mounts[i] = *allocFSMounts[i]
+	}
+
+	dc.Mounts = mounts
+	dc.BOOTCMDs = bootCMDs
 
 	// Compat to add old config into disks
 	if driverConfig.ImagePath != "" {

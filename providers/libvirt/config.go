@@ -20,6 +20,13 @@ var configSpec = hclspec.NewBlock("libvirt", false, hclspec.NewObject(map[string
 	"allow_insecure_readonly_mounts": hclspec.NewAttr("allow_insecure_readonly_mounts", "bool", false),
 }))
 
+var taskSpec = hclspec.NewBlock("libvirt", false, hclspec.NewObject(map[string]*hclspec.Spec{
+	"emulator": hclspec.NewDefault(
+		hclspec.NewAttr("emulator", "string", false),
+		hclspec.NewLiteral(fmt.Sprintf("%q", defaultAccelerator)),
+	),
+}))
+
 // ConfigSpec returns the HCL spec for the libvirt provider configuration.
 func ConfigSpec() *hclspec.Spec {
 	return configSpec

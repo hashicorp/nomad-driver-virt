@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-set/v3"
 	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
@@ -28,19 +29,27 @@ import (
 // validate the driver implements the connect interface
 var _ shims.Connect = (*provider)(nil)
 
-type libvirtModifier func(l *provider)
+const defaultArch = "x86_64"
 
-func overrideFs(avail ...string) libvirtModifier {
-	return func(l *provider) {
-		m := map[string]struct{}{}
-		for _, a := range avail {
-			m[a] = struct{}{}
-		}
-		l.availableMountFsOverride = m
-	}
+var defaultConfig = &vm.Config{
+	OsVariant: &vm.OSVariant{
+		Arch: defaultArch,
+	},
 }
 
-func testNew(t *testing.T, modifiers ...libvirtModifier) (*provider, string) {
+func overrideFs(arch string, avail ...MountFilesystem) Option {
+	guests := map[string]*CapsGuest{}
+	guests[arch] = &CapsGuest{
+		CapsGuest: &libvirtxml.CapsGuest{
+			OSType: "hvm",
+		},
+		MountFilesystems: set.From(avail),
+	}
+
+	return WithCaps(nil, guests)
+}
+
+func testNew(t *testing.T, modifiers ...Option) (*provider, string) {
 	t.Helper()
 	poolName := strings.ReplaceAll(t.Name(), "/", "_")
 
@@ -80,7 +89,7 @@ func TestStorage(t *testing.T) {
 		poolName, poolDir := mkPoolDir(t)
 		mainName := fmt.Sprintf("%s-%s", poolName, "main-pool")
 		secondName := fmt.Sprintf("%s-%s", poolName, "secondary-pool")
-		l, _ := testNew(t, overrideFs(mountFs9p))
+		l, _ := testNew(t, overrideFs(defaultArch, MountFs9p))
 		pools := &storage.Config{
 			Default: mainName,
 			Directory: map[string]storage.Directory{
@@ -115,7 +124,7 @@ func TestStorage(t *testing.T) {
 	t.Run("Volumes", func(t *testing.T) {
 		t.Run("create-retrieve-delete", func(t *testing.T) {
 			poolName, poolDir := mkPoolDir(t)
-			l, _ := testNew(t, overrideFs(mountFs9p))
+			l, _ := testNew(t, overrideFs(defaultArch, MountFs9p))
 			pools := &storage.Config{
 				Directory: map[string]storage.Directory{
 					poolName: {Path: filepath.Join(poolDir, "pool")}}}
@@ -153,7 +162,7 @@ func TestStorage(t *testing.T) {
 func TestGetInfo(t *testing.T) {
 	t.Parallel()
 
-	ld, _ := testNew(t, overrideFs(mountFs9p))
+	ld, _ := testNew(t, overrideFs(defaultArch, MountFs9p))
 
 	i, err := ld.GetInfo()
 	must.NoError(t, err)
@@ -218,7 +227,7 @@ func TestStartDomain(t *testing.T) {
 	}
 
 	t.Run("domain created successfully", func(t *testing.T) {
-		ld, poolName := testNew(t, overrideFs(mountFs9p))
+		ld, poolName := testNew(t, overrideFs(defaultArch, MountFs9p))
 
 		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
@@ -232,7 +241,7 @@ func TestStartDomain(t *testing.T) {
 	})
 
 	t.Run("duplicated domain error", func(t *testing.T) {
-		ld, poolName := testNew(t, overrideFs(mountFs9p))
+		ld, poolName := testNew(t, overrideFs(defaultArch, MountFs9p))
 
 		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
@@ -244,7 +253,7 @@ func TestStartDomain(t *testing.T) {
 	})
 
 	t.Run("includes volume information", func(t *testing.T) {
-		ld, poolName := testNew(t, overrideFs(mountFs9p))
+		ld, poolName := testNew(t, overrideFs(defaultArch, MountFs9p))
 
 		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
@@ -262,7 +271,7 @@ func TestStartDomain(t *testing.T) {
 	})
 
 	t.Run("includes additional volumes", func(t *testing.T) {
-		ld, poolName := testNew(t, overrideFs(mountFs9p))
+		ld, poolName := testNew(t, overrideFs(defaultArch, MountFs9p))
 
 		domConfig := makeConfig(poolName)
 		domConfig.Name = vmName(t)
@@ -294,7 +303,7 @@ func TestStartDomain(t *testing.T) {
 func Test_CreateStopAndDestroyDomain(t *testing.T) {
 	t.Parallel()
 
-	ld, _ := testNew(t, overrideFs(mountFs9p))
+	ld, _ := testNew(t, overrideFs(defaultArch, MountFs9p))
 
 	domainName := vmName(t)
 	err := ld.CreateVM(&vm.Config{
@@ -330,7 +339,7 @@ func Test_CreateStopAndDestroyDomain(t *testing.T) {
 func Test_GetNetworkInterfaces(t *testing.T) {
 	t.Parallel()
 
-	ld, _ := testNew(t, overrideFs(mountFs9p))
+	ld, _ := testNew(t, overrideFs(defaultArch, MountFs9p))
 	domainName := vmName(t)
 	err := ld.CreateVM(&vm.Config{
 		RemoveConfigFiles: true,
@@ -367,41 +376,41 @@ func Test_GenerateMountCommands(t *testing.T) {
 	}
 
 	t.Run("not available", func(t *testing.T) {
-		ld, _ := testNew(t, overrideFs())
-		_, err := ld.GenerateMountCommands(mounts())
+		ld, _ := testNew(t, overrideFs(defaultArch))
+		_, err := ld.GenerateMountCommands(defaultConfig, mounts())
 		must.ErrorIs(t, err, errs.ErrNotSupported)
 	})
 
 	t.Run("9p available", func(t *testing.T) {
-		ld, _ := testNew(t, overrideFs(mountFs9p))
+		ld, _ := testNew(t, overrideFs(defaultArch, MountFs9p))
 
 		mnts := mounts()
-		result, err := ld.GenerateMountCommands(mnts)
+		result, err := ld.GenerateMountCommands(defaultConfig, mnts)
 		must.NoError(t, err)
 		must.Eq(t, []string{
 			`mkdir -p "/test"`,
 			`mountpoint -q "/test" || mount -t 9p -o trans=virtio test-tag "/test"`,
 		}, result)
-		must.Eq(t, mountFs9p, mnts[0].Driver)
+		must.Eq(t, MountFs9p.String(), mnts[0].Driver)
 	})
 
 	t.Run("virtiofs available", func(t *testing.T) {
-		ld, _ := testNew(t, overrideFs(mountFsVirtiofs))
+		ld, _ := testNew(t, overrideFs(defaultArch, MountFsVirtiofs))
 
 		mnts := mounts()
-		result, err := ld.GenerateMountCommands(mnts)
+		result, err := ld.GenerateMountCommands(defaultConfig, mnts)
 		must.NoError(t, err)
 		must.Eq(t, []string{
 			`mkdir -p "/test"`,
 			`mountpoint -q "/test" || mount -t virtiofs test-tag "/test"`,
 		}, result)
-		must.Eq(t, mountFsVirtiofs, mnts[0].Driver)
+		must.Eq(t, MountFsVirtiofs.String(), mnts[0].Driver)
 	})
 
 	t.Run("virtiofs and 9p available", func(t *testing.T) {
-		ld, _ := testNew(t, overrideFs(mountFs9p, mountFsVirtiofs))
+		ld, _ := testNew(t, overrideFs(defaultArch, MountFs9p, MountFsVirtiofs))
 
-		result, err := ld.GenerateMountCommands(mounts())
+		result, err := ld.GenerateMountCommands(defaultConfig, mounts())
 		must.NoError(t, err)
 		must.Eq(t, []string{
 			`mkdir -p "/test"`,
@@ -412,13 +421,13 @@ func Test_GenerateMountCommands(t *testing.T) {
 	t.Run("read-only", func(t *testing.T) {
 		t.Run("9p and virtiofs are available", func(t *testing.T) {
 			t.Run("virtiofs read-only supported", func(t *testing.T) {
-				ld, _ := testNew(t, overrideFs(mountFs9p, mountFsVirtiofs))
+				ld, _ := testNew(t, overrideFs(defaultArch, MountFs9p, MountFsVirtiofs))
 				// Force libvirt version to supported version
 				ld.libvirtVersion = genVersion("12.0.0")
 				mnts := mounts()
 				mnts[0].ReadOnly = true
 
-				result, err := ld.GenerateMountCommands(mnts)
+				result, err := ld.GenerateMountCommands(defaultConfig, mnts)
 				must.NoError(t, err)
 				must.Eq(t, []string{
 					`mkdir -p "/test"`,
@@ -427,13 +436,13 @@ func Test_GenerateMountCommands(t *testing.T) {
 			})
 
 			t.Run("virtiofs read-only not supported", func(t *testing.T) {
-				ld, _ := testNew(t, overrideFs(mountFs9p, mountFsVirtiofs))
+				ld, _ := testNew(t, overrideFs(defaultArch, MountFs9p, MountFsVirtiofs))
 				// Force libvirt version to unsupported version
 				ld.libvirtVersion = genVersion("1.0.0")
 				mnts := mounts()
 				mnts[0].ReadOnly = true
 
-				result, err := ld.GenerateMountCommands(mnts)
+				result, err := ld.GenerateMountCommands(defaultConfig, mnts)
 				must.NoError(t, err)
 				must.Eq(t, []string{
 					`mkdir -p "/test"`,
@@ -442,7 +451,7 @@ func Test_GenerateMountCommands(t *testing.T) {
 			})
 
 			t.Run("virtiofs read-only not supported insecure mounts enabled", func(t *testing.T) {
-				ld, _ := testNew(t, overrideFs(mountFs9p, mountFsVirtiofs))
+				ld, _ := testNew(t, overrideFs(defaultArch, MountFs9p, MountFsVirtiofs))
 				// Force libvirt version to unsupported version
 				ld.libvirtVersion = genVersion("1.0.0")
 				// Allow insecure read-only host mounts
@@ -450,7 +459,7 @@ func Test_GenerateMountCommands(t *testing.T) {
 				mnts := mounts()
 				mnts[0].ReadOnly = true
 
-				result, err := ld.GenerateMountCommands(mnts)
+				result, err := ld.GenerateMountCommands(defaultConfig, mnts)
 				must.NoError(t, err)
 				must.Eq(t, []string{
 					`mkdir -p "/test"`,
@@ -461,13 +470,13 @@ func Test_GenerateMountCommands(t *testing.T) {
 
 		t.Run("virtiofs only available", func(t *testing.T) {
 			t.Run("read-only supported", func(t *testing.T) {
-				ld, _ := testNew(t, overrideFs(mountFsVirtiofs))
+				ld, _ := testNew(t, overrideFs(defaultArch, MountFsVirtiofs))
 				// Force libvirt version to supported version
 				ld.libvirtVersion = genVersion("12.0.0")
 				mnts := mounts()
 				mnts[0].ReadOnly = true
 
-				result, err := ld.GenerateMountCommands(mnts)
+				result, err := ld.GenerateMountCommands(defaultConfig, mnts)
 				must.NoError(t, err)
 				must.Eq(t, []string{
 					`mkdir -p "/test"`,
@@ -476,18 +485,18 @@ func Test_GenerateMountCommands(t *testing.T) {
 			})
 
 			t.Run("read-only not supported", func(t *testing.T) {
-				ld, _ := testNew(t, overrideFs(mountFsVirtiofs))
+				ld, _ := testNew(t, overrideFs(defaultArch, MountFsVirtiofs))
 				// Force libvirt version to unsupported version
 				ld.libvirtVersion = genVersion("1.0.0")
 				mnts := mounts()
 				mnts[0].ReadOnly = true
 
-				_, err := ld.GenerateMountCommands(mnts)
+				_, err := ld.GenerateMountCommands(defaultConfig, mnts)
 				must.ErrorIs(t, err, errs.ErrNotSupported)
 			})
 
 			t.Run("read-only not supported insecure mounts enabled", func(t *testing.T) {
-				ld, _ := testNew(t, overrideFs(mountFsVirtiofs))
+				ld, _ := testNew(t, overrideFs(defaultArch, MountFsVirtiofs))
 				// Force libvirt version to unsupported version
 				ld.libvirtVersion = genVersion("1.0.0")
 				// Allow insecure read-only host mounts
@@ -495,7 +504,7 @@ func Test_GenerateMountCommands(t *testing.T) {
 				mnts := mounts()
 				mnts[0].ReadOnly = true
 
-				result, err := ld.GenerateMountCommands(mnts)
+				result, err := ld.GenerateMountCommands(defaultConfig, mnts)
 				must.NoError(t, err)
 				must.Eq(t, []string{
 					`mkdir -p "/test"`,
@@ -505,11 +514,11 @@ func Test_GenerateMountCommands(t *testing.T) {
 		})
 
 		t.Run("9p only available", func(t *testing.T) {
-			ld, _ := testNew(t, overrideFs(mountFs9p))
+			ld, _ := testNew(t, overrideFs(defaultArch, MountFs9p))
 			mnts := mounts()
 			mnts[0].ReadOnly = true
 
-			result, err := ld.GenerateMountCommands(mnts)
+			result, err := ld.GenerateMountCommands(defaultConfig, mnts)
 			must.NoError(t, err)
 			must.Eq(t, []string{
 				`mkdir -p "/test"`,
@@ -524,11 +533,11 @@ func Test_GenerateMountCommands(t *testing.T) {
 		mnts[0].ReadOnly = true
 
 		t.Run("9p and virtiofs available", func(t *testing.T) {
-			ld, _ := testNew(t, overrideFs(mountFs9p, mountFsVirtiofs))
+			ld, _ := testNew(t, overrideFs(defaultArch, MountFs9p, MountFsVirtiofs))
 			// Force low version of libvirt
 			ld.libvirtVersion = 1
 
-			result, err := ld.GenerateMountCommands(mnts)
+			result, err := ld.GenerateMountCommands(defaultConfig, mnts)
 			must.NoError(t, err)
 			must.Eq(t, []string{
 				`mkdir -p "/test"`,
@@ -537,11 +546,11 @@ func Test_GenerateMountCommands(t *testing.T) {
 		})
 
 		t.Run("virtiofs only available", func(t *testing.T) {
-			ld, _ := testNew(t, overrideFs(mountFsVirtiofs))
+			ld, _ := testNew(t, overrideFs(defaultArch, MountFsVirtiofs))
 			// Force low version of libvirt
 			ld.libvirtVersion = 1
 
-			_, err := ld.GenerateMountCommands(mnts)
+			_, err := ld.GenerateMountCommands(defaultConfig, mnts)
 			must.ErrorIs(t, err, errs.ErrNotSupported)
 		})
 	})
