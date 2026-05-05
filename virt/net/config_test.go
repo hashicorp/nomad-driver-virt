@@ -7,6 +7,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad/helper/pluginutils/hclutils"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 	"github.com/shoenig/test/must"
@@ -16,6 +17,7 @@ func TestNetworkInterfaces_Validate(t *testing.T) {
 	testCases := []struct {
 		name                   string
 		inputNetworkInterfaces *NetworkInterfacesConfig
+		errorTarget            error
 		expectedOutput         error
 	}{
 		{
@@ -56,6 +58,7 @@ func TestNetworkInterfaces_Validate(t *testing.T) {
 					},
 				},
 			},
+			errorTarget:    errs.ErrInvalidConfiguration,
 			expectedOutput: errors.New("only one network interface can be configured"),
 		},
 		{
@@ -68,13 +71,59 @@ func TestNetworkInterfaces_Validate(t *testing.T) {
 					},
 				},
 			},
-			expectedOutput: errors.New(`network interface bridge '0' requires name parameter`),
+			errorTarget:    errs.ErrMissingAttribute,
+			expectedOutput: errors.New("bridge.name"),
+		},
+		{
+			name: "no macvtap device",
+			inputNetworkInterfaces: &NetworkInterfacesConfig{
+				{
+					Macvtap: &NetworkInterfaceMacvtapConfig{
+						Mode: "bridge",
+					},
+				},
+			},
+			errorTarget:    errs.ErrMissingAttribute,
+			expectedOutput: errors.New("macvtap.device"),
+		},
+		{
+			name: "invalid macvtap mode",
+			inputNetworkInterfaces: &NetworkInterfacesConfig{
+				{
+					Macvtap: &NetworkInterfaceMacvtapConfig{
+						Mode:   "unknown",
+						Device: "eth0",
+					},
+				},
+			},
+			errorTarget:    errs.ErrInvalidConfiguration,
+			expectedOutput: errors.New(`macvtap has invalid mode "unknown"; must be one of: bridge, private, vepa, passthrough`),
+		},
+		{
+			name: "macvtap and bridge defined",
+			inputNetworkInterfaces: &NetworkInterfacesConfig{
+				{
+					Macvtap: &NetworkInterfaceMacvtapConfig{
+						Mode:   "bridge",
+						Device: "eth0",
+					},
+					Bridge: &NetworkInterfaceBridgeConfig{
+						Name: "br0",
+					},
+				},
+			},
+			errorTarget:    errs.ErrInvalidConfiguration,
+			expectedOutput: errors.New(`bridge and macvtap are mutually exclusive`),
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			actualOutput := tc.inputNetworkInterfaces.Validate()
+
+			if tc.errorTarget != nil {
+				must.ErrorIs(t, actualOutput, tc.errorTarget)
+			}
 
 			if tc.expectedOutput == nil {
 				must.NoError(t, actualOutput)
@@ -143,6 +192,49 @@ config {
 						Bridge: &NetworkInterfaceBridgeConfig{
 							Name:  "virbr0",
 							Ports: nil,
+						},
+					},
+				}},
+		},
+		{
+			name: "full macvtap",
+			inputConfig: `
+config {
+  network_interface {
+    macvtap {
+      device  = "eth0"
+      mode    = "private"
+    }
+  }
+}
+`,
+			expectedOutput: TaskConfig{
+				NetworkInterfacesConfig: []*NetworkInterfaceConfig{
+					{
+						Macvtap: &NetworkInterfaceMacvtapConfig{
+							Device: "eth0",
+							Mode:   MacvtapModePrivate,
+						},
+					},
+				}},
+		},
+		{
+			name: "macvtap without mode",
+			inputConfig: `
+config {
+  network_interface {
+    macvtap {
+      device  = "eth0"
+    }
+  }
+}
+`,
+			expectedOutput: TaskConfig{
+				NetworkInterfacesConfig: []*NetworkInterfaceConfig{
+					{
+						Macvtap: &NetworkInterfaceMacvtapConfig{
+							Device: "eth0",
+							Mode:   MacvtapModeBridge,
 						},
 					},
 				}},
