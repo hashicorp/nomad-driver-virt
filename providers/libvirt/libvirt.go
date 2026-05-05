@@ -343,9 +343,9 @@ func (p *provider) CreateVM(config *vm.Config) error {
 	if config.XMLConfig != "" {
 		domXML = config.XMLConfig
 	} else {
-		domXML, err = p.parseConfiguration(config)
+		domXML, err = p.generateDomain(config)
 		if err != nil {
-			return fmt.Errorf("libvirt: unable to parse domain configuration %s: %w", config.Name, err)
+			return fmt.Errorf("libvirt: unable to generate domain configuration %s: %w", config.Name, err)
 		}
 	}
 
