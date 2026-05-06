@@ -605,6 +605,164 @@ func TestDisk(t *testing.T) {
 			must.Eq(t, expectedVolumes, d.Volumes())
 		})
 	})
+
+	t.Run("Validate", func(t *testing.T) {
+		t.Run("ok - empty disk", func(t *testing.T) {
+			d := Disks{{Format: "raw", Size: "200", Devname: "sda", Kind: storage.DiskKindDisk,
+				BusType: storage.BusTypeVirtio, Primary: true}}
+			err := d.Validate(mock_storage.NewStaticStorage(), ValidationOptions{})
+			must.NoError(t, err)
+		})
+
+		t.Run("ok - no capacity", func(t *testing.T) {
+			d := Disks{{Format: "raw", Size: "0", Devname: "sda", Kind: storage.DiskKindDisk,
+				BusType: storage.BusTypeVirtio, Primary: true}}
+			err := d.Validate(mock_storage.NewStaticStorage(), ValidationOptions{})
+			must.NoError(t, err)
+		})
+
+		t.Run("source", func(t *testing.T) {
+			opts := ValidationOptions{AllowedPaths: []string{t.TempDir()}}
+			imagePath := filepath.Join(opts.AllowedPaths[0], "image")
+			imageContent := "test content"
+			img, err := os.Create(imagePath)
+			must.NoError(t, err)
+			_, err = img.WriteString(imageContent)
+			must.NoError(t, err)
+			must.NoError(t, img.Close())
+
+			volumeName := "test-volume"
+
+			t.Run("image", func(t *testing.T) {
+				t.Run("ok", func(t *testing.T) {
+					d := Disks{{Format: "raw", Size: "100", Devname: "sda", Kind: storage.DiskKindDisk,
+						BusType: storage.BusTypeVirtio, Primary: true, Source: &Source{Image: imagePath, Format: "raw"}}}
+					must.NoError(t, d.Validate(mock_storage.NewStaticStorage(), opts))
+				})
+
+				t.Run("missing format", func(t *testing.T) {
+					d := Disks{{Format: "raw", Size: "100", Devname: "sda", Kind: storage.DiskKindDisk,
+						BusType: storage.BusTypeVirtio, Primary: true, Source: &Source{Image: imagePath}}}
+					err := d.Validate(mock_storage.NewStaticStorage(), opts)
+					must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
+					must.ErrorContains(t, err, "format")
+				})
+
+				t.Run("path does not exist", func(t *testing.T) {
+					d := Disks{{Format: "raw", Size: "100", Devname: "sda", Kind: storage.DiskKindDisk,
+						BusType: storage.BusTypeVirtio, Primary: true, Source: &Source{Image: filepath.Join(t.TempDir(), "image"), Format: "raw"}}}
+					err := d.Validate(mock_storage.NewStaticStorage(), opts)
+					must.ErrorIs(t, err, ErrPathNotFound)
+				})
+
+				t.Run("path is not allowed", func(t *testing.T) {
+					d := Disks{{Format: "raw", Size: "100", Devname: "sda", Kind: storage.DiskKindDisk,
+						BusType: storage.BusTypeVirtio, Primary: true, Source: &Source{Image: filepath.Join(t.TempDir(), "image"), Format: "raw"}}}
+					err := d.Validate(mock_storage.NewStaticStorage(), ValidationOptions{})
+					must.ErrorIs(t, err, ErrDisallowedPath)
+				})
+
+				t.Run("disk is too small", func(t *testing.T) {
+					d := Disks{{Format: "raw", Size: "1", Devname: "sda", Kind: storage.DiskKindDisk,
+						BusType: storage.BusTypeVirtio, Primary: true, Source: &Source{Image: imagePath, Format: "raw"}}}
+					err := d.Validate(mock_storage.NewStaticStorage(), opts)
+					must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
+					must.ErrorContains(t, err, "size of disk must")
+				})
+			})
+
+			t.Run("volume", func(t *testing.T) {
+				t.Run("ok", func(t *testing.T) {
+					pool := mock_storage.NewMockPool(t).Expect(
+						mock_storage.GetVolume{
+							Name: volumeName,
+							Result: &storage.Volume{
+								Size: 100,
+							},
+						},
+					)
+					defer pool.AssertExpectations()
+					d := Disks{{Format: "raw", Size: "200", Devname: "sda", Kind: storage.DiskKindDisk,
+						BusType: storage.BusTypeVirtio, Primary: true, Source: &Source{Volume: volumeName, Format: "raw"}}}
+					err := d.Validate(&mock_storage.StaticStorage{DefaultPoolResult: pool}, opts)
+					must.NoError(t, err)
+				})
+
+				t.Run("disk is too small", func(t *testing.T) {
+					pool := mock_storage.NewMockPool(t).Expect(
+						mock_storage.GetVolume{
+							Name: volumeName,
+							Result: &storage.Volume{
+								Size: 500,
+							},
+						},
+					)
+					defer pool.AssertExpectations()
+					d := Disks{{Format: "raw", Size: "200", Devname: "sda", Kind: storage.DiskKindDisk,
+						BusType: storage.BusTypeVirtio, Primary: true, Source: &Source{Volume: volumeName, Format: "raw"}}}
+					err := d.Validate(&mock_storage.StaticStorage{DefaultPoolResult: pool}, opts)
+					must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
+					must.ErrorContains(t, err, "size of disk must")
+				})
+			})
+
+			t.Run("image and volume defined", func(t *testing.T) {
+				d := Disks{{Format: "raw", Size: "200", Devname: "sda", Kind: storage.DiskKindDisk,
+					BusType: storage.BusTypeVirtio, Primary: true, Source: &Source{Volume: volumeName, Image: imagePath, Format: "raw"}}}
+				err := d.Validate(mock_storage.NewStaticStorage(), opts)
+				must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
+				must.ErrorContains(t, err, "source.volume and source.image")
+			})
+		})
+
+		t.Run("size", func(t *testing.T) {
+			t.Run("ok bytes", func(t *testing.T) {
+				d := Disks{{Format: "raw", Size: "200", Devname: "sda", Kind: storage.DiskKindDisk,
+					BusType: storage.BusTypeVirtio, Primary: true}}
+				must.NoError(t, d.Validate(mock_storage.NewStaticStorage(), ValidationOptions{}))
+			})
+
+			t.Run("ok gigabytes", func(t *testing.T) {
+				d := Disks{{Format: "raw", Size: "200GB", Devname: "sda", Kind: storage.DiskKindDisk,
+					BusType: storage.BusTypeVirtio, Primary: true}}
+				must.NoError(t, d.Validate(mock_storage.NewStaticStorage(), ValidationOptions{}))
+			})
+
+			t.Run("ok gibibytes", func(t *testing.T) {
+				d := Disks{{Format: "raw", Size: "200GiB", Devname: "sda", Kind: storage.DiskKindDisk,
+					BusType: storage.BusTypeVirtio, Primary: true}}
+				must.NoError(t, d.Validate(mock_storage.NewStaticStorage(), ValidationOptions{}))
+			})
+
+			t.Run("unknown suffix", func(t *testing.T) {
+				d := Disks{{Format: "raw", Size: "200G", Devname: "sda", Kind: storage.DiskKindDisk,
+					BusType: storage.BusTypeVirtio, Primary: true}}
+				err := d.Validate(mock_storage.NewStaticStorage(), ValidationOptions{})
+				must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
+				must.ErrorContains(t, err, "size value")
+			})
+
+			t.Run("not a size", func(t *testing.T) {
+				d := Disks{{Format: "raw", Size: "hello world", Devname: "sda", Kind: storage.DiskKindDisk,
+					BusType: storage.BusTypeVirtio, Primary: true}}
+				err := d.Validate(mock_storage.NewStaticStorage(), ValidationOptions{})
+				must.ErrorIs(t, err, errs.ErrInvalidConfiguration)
+				must.ErrorContains(t, err, "size value")
+			})
+		})
+
+		t.Run("missing required", func(t *testing.T) {
+			d := Disks{{}}
+			err := d.Validate(mock_storage.NewStaticStorage(), ValidationOptions{})
+			must.ErrorIs(t, err, errs.ErrMissingAttribute)
+			must.ErrorContains(t, err, "bus_type")
+			must.ErrorContains(t, err, "kind")
+			must.ErrorContains(t, err, "devname")
+			must.ErrorContains(t, err, "format")
+			must.ErrorContains(t, err, "size")
+			must.ErrorContains(t, err, "primary")
+		})
+	})
 }
 
 func TestConfig(t *testing.T) {

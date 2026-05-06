@@ -23,10 +23,10 @@ import (
 )
 
 var (
-	ErrDisallowedPath  = fmt.Errorf("%w - access to path is not allowed", errs.ErrInvalidConfiguration)
-	ErrPathNotFound    = fmt.Errorf("%w - path not found", errs.ErrInvalidConfiguration)
-	ErrNoPrimary       = fmt.Errorf("%w - no primary disk defined", errs.ErrInvalidConfiguration)
-	ErrMultiplePrimary = fmt.Errorf("%w - multiple primary disks defined", errs.ErrInvalidConfiguration)
+	ErrDisallowedPath  = fmt.Errorf("%w: access to path is not allowed", errs.ErrInvalidConfiguration)
+	ErrPathNotFound    = fmt.Errorf("%w: path not found", errs.ErrInvalidConfiguration)
+	ErrNoPrimary       = fmt.Errorf("%w: no primary disk defined", errs.ErrInvalidConfiguration)
+	ErrMultiplePrimary = fmt.Errorf("%w: multiple primary disks defined", errs.ErrInvalidConfiguration)
 
 	configSpec = hclspec.NewBlockSet("disk", hclspec.NewObject(map[string]*hclspec.Spec{
 		"pool":      hclspec.NewAttr("pool", "string", false),
@@ -150,34 +150,34 @@ func (d *Disk) ValidateNomadVolume() error {
 
 	if d.Format != "" && d.Format != storage.DiskFormatRaw {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - format cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
+			fmt.Errorf("%w: format cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
 	if d.Size != "" {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - size cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
+			fmt.Errorf("%w: size cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
 	if d.Sparse != nil {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - sparse cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
+			fmt.Errorf("%w: sparse cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
 	if d.Pool != "" {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - pool cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
+			fmt.Errorf("%w: pool cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
 	if d.Chained {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - chained cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
+			fmt.Errorf("%w: chained cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 	}
 	if d.Source != nil {
 		if d.Source.Volume != "" {
 			mErr = multierror.Append(mErr,
-				fmt.Errorf("%w - source.volume cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
+				fmt.Errorf("%w: source.volume cannot be set when using Nomad volume", errs.ErrInvalidConfiguration))
 		}
 	}
 
 	if d.blockDevicePath == "" {
 		mErr = multierror.Append(mErr,
-			fmt.Errorf("%w - missing Nomad volume mount configuration", errs.ErrInvalidConfiguration))
+			fmt.Errorf("%w: missing Nomad volume mount configuration", errs.ErrInvalidConfiguration))
 	}
 
 	return mErr.ErrorOrNil()
@@ -535,7 +535,7 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 			}
 			if disk.Source.Volume != "" {
 				mErr = multierror.Append(mErr,
-					fmt.Errorf("%s %w: storage.volume and storage.image are mutually exclusive", errPrefix, errs.ErrInvalidConfiguration))
+					fmt.Errorf("%s %w: source.volume and source.image are mutually exclusive", errPrefix, errs.ErrInvalidConfiguration))
 			}
 
 			mErr = multierror.Append(mErr,
@@ -560,16 +560,17 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 		// If a size for the disk is set, check that the value is a size.
 		if disk.Size != "" && !convert.ValidBytesString(disk.Size) {
 			mErr = multierror.Append(mErr,
-				fmt.Errorf("%s size value is not valid - %q", errPrefix, disk.Size))
+				fmt.Errorf("%s %w: size value is not valid - %q", errPrefix, errs.ErrInvalidConfiguration, disk.Size))
 		}
 
+		// If the disk is chained, validate that a source is provided.
 		if disk.Chained && (disk.Source == nil || (disk.Source.Volume == "" && disk.Source.Image == "")) {
 			mErr = multierror.Append(mErr,
 				fmt.Errorf("%s %w: chained cannot be enabled without a source", errPrefix, errs.ErrInvalidConfiguration))
 		}
 
-		// Load the storage pool for this disk and apply any custom validation if
-		// the pool provides it.
+		// Load the storage pool for this disk. It will be used if the disk source is
+		// a volume as well as applying any custom validation if the pool provides it.
 		var pool storage.Pool
 		var err error
 		if disk.Pool != "" {
@@ -583,6 +584,41 @@ func (d Disks) Validate(s storage.Storage, opts ValidationOptions) error {
 			continue
 		}
 
+		// If a source is defined, check that a source value is provided.
+		if disk.Source != nil {
+			if disk.Source.Volume == "" && disk.Source.Image == "" {
+				mErr = multierror.Append(mErr,
+					fmt.Errorf("%s %w: disk source must define an image or volume", errPrefix, errs.ErrInvalidConfiguration))
+			} else {
+				// Check that the size of the disk is sufficient for the source.
+				var size uint64
+				if disk.Source.Image != "" {
+					info, err := os.Stat(disk.Source.Image)
+					if err != nil {
+						mErr = multierror.Append(mErr,
+							fmt.Errorf("%s %w: unable to read source image to determine size: %w", errPrefix, errs.ErrInvalidConfiguration, err))
+					} else {
+						size = uint64(info.Size())
+					}
+				} else {
+					vol, err := pool.GetVolume(disk.Source.Volume)
+					if err != nil {
+						mErr = multierror.Append(mErr,
+							fmt.Errorf("%s %w: unable to load source volume to determine size: %w", errPrefix, errs.ErrInvalidConfiguration, err))
+					} else {
+						size = vol.Size
+					}
+				}
+
+				// Check the size if it's non-zero
+				if size > 0 && size > convert.MustToBytes(disk.Size) {
+					mErr = multierror.Append(mErr,
+						fmt.Errorf("%s %w: size of disk must be equal to or greater than source", errPrefix, errs.ErrInvalidConfiguration))
+				}
+			}
+		}
+
+		// Apply custom validation if provided by the pool.
 		validator, ok := pool.(DiskValidator)
 		if !ok {
 			continue
@@ -749,9 +785,10 @@ func generateIdentifier(path, format string) (string, error) {
 // fileExists checks if a file exists at the path
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
-	if os.IsNotExist(err) {
+	if err != nil {
 		return false
 	}
+
 	return !info.IsDir()
 }
 
