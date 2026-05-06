@@ -16,7 +16,7 @@ In one terminal, start Nomad:
 $ nomad agent -dev -config ./config.hcl
 ```
 
-Run the following command to see the information about the new storage pool:
+In another terminal, run the following command to see the information about the new storage pool:
 
 ``` shellsession
 $ virsh pool-info local

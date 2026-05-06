@@ -1,4 +1,4 @@
-# Examples 
+# Examples
 
 This directory contains various examples demonstrating the features and functionality of
 the nomad-driver-virt plugin. All of the examples rely on the same basic setup which is
@@ -13,10 +13,10 @@ Install the required packages.
 Ubuntu:
 
 ``` shell-session
-apt-get install libvirt-daemon libvirt-clients libvirt-daemon-driver-storage-rbd jq curl 
+apt-get install libvirt-daemon libvirt-clients libvirt-daemon-driver-storage-rbd virtiofsd jq curl
 ```
 
-### Update Libvirt Configuration 
+### Update Libvirt Configuration
 
 Adjust the libvirt qemu configuration to set the user and group to root:
 
@@ -36,7 +36,7 @@ systemctl restart apparmor
 
 ### Enable Port Forwards
 
-Port forwards in the example are to localhost. Enabling routing of localnet packets is 
+Port forwards in the example are to localhost. Enabling routing of localnet packets is
 required for this to be function. Enable the routing:
 
 ``` shell-session
@@ -48,7 +48,7 @@ sysctl -w net.ipv4.conf.all.route_localnet=1
 Build and install the nomad-driver-virt plugin. Run these commands from the root of the repository:
 
 ``` shell-session
-make dev 
+make dev
 mkdir -p /opt/nomad/plugins
 cp ./build/nomad-driver-virt /opt/nomad/plugins/nomad-driver-virt
 ```
