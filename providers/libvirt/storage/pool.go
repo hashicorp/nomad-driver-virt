@@ -155,7 +155,6 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 
 	p.logger.Debug("new volume definition defined", "definition", volData)
 
-	var resize bool
 	var vol shims.StorageVol
 	defer func() {
 		if vol != nil {
@@ -171,7 +170,6 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 		if err != nil {
 			return nil, err
 		}
-		resize = true
 	} else {
 		vol, err = pool.StorageVolCreateXML(volData, libvirtNoFlags)
 		if err != nil {
@@ -188,20 +186,18 @@ func (p *pool) AddVolume(name string, opts storage.Options) (*storage.Volume, er
 			if err := overwriterFn(vol, opts.Source.Path); err != nil {
 				return nil, err
 			}
-			resize = true
 		}
 	}
 
-	// If flagged, resize the volume to the correct size
-	if resize {
-		resizeFn := p.defaultResizer
-		if p.resizer != nil {
-			resizeFn = p.resizer
-		}
+	// Always run a resize after volume creation even if size has
+	// not changed to ensure expected allocation.
+	resizeFn := p.defaultResizer
+	if p.resizer != nil {
+		resizeFn = p.resizer
+	}
 
-		if err := resizeFn(vol, opts.Size, opts.Sparse); err != nil {
-			return nil, err
-		}
+	if err := resizeFn(vol, opts.Size, opts.Sparse); err != nil {
+		return nil, err
 	}
 
 	// Grab the new volume information to fill in the result.
@@ -321,7 +317,8 @@ func (p *pool) defaultResizer(vol shims.StorageVol, sizeBytes uint64, sparse boo
 		return err
 	}
 
-	// If the size hasn't changed, check if the resize is needed.
+	// If the size hasn't changed, check if the resize is needed. The only time it
+	// will be needed is if the volume should be fully allocated to the capacity.
 	if info.Capacity == sizeBytes {
 		// If the volume is sparse there is no need to resize. Resizing when
 		// the size has not changed is only needed to force allocation of the
@@ -333,6 +330,12 @@ func (p *pool) defaultResizer(vol shims.StorageVol, sizeBytes uint64, sparse boo
 		// If the current size of the volume is 0 and the desired size is 0
 		// resizing the volume does nothing even if the volume is not sparse.
 		if sizeBytes == 0 {
+			return nil
+		}
+
+		// If the volume is fully allocated to the defined capacity, no resizing
+		// is required.
+		if info.Capacity == info.Allocation {
 			return nil
 		}
 

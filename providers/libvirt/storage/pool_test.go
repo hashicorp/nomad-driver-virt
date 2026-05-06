@@ -137,6 +137,19 @@ func TestPool_AddVolume(t *testing.T) {
 				mock_libvirt_storage.GetXMLDesc{
 					Result: expectedData,
 				},
+				mock_libvirt_storage.GetXMLDesc{
+					Result: expectedData,
+				},
+				mock_libvirt_storage.GetInfo{
+					Result: &libvirt.StorageVolInfo{
+						Capacity:   200,
+						Allocation: 0,
+					},
+				},
+				mock_libvirt_storage.Resize{
+					Size:  200,
+					Flags: libvirt.STORAGE_VOL_RESIZE_ALLOCATE,
+				},
 				mock_libvirt_storage.Free{},
 			)
 			defer lvVol.AssertExpectations()
@@ -192,6 +205,11 @@ func TestPool_AddVolume(t *testing.T) {
 			lvVol := mock_libvirt_storage.NewMockStorageVol(t).Expect(
 				mock_libvirt_storage.GetXMLDesc{
 					Result: expectedData,
+				},
+				mock_libvirt_storage.GetInfo{
+					Result: &libvirt.StorageVolInfo{
+						Capacity: 200,
+					},
 				},
 				mock_libvirt_storage.Free{},
 			)
@@ -505,6 +523,12 @@ func TestPool_AddVolume(t *testing.T) {
 				mock_libvirt_storage.GetXMLDesc{
 					Result: expectedData,
 				},
+				mock_libvirt_storage.GetInfo{
+					Result: &libvirt.StorageVolInfo{
+						Capacity:   200,
+						Allocation: 200,
+					},
+				},
 				mock_libvirt_storage.Free{},
 			)
 			defer lvVol.AssertExpectations()
@@ -595,6 +619,11 @@ func TestPool_AddVolume(t *testing.T) {
 			lvVol := mock_libvirt_storage.NewMockStorageVol(t).Expect(
 				mock_libvirt_storage.GetXMLDesc{
 					Result: expectedData,
+				},
+				mock_libvirt_storage.GetInfo{
+					Result: &libvirt.StorageVolInfo{
+						Capacity: 200,
+					},
 				},
 				mock_libvirt_storage.Free{},
 			)

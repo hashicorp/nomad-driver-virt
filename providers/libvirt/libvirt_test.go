@@ -124,7 +124,9 @@ func TestStorage(t *testing.T) {
 			must.NoError(t, err)
 
 			// Add an empty volume
-			v, err := pool.AddVolume("test-vol", storage.Options{Size: 1024, Target: storage.Target{Format: "raw"}})
+			// NOTE: Mark volume as sparse to prevent a resize action which will fail
+			// using the test driver as it is an unsupported action.
+			v, err := pool.AddVolume("test-vol", storage.Options{Size: 1024, Target: storage.Target{Format: "raw"}, Sparse: true})
 			must.NoError(t, err)
 			must.Eq(t, &storage.Volume{Name: "test-vol", Pool: poolName, Format: "raw", Kind: "file", Size: 1024}, v)
 
