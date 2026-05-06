@@ -333,7 +333,7 @@ func (p *pool) defaultResizer(vol shims.StorageVol, sizeBytes uint64, sparse boo
 			return nil
 		}
 
-		// If the volume is fully allocated to the define capacity, no resizing
+		// If the volume is fully allocated to the defined capacity, no resizing
 		// is required.
 		if info.Capacity == info.Allocation {
 			return nil
