@@ -34,6 +34,8 @@ Available:      18.14 GiB
 
 #### Source Image
 
+* Job file: [./01-python-server.nomad.hcl](./01-python-server.nomad.hcl)
+
 This job defines a disk that references an image to use:
 
 ``` hcl
@@ -97,6 +99,8 @@ This second volume is attached to the virtual machine as the primary disk. The c
 set to the virtual capacity of the disk while the allocation is the space actually in use.
 
 #### Chained Source Image
+
+* Job file: [./02-python-server.nomad.hcl](./02-python-server.nomad.hcl) and [./03-python-server.nomad.hcl](./03-python-server.nomad.hcl)
 
 This job defines a disk that references an image to use and sets the `chained` attribute:
 
@@ -181,6 +185,8 @@ $ virsh vol-dumpxml --pool local virt-task-a6dc4253_vda.img --xpath '/volume/bac
 
 #### Volume Format
 
+* Job file: [./04-python-server.nomad.hcl](./04-python-server.nomad.hcl)
+
 This job defines a disk that references a source image (in qcow2 format) with a `raw` format:
 
 ``` hcl
@@ -230,6 +236,8 @@ $ qemu-img info --output=json /opt/nomad/virt/storage/virt-task-b4dd7018_vda.img
 ```
 
 #### Sparse Volume
+
+* Job file: [./05-python-server.nomad.hcl](./05-python-server.nomad.hcl)
 
 Since a large portion of the primary volume created will consist of empty space it may be better to
 not allocate that empty space immediately. This job retains the `raw` format but enables `sparse`:
@@ -283,6 +291,8 @@ allocation is less. Only the currently used size of the volume is allocated and 
 size will grow as data is added to the volume until it reaches its capacity limit.
 
 #### Sizing
+
+* Job file: [./06-python-server.nomad.hcl](./06-python-server.nomad.hcl)
 
 This job sets the size of the volume instead of allowing it to be automatically determined. It
 expands the size of the volume past the virtual size of the image:
@@ -372,12 +382,14 @@ The root partition is expanded to fill the available space in the volume.
 
 #### Volume Cloning
 
+* Job file: [./07-python-server.nomad.hcl](./07-python-server.nomad.hcl)
+
 Volumes can also be cloned from existing volumes within the pool. To demonstrate
 this we will first add a source image to the pool. Start with downloading the
 image:
 
 ``` shellsession
-curl -OL http://10.162.122.1:3333/focal-server-cloudimg-amd64.img
+$ curl -OL http://cloud-images.ubuntu.com/focal/current/focal-server-cloudimg-amd64.img
   % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
 100  617M  100  617M    0     0  1773M      0 --:--:-- --:--:-- --:--:-- 1775M
@@ -455,6 +467,8 @@ Allocation:     1.50 GiB
 
 #### Chained Volume
 
+* Job file: [./08-python-server.nomad.hcl](./08-python-server.nomad.hcl)
+
 This job creates a lightweight clone by chaining the new volume to
 the source volume.
 
@@ -502,6 +516,8 @@ $ virsh vol-dumpxml --pool local --xpath '/volume/backingStore/path' virt-task-f
 ```
 
 #### Multiple Volumes
+
+* Job file: [./09-python-server.nomad.hcl](./09-python-server.nomad.hcl)
 
 Additional volumes can be created by adding `disk` blocks. Once more than one `disk`
 is defined in a task, the primary disk must be set to identify which disk is responsible

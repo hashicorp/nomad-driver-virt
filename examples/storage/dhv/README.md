@@ -35,7 +35,7 @@ plugins.host_volume.mkdir.version   = 0.0.1
 
 #### Mount Volume
 
-_TODO_: link to mkdir plugin docs
+* Job file: [./01-python-server.nomad.hcl](./01-python-server.nomad.hcl)
 
 This job will use a dynamic host volume created with the [mkdir plugin][mkdir-plugin] to store
 the `index.html` which will be served by the python server. Start by creating
@@ -118,6 +118,8 @@ total 4
 ```
 
 #### Block Volume (secondary)
+
+* Job file: [./02-python-server.nomad.hcl](./02-python-server.nomad.hcl)
 
 Here we will create a block storage volume and attach it to the virtual machine as
 a secondary disk. Start by creating the volume:
@@ -219,6 +221,8 @@ Disk /dev/vda: 500 MiB, 524288000 bytes, 1024000 sectors
 ```
 
 #### Block Volume (primary)
+
+* Job file: [./03-python-server.nomad.hcl](./03-python-server.nomad.hcl) and [./04-python-server.nomad.hcl](./04-python-server.nomad.hcl)
 
 In this example, we will create a block storage volume and attach it to the virtual
 machine as the primary disk. Start by creating the volume:
