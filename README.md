@@ -13,7 +13,7 @@ Nomad job spec.
 
 * Use the job's `task.config` to define the virtual machine (VM).
 * Start/stop virtual machines.
-* [Nomad runtime environment](https://www.nomadproject.io/docs/runtime/environment.html) is populated.
+* [Nomad runtime environment][runtime-environment] is populated.
 * Use Nomad alloc data in the virtual machine.
 * Publish ports.
 * Monitor the memory consumption.
@@ -21,7 +21,7 @@ Nomad job spec.
 * Task config cpu value is used to populate virtual machine CpuShares.
 * The tasks `task`, `alloc`, and `secrets` directories are mounted within the VM at the filesystem
   root. These are currently mounted read-only to prevent excessive amounts of data being written to
-  the host filesystem. Please see the [filesystem concepts page](https://developer.hashicorp.com/nomad/docs/concepts/filesystem)
+  the host filesystem. Please see the [filesystem concepts page][filesystem-concepts]
   for more detail about an allocations working directory.
 
 ## Ubuntu Example job
@@ -128,9 +128,9 @@ The compiled binary will be located at `./build/nomad-driver-virt`.
 
 ## Runtime dependencies
 
-* [Nomad](https://www.nomadproject.io/downloads.html) 1.9.0+
-* [libvirt-daemon-system](https://pkgs.org/download/libvirt-daemon-system)
-* [qemu-utils](https://pkgs.org/download/qemu-utils)
+* [Nomad][nomad-downloads] 1.9.0+
+* [libvirt-daemon-system][libvirt]
+* [qemu-utils][qemu]
 
 Make sure the node where the client will run supports virtualization, in Linux you can do it in a couple of ways:
 1. Reading the CPU flags:
@@ -146,7 +146,7 @@ lsmod | grep -E '(kvm_intel|kvm_amd)'
 If the result is empty for either call, the machine does not support virtualization and the nomad client wont be able to run any virtualization workload.
 
 3. Verify permissions:
-`Nomad` runs as root, add the user `root` and the group `root` to the [QEMU configuration](https://libvirt.org/drvqemu.html#posix-users-groups) to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restart it after adding the qemu user/group configuration:
+`Nomad` runs as root, add the user `root` and the group `root` to the [QEMU configuration][qemu-configuration] to allow it to execute the workloads. Remember to start the libvirtd daemon if not started yet or to restart it after adding the qemu user/group configuration:
 
 ```
 systemctl start libvirtd
@@ -156,7 +156,7 @@ or
 systemctl restart libvirtd
 ```
 
-Ensure that Nomad can find the plugin, see [plugin_dir](https://www.nomadproject.io/docs/configuration/index.html#plugin_dir)
+Ensure that Nomad can find the plugin, see [plugin_dir][nomad-plugin-dir]
 
 ## Driver Configuration
 
@@ -206,7 +206,7 @@ plugin "nomad-driver-virt" {
   config {
     image_paths = ["/var/lib/virt/images"]
     storage_pools {
-      directory "local-storage" {
+      directory "local" {
         path = "/var/lib/virt/storage"
       }
     }
@@ -233,8 +233,8 @@ plugin "nomad-driver-virt" {
     ]
 
     storage_pools {
-      default = "local-storage"
-      directory "local-storage" {
+      default = "local"
+      directory "local" {
         path = "/var/lib/virt/storage"
       }
 
@@ -311,7 +311,7 @@ job "python-server" {
       config {
         disk {
           size    = "10GiB"
-          pool    = "local-storage"
+          pool    = "local"
           primary = true
           source {
             image = "local/focal-server-cloudimg-amd64.img"
@@ -342,7 +342,7 @@ job "python-server" {
       config {
         disk {
           size   = "10GiB"
-          pool   = "local-storage"
+          pool   = "local"
           source {
             volume = "focal-server-cloudimg-amd64.img"
           }
@@ -366,7 +366,7 @@ job "python-server" {
       config {
         disk {
           size    = "10GiB"
-          pool    = "local-storage"
+          pool    = "local"
           chained = true
           source {
             volume = "focal-server-cloudimg-amd64.img"
@@ -397,7 +397,7 @@ job "python-server" {
       config {
         disk {
           size    = "10GiB"
-          pool    = "local-storage"
+          pool    = "local"
           chained = true
           source {
             image = "local/focal-server-cloudimg-amd64.img"
@@ -410,15 +410,27 @@ job "python-server" {
 
 ```
 
+#### Comprehensive Examples 
+
+Comprehensive examples of storage pool and disk usage can be found in the `./examples/storage` directory. The examples
+currently include:
+
+* [Directory backed storage pool and disks][directory-examples].
+* [Ceph backed storage pool and disks][ceph-examples].
+* [Dynamic Host Volume disks][dhv-examples].
+
 ### Network Configuration
 
 The following configuration options are available within the task's driver configuration block:
 
 * **bridge** - Block configuration for connecting to a bridged network.
   * **name** - Name of the bridge interface to use. The default libvirt network, `virbr0`, is a bridged network.
-  * **ports** - A list of port labels exposed on the host via mapping to the network interface. Labels must exist within the job specification [network block](https://developer.hashicorp.com/nomad/docs/job-specification/network).
+  * **ports** - A list of port labels exposed on the host via mapping to the network interface. Labels must exist within the job specification [network block][nomad-job-spec-network].
+* **macvtap** - Block configuration for configuring a macvtap device.
+  * **device** - Name of the host device to use for creating the macvtap device.
+  * **mode** - Operating mode of the macvtap interface. Supported modes: `bridge`, `private`, `vepa`, or `passthrough`. Defaults to `bridge`.
 
-#### Example
+#### Example (bridge)
 
 The example below shows the network configuration and task configuration required to expose and map ports `22` and `80`:
 
@@ -449,9 +461,28 @@ group "virt-group" {
 }
 ```
 
-Exposed ports and services can make use of the existing
-[service block](https://developer.hashicorp.com/nomad/docs/job-specification/service),
+Exposed ports and services can make use of the existing [service block][nomad-job-spec-service],
 so that registrations can be performed using the specified backend provider.
+
+#### Example (macvtap)
+
+The example below shows task configuration required for configuring a macvtap device:
+
+```hcl
+group "virt-group" {
+  task "virt-task" {
+    driver = "virt"
+    config {
+      network_interface {
+        macvtap {
+          device = "eth0"
+          mode   = "bridge"
+        }
+      }
+    }
+  }
+}
+```
 
 ## Local Development
 
@@ -565,7 +596,7 @@ $ virsh net-list
  default   active   yes         yes
  ```
 
-Under the hood, libvirt uses [dnsmasq](https://thekelleys.org.uk/dnsmasq/doc.html) to lease
+Under the hood, libvirt uses [dnsmasq][dnsmasq] to lease
 IP addresses to the virtual machines, there are mutiple ways to find the IP assigned
 to the nomad task.
 Using virsh to find the leased IP:
@@ -585,3 +616,18 @@ $ virsh dumpxml virt-task-8473ccfb  | grep "mac address" | awk -F\' '{ print $2}
 $ arp -an | grep 52:54:00:b5:0b:d4
 ? (192.168.122.211) at 52:54:00:b5:0b:d4 [ether] on virbr0
 ```
+
+[ceph-examples]: ./examples/storage/ceph/README.md
+[dhv-examples]: ./examples/storage/dhv/README.md
+[directory-examples]: ./examples/storage/directory/README.md
+[dnsmasq]: https://dnsmasq.org/doc.html
+[filesystem-concepts]: https://developer.hashicorp.com/nomad/docs/concepts/filesystem
+[runtime-environment]: https://www.nomadproject.io/docs/runtime/environment.html
+[libvirt]: https://libvirt.org/
+[nomad-downloads]: https://www.nomadproject.io/downloads.html
+[nomad-job-spec-network]: https://developer.hashicorp.com/nomad/docs/job-specification/network
+[nomad-job-spec-service]: https://developer.hashicorp.com/nomad/docs/job-specification/service
+[nomad-plugin-dir]: https://www.nomadproject.io/docs/configuration/index.html#plugin_dir
+[qemu-configuration]: https://libvirt.org/drvqemu.html#posix-users-groups
+[qemu]: https://www.qemu.org/
+
