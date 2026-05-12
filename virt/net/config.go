@@ -4,11 +4,12 @@
 package net
 
 import (
-	"errors"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	"github.com/hashicorp/nomad/plugins/shared/hclspec"
 )
 
@@ -166,40 +167,39 @@ func (n *NetworkInterfaceMacvtapConfig) Equal(rhs *NetworkInterfaceMacvtapConfig
 // driver. Any error returned here should be considered terminal for a task
 // and stop the process execution.
 func (n *NetworkInterfacesConfig) Validate() error {
-
 	if n == nil {
 		return nil
 	}
 
-	var mErr multierror.Error
+	var mErr *multierror.Error
 
 	// The driver only currently supports a single network interface per VM due
 	// to constraints on Nomad's network mapping handling and the driver
 	// itself.
 	if len(*n) > 1 {
-		mErr.Errors = append(mErr.Errors,
-			errors.New("only one network interface can be configured"))
+		mErr = multierror.Append(mErr,
+			fmt.Errorf("%w: only one network interface can be configured", errs.ErrInvalidConfiguration))
 	}
 
 	// Iterate the network interfaces and validate each object to be correct
 	// according to their type.
+	// NOTE: only a single interface is allowed currently, but assume that will change.
 	for i, netInterface := range *n {
+		errPrefix := fmt.Sprintf("network_interface[%d] -", i+1)
 		if netInterface.Bridge != nil && netInterface.Macvtap != nil {
-			mErr.Errors = append(mErr.Errors,
-				fmt.Errorf("network interface '%v' cannot configure both bridge and macvtap", i))
+			mErr = multierror.Append(mErr,
+				fmt.Errorf("%s %w: bridge and macvtap are mutually exclusive", errPrefix, errs.ErrInvalidConfiguration))
 			continue
 		}
 
-		if netInterface.Bridge != nil && netInterface.Bridge.Name == "" {
-			mErr.Errors = append(mErr.Errors,
-				fmt.Errorf("network interface bridge '%v' requires name parameter", i))
+		if netInterface.Bridge != nil {
+			mErr = multierror.Append(mErr, errs.MissingAttribute("bridge.name",
+				netInterface.Bridge.Name, errs.WithPrefix(errPrefix)))
 		}
 
 		if netInterface.Macvtap != nil {
-			if netInterface.Macvtap.Device == "" {
-				mErr.Errors = append(mErr.Errors,
-					fmt.Errorf("network interface macvtap '%v' requires device parameter", i))
-			}
+			mErr = multierror.Append(mErr, errs.MissingAttribute("macvtap.device",
+				netInterface.Macvtap.Device, errs.WithPrefix(errPrefix)))
 
 			// Default the mode to bridge when unset, matching common macvtap
 			// usage and libvirt's own default behaviour.
@@ -208,8 +208,15 @@ func (n *NetworkInterfacesConfig) Validate() error {
 			}
 
 			if !slices.Contains(validMacvtapModes, netInterface.Macvtap.Mode) {
-				mErr.Errors = append(mErr.Errors,
-					fmt.Errorf("network interface macvtap '%v' has invalid mode %q; must be one of: bridge, private, vepa, passthrough", i, netInterface.Macvtap.Mode))
+				validModes := make([]string, len(validMacvtapModes))
+				for i, v := range validMacvtapModes {
+					validModes[i] = string(v)
+				}
+				mErr = multierror.Append(mErr,
+					fmt.Errorf("%s %w: macvtap has invalid mode %q; must be one of: %s", errPrefix, errs.ErrInvalidConfiguration, netInterface.Macvtap.Mode,
+						strings.Join(validModes, ", "),
+					),
+				)
 			}
 		}
 	}
