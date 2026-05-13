@@ -344,18 +344,12 @@ func getImageSnapshot(ioctx *rados.IOContext, imgName string) (string, error) {
 		return "", errNoSnapshot
 	}
 
-	// diffResult is used in the diff callback to surface the result
-	type diffResult struct {
-		detected  bool // flag that difference was detected
-		earlyExit bool // flag that error was an early exit
-	}
-
 	// Attempt to find an up-to-date snapshot of the image. To do this we run a
 	// diff between the image and the snapshot. If no difference is detected then
 	// it is an up-to-date snapshot that can be used for cloning.
 	for _, snapInfo := range snaps {
 		// This value is used to surface the result of the check.
-		snapIsDiff := &diffResult{}
+		isDiff := false
 		// Build the configuration for the diff operation. The callback is invoked
 		// with all the diff chunks between the image and the snapshot. To prevent
 		// processing all the chunks, an error will be forced immediately.
@@ -365,14 +359,9 @@ func getImageSnapshot(ioctx *rados.IOContext, imgName string) (string, error) {
 			Length:        imgSize,
 			IncludeParent: rbd.IncludeParent,
 			WholeObject:   rbd.EnableWholeObject,
-			Data:          snapIsDiff,
-			Callback: func(offset, length uint64, exists int, data interface{}) int {
-				d, ok := data.(*diffResult)
-				if !ok {
-					return -1
-				}
-				d.detected = true  // mark that diff is detected
-				d.earlyExit = true // mark that we are exiting early
+			Callback: func(uint64, uint64, int, interface{}) int {
+				// Mark that the snapshot is different than the image.
+				isDiff = true
 
 				// return an error to force stop processing diffs since
 				// we only care about the first one.
@@ -381,14 +370,16 @@ func getImageSnapshot(ioctx *rados.IOContext, imgName string) (string, error) {
 		}
 
 		err := img.DiffIterate(config)
-		// The error is only real if it wasn't an early exit.
-		if err != nil && !snapIsDiff.earlyExit {
+		// An error is expected when a difference is detected (because the callback
+		// was executed) so if there is no difference detected but an error was returned
+		// then it was an unexpected error.
+		if err != nil && !isDiff {
 			return "", fmt.Errorf("failed to iterate snapshot diffs on %q: %w", snapInfo.Name, err)
 		}
 
 		// If there was no difference detected then this
 		// snapshot can be used for cloning.
-		if !snapIsDiff.detected {
+		if !isDiff {
 			return snapInfo.Name, nil
 		}
 	}
