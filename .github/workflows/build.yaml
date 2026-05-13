@@ -5,6 +5,9 @@ on: [workflow_dispatch, push]
 env:
   PKG_NAME: "nomad-driver-virt"
 
+permissions:
+  contents: read
+
 jobs:
   get-go-version:
     name: "get Go toolchain version"

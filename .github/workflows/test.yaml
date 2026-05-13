@@ -12,6 +12,9 @@ on:
       README.md
       GNUMakefile
 
+permissions:
+  contents: read
+
 jobs:
   mod:
     name: "run go mod tidy"
