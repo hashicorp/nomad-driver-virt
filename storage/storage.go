@@ -16,6 +16,7 @@ const (
 	BusTypeIde    = "ide"
 	BusTypeScsi   = "scsi"
 	BusTypeSata   = "sata"
+	BusTypeUsb    = "usb"
 
 	DiskFormatIso   = "iso"
 	DiskFormatQcow2 = "qcow2"
