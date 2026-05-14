@@ -13,73 +13,20 @@ import (
 )
 
 var (
-	loadLock  sync.Mutex
+	// loadLock is used to synchronize creation and setup of nomad tables singleton.
+	loadLock sync.Mutex
+
+	// singleton is the single instance of nomad tables.
 	singleton *nomadTables
 )
 
 const (
-	// postroutingIPTablesChainName is the IPTables chain name used by the
-	// driver for postrouting rules. This is currently used for entries within
-	// the nat table specifically for handling the special case of loopback
-	// addresses.
-	postroutingIPTablesChainName = "NOMAD_VT_PST"
-
-	// preroutingIPTablesChainName is the IPTables chain name used by the
-	// driver for prerouting rules. This is currently used for entries within
-	// the nat table.
-	preroutingIPTablesChainName = "NOMAD_VT_PRT"
-
-	// forwardIPTablesChainName is the IPTables chain name used by the driver
-	// for forwarding rules. This is currently used for entries within the
-	// filter table.
-	forwardIPTablesChainName = "NOMAD_VT_FW"
-
-	// outputIPTablesChainName is the IPTables chain name used by the driver
-	// for output rules. This is currently used for entries within the nat
-	// table specifically for handling the special case of loopback addresses.
-	outputIPTablesChainName = "NOMAD_VT_OUT"
-
-	// iptablesNATTableName is the name of the nat table within iptables.
-	iptablesNATTableName = "nat"
-
-	// iptablesFilterTableName is the name of the filter table within iptables.
-	iptablesFilterTableName = "filter"
-
 	// routeLocalnetPathTemplate is the template for generating the path to check for device specific routing support.
 	routeLocalnetPathTemplate = "/proc/sys/net/ipv4/conf/%s/route_localnet"
 
 	// routeLocalnetGlobalName is the name of the global kernel configuration for localnet routing.
 	routeLocalnetGlobalName = "all"
 )
-
-// New returns the NomadTables instance.
-func New(logger hclog.Logger) (NomadTables, error) {
-	loadLock.Lock()
-	defer loadLock.Unlock()
-
-	if singleton != nil {
-		return singleton, nil
-	}
-
-	ipt, err := iptables.New()
-	if err != nil {
-		return nil, err
-	}
-
-	nt := &nomadTables{
-		ipt:                        ipt,
-		interfaceByIPGetter:        getInterfaceByIP,
-		routingInterfaceByIPGetter: getRoutingInterfaceByIP,
-		logger:                     logger.Named("iptables"),
-	}
-
-	if err := nt.setup(); err != nil {
-		return nil, err
-	}
-
-	singleton = nt
-	return singleton, nil
-}
 
 // Interface provided to modify and cleanup IPTables for tasks.
 type NomadTables interface {
@@ -100,4 +47,36 @@ type IPTables interface {
 	ListChains(table string) ([]string, error)
 	List(table, chain string) ([]string, error)
 	NewChain(table, chain string) error
+}
+
+// New returns the NomadTables instance. If the singleton instance does not yet
+// exist it will create the instance and run setup. Otherwise it will return the
+// existing instance.
+func New(logger hclog.Logger) (NomadTables, error) {
+	loadLock.Lock()
+	defer loadLock.Unlock()
+
+	if singleton != nil {
+		return singleton, nil
+	}
+
+	ipt, err := iptables.New()
+	if err != nil {
+		return nil, err
+	}
+
+	nt := &nomadTables{
+		ipt:                        ipt,
+		interfaceByIPGetter:        getInterfaceByIP,
+		names:                      NewNames(),
+		routingInterfaceByIPGetter: getRoutingInterfaceByIP,
+		logger:                     logger.Named("iptables"),
+	}
+
+	if err := nt.setup(); err != nil {
+		return nil, err
+	}
+
+	singleton = nt
+	return singleton, nil
 }
