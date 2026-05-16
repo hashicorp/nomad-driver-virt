@@ -105,6 +105,7 @@ type Config struct {
 	BOOTCMDs          []string
 	CIUserData        string
 	Volumes           []storage.Volume
+	SerialSocket      string
 	NetworkInterfaces net.NetworkInterfacesConfig
 }
 
