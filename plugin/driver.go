@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	gonet "net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,6 +23,7 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/virt"
 	"github.com/hashicorp/nomad-driver-virt/virt/disks"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/hashicorp/nomad/client/allocdir"
 	"github.com/hashicorp/nomad/client/lib/idset"
 
 	"github.com/hashicorp/go-hclog"
@@ -75,7 +78,7 @@ var (
 		// https://godoc.org/github.com/hashicorp/nomad/plugins/drivers#Capabilities
 		SendSignals:          false,
 		Exec:                 false,
-		DisableLogCollection: true,
+		DisableLogCollection: false,
 		FSIsolation:          fsisolation.Image,
 
 		// NetIsolationModes details that this driver only supports the network
@@ -473,6 +476,28 @@ func createEnvsFile(envs map[string]string) vm.File {
 func buildHostname(taskName string) string {
 	return fmt.Sprintf("nomad-%s", taskName)
 }
+func buildSocketPath(dir *allocdir.TaskDir) string { return filepath.Join(dir.Dir, "tmp", "socket") }
+func (d *VirtDriverPlugin) readSocketToLogs(socketPath string, logPath string) {
+	// Open the VM unix socket for reading
+	conn, err := gonet.Dial("unix", socketPath)
+	if err != nil {
+		d.logger.Error("failed to open VM socket", "error", err)
+		return
+	}
+	defer conn.Close()
+	// Open the Nomad log socket for writing
+	logSock, err := os.OpenFile(logPath, os.O_WRONLY, 0600)
+	if err != nil {
+		d.logger.Error("failed to open Nomad log socket", "error", err)
+		return
+	}
+	defer logSock.Close()
+	// Copy the data from the VM socket to the Nomad log socket
+	_, err = io.Copy(logSock, conn)
+	if err != nil {
+		d.logger.Error("failed to copy data from VM socket to Nomad log socket", "error", err)
+	}
+}
 
 // StartTask returns a task handle and a driver network if necessary.
 func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHandle, _ *drivers.DriverNetwork, err error) {
@@ -559,6 +584,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 		mounts[i] = *allocFSMounts[i]
 	}
 
+	// Path to a UNIX emulating a serial connection. Used to output logs to Nomad.
+	socketPath := buildSocketPath(cfg.TaskDir())
+
 	dc := &vm.Config{
 		RemoveConfigFiles: true,
 		Name:              taskName,
@@ -575,6 +603,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 		SSHKey:            driverConfig.DefaultUserSSHKey,
 		Files:             []vm.File{createEnvsFile(cfg.Env)},
 		NetworkInterfaces: driverConfig.NetworkInterfacesConfig,
+		SerialSocket:      socketPath,
 	}
 
 	// Run validation
@@ -644,6 +673,9 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 	if err := virtualizer.CreateVM(dc); err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
+
+	// Start reading the VM output to logs
+	go d.readSocketToLogs(socketPath, cfg.StdoutPath)
 
 	ifaces, err := virtualizer.GetNetworkInterfaces(dc.Name)
 	if err != nil {
@@ -778,6 +810,9 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 	h.procState = taskVm.State.ToTaskState()
 
 	d.tasks.Set(handle.Config.ID, h)
+
+	// Relaunch socket output reader
+	go d.readSocketToLogs(buildSocketPath(taskState.TaskConfig.TaskDir()), taskState.TaskConfig.StdoutPath)
 
 	return nil
 }
