@@ -17,7 +17,7 @@ var (
 	loadLock sync.Mutex
 
 	// singleton is the single instance of nomad tables.
-	singleton *nomadTables
+	singleton *virtTables
 )
 
 const (
@@ -28,8 +28,8 @@ const (
 	routeLocalnetGlobalName = "all"
 )
 
-// Interface provided to modify and cleanup IPTables for tasks.
-type NomadTables interface {
+// VirtTables is the interface provided to modify and cleanup IPTables for virt tasks.
+type VirtTables interface {
 	Configure(*drivers.Resources, *virtnet.NetworkInterfaceBridgeConfig, string) (Rules, error)
 	Teardown(Rules) error
 }
@@ -49,10 +49,10 @@ type IPTables interface {
 	NewChain(table, chain string) error
 }
 
-// New returns the NomadTables instance. If the singleton instance does not yet
+// New returns the VirtTables instance. If the singleton instance does not yet
 // exist it will create the instance and run setup. Otherwise it will return the
 // existing instance.
-func New(logger hclog.Logger) (NomadTables, error) {
+func New(logger hclog.Logger) (VirtTables, error) {
 	loadLock.Lock()
 	defer loadLock.Unlock()
 
@@ -65,7 +65,7 @@ func New(logger hclog.Logger) (NomadTables, error) {
 		return nil, err
 	}
 
-	nt := &nomadTables{
+	nt := &virtTables{
 		ipt:                        ipt,
 		interfaceByIPGetter:        getInterfaceByIP,
 		names:                      NewNames(),

@@ -16,18 +16,19 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-multierror"
+	"github.com/hashicorp/go-set/v3"
 	virtnet "github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
-// nomadTables implements the NomadTables interface.
-type nomadTables struct {
+// virtTables implements the NomadTables interface.
+type virtTables struct {
 	logger hclog.Logger
-	m      sync.Mutex
 	ipt    IPTables
 	names  *names
+	m      sync.Mutex
 
-	// Below is used for testing.
+	// Everything below is used for testing.
 
 	// routeLocalnetTemplate is a template for creating the path to the kernel
 	// runtime configuration for device localnet routing.
@@ -43,7 +44,10 @@ type nomadTables struct {
 	routingInterfaceByIPGetter
 }
 
-func (n *nomadTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInterfaceBridgeConfig, ip string) (rules Rules, err error) {
+// Configure configures iptables to enable port forwards based on the passed
+// resources and returns a collection of rules that can be used to remove
+// the configuration with Teardown function.
+func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInterfaceBridgeConfig, ip string) (rules Rules, err error) {
 	// Create lookup mapping for ip:interface-name, so we can cache reads of
 	// this and not have to perform the translation each time.
 	interfaceMapping := make(map[string]string)
@@ -100,58 +104,85 @@ func (n *nomadTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInte
 				return nil, fmt.Errorf("loopback port forwarding not enabled for device - %s", dstIface)
 			}
 
-			// Add chains and rules required for loopback port forwarding.
-			req.chains.Insert(&chain{table: n.names.tables.NAT, chain: n.names.chains.Nomad.Output})
-			req.chains.Insert(&chain{table: n.names.tables.NAT, chain: n.names.chains.Nomad.Postrouting})
-			req.rules.Insert(&rule{table: n.names.tables.NAT, chain: n.names.chains.Output,
-				position: 1, spec: []string{"-j", n.names.chains.Nomad.Output}})
-			req.rules.Insert(&rule{table: n.names.tables.NAT, chain: n.names.chains.Postrouting,
-				position: 1, spec: []string{"-j", n.names.chains.Nomad.Postrouting}})
+			// Add chains required for loopback port forwarding.
+			req.chains.InsertSlice([]*chain{
+				{
+					table: n.names.tables.NAT,
+					chain: n.names.chains.Nomad.Output,
+				},
+				{
+					table: n.names.tables.NAT,
+					chain: n.names.chains.Nomad.Postrouting,
+				},
+			})
 
-			// Add rule to enable forwarding from the loopback to the destination.
-			req.rules.Insert(&rule{table: n.names.tables.NAT, chain: n.names.chains.Nomad.Postrouting,
-				spec: []string{"-o", dstIface, "-m", "addrtype", "--src-type", "LOCAL", "--dst-type", "UNICAST", "-j", "MASQUERADE"}})
-
-			// Finally add the forward rule.
-			req.rules.Insert(&rule{table: n.names.tables.NAT, chain: n.names.chains.Nomad.Output, teardown: true,
-				spec: []string{"-s", reservedPort.HostIP, "-o", iface, "-p", "tcp", "-m", "tcp", "--dport", strconv.Itoa(reservedPort.Value),
-					"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%v", ip, reservedPort.To)}})
+			// Add the rules.
+			req.rules.InsertSlice([]*rule{
+				// Jump rules for the new chains.
+				{
+					table:    n.names.tables.NAT,
+					chain:    n.names.chains.Output,
+					position: 1,
+					spec:     []string{"-j", n.names.chains.Nomad.Output},
+				},
+				{
+					table:    n.names.tables.NAT,
+					chain:    n.names.chains.Postrouting,
+					position: 1,
+					spec:     []string{"-j", n.names.chains.Nomad.Postrouting},
+				},
+				// Allow forwarding from the loopback to the destination device.
+				{
+					table: n.names.tables.NAT,
+					chain: n.names.chains.Nomad.Postrouting,
+					spec: []string{"-o", dstIface, "-m", "addrtype", "--src-type", "LOCAL",
+						"--dst-type", "UNICAST", "-j", "MASQUERADE"},
+				},
+				// Enable the actual forward.
+				{
+					table:    n.names.tables.NAT,
+					chain:    n.names.chains.Nomad.Output,
+					teardown: true,
+					spec: []string{"-s", reservedPort.HostIP, "-o", iface, "-p", "tcp", "-m", "tcp",
+						"--dport", strconv.Itoa(reservedPort.Value), "-j", "DNAT", "--to-destination",
+						fmt.Sprintf("%s:%v", ip, reservedPort.To)},
+				},
+			})
 		} else {
-			// Add the prerouting rule.
-			req.rules.Insert(&rule{table: n.names.tables.NAT, chain: n.names.chains.Nomad.Prerouting, teardown: true,
-				spec: []string{"-d", reservedPort.HostIP, "-i", iface, "-p", "tcp", "-m", "tcp", "--dport", strconv.Itoa(reservedPort.Value),
-					"-j", "DNAT", "--to-destination", fmt.Sprintf("%s:%v", ip, reservedPort.To)}})
-
-			// Add the filtering rule.
-			req.rules.Insert(&rule{table: n.names.tables.Filter, chain: n.names.chains.Nomad.Forward, teardown: true,
-				spec: []string{"-d", ip, "-p", "tcp", "-m", "state", "--state", "NEW", "-m", "tcp",
-					"--dport", strconv.Itoa(reservedPort.To), "-j", "ACCEPT"}})
+			// Add prerouting and filtering rule to enable the forward.
+			req.rules.InsertSlice([]*rule{
+				{
+					table:    n.names.tables.NAT,
+					chain:    n.names.chains.Nomad.Prerouting,
+					teardown: true,
+					spec: []string{"-d", reservedPort.HostIP, "-i", iface, "-p", "tcp", "-m", "tcp",
+						"--dport", strconv.Itoa(reservedPort.Value), "-j", "DNAT", "--to-destination",
+						fmt.Sprintf("%s:%v", ip, reservedPort.To)},
+				},
+				{
+					table:    n.names.tables.Filter,
+					chain:    n.names.chains.Nomad.Forward,
+					teardown: true,
+					spec: []string{"-d", ip, "-p", "tcp", "-m", "state", "--state", "NEW", "-m", "tcp",
+						"--dport", strconv.Itoa(reservedPort.To), "-j", "ACCEPT"},
+				},
+			})
 		}
 	}
 
-	if err := n.apply(req); err != nil {
+	if err := n.add(req); err != nil {
 		return nil, err
 	}
 
 	return req.teardown(), nil
 }
 
-// Teardown removes rules from iptables. Any errors encountered while removing
-// rules will be collected and returned at the end.
-func (n *nomadTables) Teardown(rules Rules) error {
-	n.m.Lock()
-	defer n.m.Unlock()
+// Teardown removes rules from iptables.
+func (n *virtTables) Teardown(rules Rules) error {
+	req := newRequest()
+	req.addRules(rules.rules().Slice())
 
-	var mErr *multierror.Error
-
-	for _, r := range rules.rules().Slice() {
-		if err := n.ipt.DeleteIfExists(r.table, r.chain, r.spec...); err != nil {
-			mErr = multierror.Append(mErr,
-				fmt.Errorf("failed to delete %q entry in %q chain: %w", r.table, r.chain, err))
-		}
-	}
-
-	return mErr.ErrorOrNil()
+	return n.remove(req)
 }
 
 // setup is responsible for ensuring the local host machine iptables
@@ -160,52 +191,48 @@ func (n *nomadTables) Teardown(rules Rules) error {
 // On a new machine, this function creates the "NOMAD_VT_PRT" and "NOMAD_VT_FW"
 // chains. The "NOMAD_VT_PRT" chain then has a jump rule added to the "nat"
 // table; the "NOMAD_VT_FW" chain has a jump rule added to the "filter" table.
-func (n *nomadTables) setup() error {
+func (n *virtTables) setup() error {
 	req := newRequest()
 
-	// Add the NAT and filter forward chains and rules if needed.
-	req.chains.Insert(&chain{table: n.names.tables.NAT, chain: n.names.chains.Nomad.Prerouting})
-	req.chains.Insert(&chain{table: n.names.tables.Filter, chain: n.names.chains.Nomad.Forward})
-	req.rules.Insert(&rule{table: n.names.tables.NAT, chain: n.names.chains.Prerouting,
-		position: 1, spec: []string{"-j", n.names.chains.Nomad.Prerouting}})
-	req.rules.Insert(&rule{table: n.names.tables.Filter, chain: n.names.chains.Forward,
-		position: 1, spec: []string{"-j", n.names.chains.Nomad.Forward}})
+	// Add the custom NAT and filter chains.
+	req.addChains([]*chain{
+		{
+			table: n.names.tables.NAT,
+			chain: n.names.chains.Nomad.Prerouting,
+		},
+		{
+			table: n.names.tables.Filter,
+			chain: n.names.chains.Nomad.Forward,
+		},
+	})
+	// Add the jump rules to the custom chains.
+	req.addRules([]*rule{
+		{
+			table:    n.names.tables.NAT,
+			chain:    n.names.chains.Prerouting,
+			position: 1,
+			spec:     []string{"-j", n.names.chains.Nomad.Prerouting},
+		},
+		{
+			table:    n.names.tables.Filter,
+			chain:    n.names.chains.Forward,
+			position: 1,
+			spec:     []string{"-j", n.names.chains.Nomad.Forward},
+		},
+	})
 
 	// Apply any updates that are required.
-	if err := n.apply(req); err != nil {
+	if err := n.add(req); err != nil {
 		return fmt.Errorf("setup failure: %w", err)
 	}
 
 	return nil
 }
 
-// buildLists gathers lists of existing chains on tables and existing rules on chains that
-// are relevant to the request.
-func (n *nomadTables) buildLists(req *request) (chainLists map[string][]string, ruleLists map[string][]string, err error) {
-	chainLists = make(map[string][]string)
-	for _, table := range req.chainTables().Slice() {
-		list, err := n.ipt.ListChains(table)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list chains in table %q: %w", table, err)
-		}
-		chainLists[table] = list
-	}
-
-	ruleLists = make(map[string][]string)
-	for _, c := range req.ruleChains().Slice() {
-		list, err := n.ipt.List(c.table, c.chain)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list rules in chain %q on table %q: %w", c.table, c.chain, err)
-		}
-		ruleLists[c.Hash()] = list
-	}
-
-	return chainLists, ruleLists, nil
-}
-
-// apply inspects the request and removes any chain or rule entries from the request
-// that already exist and then creates the remaining chains and rules.
-func (n *nomadTables) apply(req *request) error {
+// add adds chains and rules to iptables. The request will be inspected
+// and compared to existing chains and rules defined in iptables and only
+// add what does not already exist.
+func (n *virtTables) add(req *request) error {
 	n.m.Lock()
 	defer n.m.Unlock()
 
@@ -218,30 +245,24 @@ func (n *nomadTables) apply(req *request) error {
 
 	// Prune any chains that already exist.
 	req.chains.RemoveFunc(func(c *chain) bool {
-		return slices.Contains(chainLists[c.table], c.chain)
+		return chainLists.Contains(c)
 	})
 
-	// Now create the chains.
-	for _, c := range req.chains.Slice() {
+	// Prune any rules that already exist.
+	req.rules.RemoveFunc(func(r *rule) bool {
+		return ruleLists.Contains(r)
+	})
+
+	// Start with creating any needed chains.
+	for _, c := range req.sortedChains() {
 		if err := n.ipt.NewChain(c.table, c.chain); err != nil {
 			return fmt.Errorf("failed to create new chain: %w", err)
 		}
 	}
 
-	// Prune any rules that already exist.
-	// TODO: This needs to be better than big loop like this.
-	req.rules.RemoveFunc(func(r *rule) bool {
-		for _, existing := range ruleLists[r.Hash()] {
-			if strings.HasPrefix(existing, strings.Join(r.spec, " ")) {
-				return true
-			}
-		}
-		return false
-	})
-
 	// Now add any rules that remain. If a position is defined, then the rule
 	// is inserted, otherwise it is appended.
-	for _, r := range req.rules.Slice() {
+	for _, r := range req.sortedRules() {
 		var err error
 		if r.position > 0 {
 			err = n.ipt.Insert(r.table, r.chain, r.position, r.spec...)
@@ -257,9 +278,100 @@ func (n *nomadTables) apply(req *request) error {
 	return nil
 }
 
+// remove removes chains and rules from iptables. The request will be
+// inspected and compared to existing chains and rules defined in iptables
+// and only remove what does not already exist.
+// NOTE: Removal errors are _not_ immediately fatal allowing as much to
+// be removed as possible. The errors will be collected and returned as
+// a multierror.
+func (n *virtTables) remove(req *request) error {
+	n.m.Lock()
+	defer n.m.Unlock()
+
+	chainLists, ruleLists, err := n.buildLists(req)
+	if err != nil {
+		return err
+	}
+
+	// Prune any chains that do not exist.
+	req.chains.RemoveFunc(func(c *chain) bool {
+		return !chainLists.Contains(c)
+	})
+
+	// Prune any rules that do not exist.
+	req.rules.RemoveFunc(func(r *rule) bool {
+		return !ruleLists.Contains(r)
+	})
+
+	var mErr *multierror.Error
+
+	// Start with removing rules.
+	for _, r := range req.sortedRules() {
+		if err := n.ipt.Delete(r.table, r.chain, r.spec...); err != nil {
+			mErr = multierror.Append(mErr, err)
+		}
+	}
+
+	// Now remove any chains.
+	for _, c := range req.sortedChains() {
+		// First clear the chain.
+		if err := n.ipt.ClearChain(c.table, c.chain); err != nil {
+			mErr = multierror.Append(mErr, err)
+			continue
+		}
+
+		// Now delete the chain.
+		if err := n.ipt.DeleteChain(c.table, c.chain); err != nil {
+			mErr = multierror.Append(mErr, err)
+		}
+	}
+
+	return mErr.ErrorOrNil()
+}
+
+// buildLists gathers lists of existing chains on tables and existing rules on chains that
+// are relevant to the request.
+func (n *virtTables) buildLists(req *request) (chainLists set.Collection[*chain], ruleLists set.Collection[*rule], err error) {
+	chainLists = set.NewHashSet[*chain](0)
+	for _, table := range req.tableList() {
+		list, err := n.ipt.ListChains(table)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to list chains in table %q: %w", table, err)
+		}
+		for _, item := range list {
+			chainLists.Insert(&chain{table: table, chain: item})
+		}
+	}
+
+	ruleLists = set.NewHashSet[*rule](0)
+	for _, c := range req.ruleChains() {
+		// If the chain doesn't exist, don't attempt to list
+		// it as it will just generate an error.
+		if !chainLists.Contains(c) {
+			continue
+		}
+
+		list, err := n.ipt.List(c.table, c.chain)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to list rules in chain %q on table %q: %w", c.table, c.chain, err)
+		}
+		for _, item := range list {
+			parts := strings.Split(item, " ")
+			r := &rule{
+				table: c.table,
+				chain: c.chain,
+				spec:  parts[slices.Index(parts, c.chain)+1:],
+			}
+			ruleLists.Insert(r)
+		}
+	}
+
+	return chainLists, ruleLists, nil
+}
+
 // loopbackPortForwardsSupported returns if the host has been configured for routing localnet packets.
 // NOTE: The global configuration overrides device specific configuration.
-func (n *nomadTables) loopbackPortForwardsSupported(device string) bool {
+func (n *virtTables) loopbackPortForwardsSupported(device string) bool {
 	for _, configName := range []string{routeLocalnetGlobalName, device} {
 		tmpl := n.routeLocalnetPathTemplate
 		if tmpl == "" {

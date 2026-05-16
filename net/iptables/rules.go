@@ -41,6 +41,12 @@ func (r Rules) rules() set.Collection[*rule] {
 type chain struct {
 	table string // table name
 	chain string // chain name
+	stamp uint   // sorting value for collections
+}
+
+// setStamp sets the stamp value on the chain.
+func (c *chain) setStamp(stamp uint) {
+	c.stamp = stamp
 }
 
 // Equal returns if the chains are equal.
@@ -68,6 +74,12 @@ type rule struct {
 	position int      // position of the rule if it should be inserted
 	spec     []string // rule specification
 	teardown bool     // rule should be included in teardown list
+	stamp    uint     // sorting value for collections
+}
+
+// setStamp sets the stamp value on the rule.
+func (r *rule) setStamp(stamp uint) {
+	r.stamp = stamp
 }
 
 // Equal returns if the rules are equal.
@@ -87,17 +99,21 @@ func (r *rule) Equal(rhs *rule) bool {
 }
 
 // Hash returns a unique string for the rule.
-// NOTE: teardown value is not used.
 func (r *rule) Hash() string {
-	return fmt.Sprintf("%s%s%d%s", r.table, r.chain, r.position, strings.Join(r.spec, ""))
+	return fmt.Sprintf("%s%s%s", r.table, r.chain, strings.Join(r.spec, ""))
 }
 
 // String returns a string representation of the rule.
 func (r *rule) String() string {
-	return fmt.Sprintf("%s %s %d %s", r.table, r.chain, r.position, strings.Join(r.spec, " "))
+	return fmt.Sprintf("-A %s %s", r.chain, strings.Join(r.spec, " "))
 }
 
 // slice converts the rule into a string slice.
 func (r *rule) slice() []string {
 	return append([]string{r.table, r.chain}, r.spec...)
+}
+
+// mkchain builds a chain from the rule.
+func (r *rule) mkchain() *chain {
+	return &chain{table: r.table, chain: r.chain}
 }
