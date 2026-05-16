@@ -186,6 +186,12 @@ func (p *provider) parseConfiguration(config *vm.Config) (string, error) {
 			},
 			Serials: []libvirtxml.DomainSerial{
 				{
+					Source: &libvirtxml.DomainChardevSource{
+						UNIX: &libvirtxml.DomainChardevSourceUNIX{
+							Mode: "bind",
+							Path: config.SerialSocket,
+						},
+					},
 					Target: &libvirtxml.DomainSerialTarget{
 						Type: "isa-serial",
 						Port: &zero,
