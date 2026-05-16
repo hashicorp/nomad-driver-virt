@@ -118,6 +118,19 @@ func (p *provider) parseConfiguration(config *vm.Config) (string, error) {
 		CPUSet:    config.CPUset,
 	}
 
+	var consoleSocket *libvirtxml.DomainChardevSource
+	if config.SerialSocket != "" {
+		p.logger.Debug("using serial socket", "socket", config.SerialSocket)
+		consoleSocket = &libvirtxml.DomainChardevSource{
+			UNIX: &libvirtxml.DomainChardevSourceUNIX{
+				Mode: "bind",
+				Path: config.SerialSocket,
+			},
+		}
+	} else {
+		p.logger.Debug("no serial socket specified")
+	}
+
 	domcfg := &libvirtxml.Domain{
 		VCPU: vcpus,
 		MemoryTune: &libvirtxml.DomainMemoryTune{
@@ -186,12 +199,7 @@ func (p *provider) parseConfiguration(config *vm.Config) (string, error) {
 			},
 			Serials: []libvirtxml.DomainSerial{
 				{
-					Source: &libvirtxml.DomainChardevSource{
-						UNIX: &libvirtxml.DomainChardevSourceUNIX{
-							Mode: "bind",
-							Path: config.SerialSocket,
-						},
-					},
+					Source: consoleSocket,
 					Target: &libvirtxml.DomainSerialTarget{
 						Type: "isa-serial",
 						Port: &zero,
