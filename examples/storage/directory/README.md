@@ -106,7 +106,7 @@ This job defines a disk that references an image to use and sets the `chained` a
 
 ``` hcl
 disk {
-  chain = true
+  chained = true
   source {
     image = "local/focal-server-cloudimg-amd64.img"
   }
@@ -177,10 +177,10 @@ of both primary volumes shows they are chained to the same parent volume:
 
 ``` shellsession
 $ virsh vol-dumpxml --pool local virt-alt-task-f665808b_vda.img --xpath '/volume/backingStore/path'
-<path>/var/nomad-virt/nmdsrc-qcow2-18f2977d77dfea1b74aee14533bd21c34f789139e949c57023b7364894b7e5e9.img</path>
+<path>/opt/nomad/virt/storage/nmdsrc-qcow2-18f2977d77dfea1b74aee14533bd21c34f789139e949c57023b7364894b7e5e9.img</path>
 
 $ virsh vol-dumpxml --pool local virt-task-a6dc4253_vda.img --xpath '/volume/backingStore/path'
-<path>/var/nomad-virt/nmdsrc-qcow2-18f2977d77dfea1b74aee14533bd21c34f789139e949c57023b7364894b7e5e9.img</path>
+<path>/opt/nomad/virt/storage/nmdsrc-qcow2-18f2977d77dfea1b74aee14533bd21c34f789139e949c57023b7364894b7e5e9.img</path>
 ```
 
 #### Volume Format

@@ -10,30 +10,30 @@ Perform setup described [here](../README.md).
 
 In one terminal, start Nomad:
 
-``` shell-session
+``` shellsession
 nomad agent -dev -config ./config.hcl
 ```
 
 In another terminal, run the python-server job:
 
-``` shell-session
+``` shellsession
 nomad run ./python-server.nomad.hcl
 ```
 
 After the service is healthy, fetch the dynamic port. First get the allocation ID for the python-server job:
 
-``` shell-session
+``` shellsession
 $ ALLOC_ID="$(nomad job allocs -json python-server | jq -r '.[].ID')"
 ```
 
 Next, get the dynamic port from the allocation using the allocation ID:
 
-``` shell-session
+``` shellsession
 $ PORT="$(nomad alloc status -json $ALLOC_ID | jq -r '.Resources.Networks[0].DynamicPorts[0].Value')"
 ```
 
 Finally, use the port to make a request to the service:
 
-``` shell-session
+``` shellsession
 $ curl 127.0.0.1:$PORT
 ```

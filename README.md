@@ -106,7 +106,7 @@ In order to build the plugin binary some development libraries are required:
 
 For Debian/Ubuntu based systems:
 
-``` shell-session
+``` shellsession
 apt install libvirt-dev librbd-dev
 ```
 
@@ -118,7 +118,7 @@ dnf install libvirt-devel librbd-devel
 
 To build the plugin:
 
-```shell-session
+```shellsession
 git clone git@github.com:hashicorp/nomad-driver-virt
 cd nomad-driver-virt
 make dev

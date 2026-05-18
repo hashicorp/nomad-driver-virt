@@ -32,7 +32,7 @@ $ ceph mon dump -f json 2>/dev/null | jq '[.mons.[].public_addrs.addrvec.[] | se
 ]
 ```
 
-To retreive the credentials for the `nomad` user, connect to the Ceph admin node and run:
+To retrieve the credentials for the `nomad` user, connect to the Ceph admin node and run:
 
 ``` shellsession
 $ ceph auth get client.nomad

@@ -12,7 +12,7 @@ Install the required packages.
 
 Ubuntu:
 
-``` shell-session
+``` shellsession
 apt-get install libvirt-daemon libvirt-clients libvirt-daemon-driver-storage-rbd virtiofsd jq curl
 ```
 
@@ -20,7 +20,7 @@ apt-get install libvirt-daemon libvirt-clients libvirt-daemon-driver-storage-rbd
 
 Adjust the libvirt qemu configuration to set the user and group to root:
 
-``` shell-session
+``` shellsession
 printf 'user = "root"\ngroup = "root"\n' >> /etc/libvirt/qemu.conf
 systemctl restart libvirtd
 ```
@@ -29,7 +29,7 @@ systemctl restart libvirtd
 
 Adjust the AppArmor configuration to allow access to the `/opt/nomad` paths used in the examples:
 
-``` shell-session
+``` shellsession
 printf "/opt/nomad rw,\n/opt/nomad/** rwk,\n" > /etc/apparmor.d/abstractions/libvirt-qemu.d/nomad
 systemctl restart apparmor
 ```
@@ -39,7 +39,7 @@ systemctl restart apparmor
 Port forwards in the example are to localhost. Enabling routing of localnet packets is
 required for this to be function. Enable the routing:
 
-``` shell-session
+``` shellsession
 sysctl -w net.ipv4.conf.all.route_localnet=1
 ```
 
@@ -47,7 +47,7 @@ sysctl -w net.ipv4.conf.all.route_localnet=1
 
 Build and install the nomad-driver-virt plugin. Run these commands from the root of the repository:
 
-``` shell-session
+``` shellsession
 make dev
 mkdir -p /opt/nomad/plugins
 cp ./build/nomad-driver-virt /opt/nomad/plugins/nomad-driver-virt

@@ -88,19 +88,19 @@ $ nomad run ./01-python-server.nomad.hcl
 
 After the service is healthy, fetch the dynamic port. First get the allocation ID for the python-server job:
 
-``` shell-session
+``` shellsession
 $ ALLOC_ID="$(nomad job allocs -json python-server | jq -r '.[].ID')"
 ```
 
 Next, get the dynamic port from the allocation using the allocation ID:
 
-``` shell-session
+``` shellsession
 $ PORT="$(nomad alloc status -json $ALLOC_ID | jq -r '.Resources.Networks[0].DynamicPorts[0].Value')"
 ```
 
 Use the port to make a request to the service:
 
-``` shell-session
+``` shellsession
 $ curl 127.0.0.1:$PORT
 <pre>
 Guest System
@@ -342,7 +342,7 @@ After the job is healthy, verify the allocation is using the volume:
 ``` shellsession
 $ nomad job allocs -json python-server | jq -r '.[].ID'
 f00a44ef-f0e0-8eed-f3d5-48dfc99668ad
-$nomad volume status -json virt-primary-volume | jq -r '.Allocations.[].ID'
+$ nomad volume status -json virt-primary-volume | jq -r '.Allocations.[].ID'
 f00a44ef-f0e0-8eed-f3d5-48dfc99668ad
 ```
 
