@@ -243,8 +243,8 @@ func (c *ceph) copyVol(name string, opts storage.Options) (*storage.Volume, erro
 	}
 
 	// Create the new cloned volume.
-	err = fn.(func(ctx context.Context, connInfo *CephConnect, pool, srcVol, dstVol string) error)(
-		c.pool.ctx, connOpts, info.Source.Name, opts.Source.Volume, name)
+	err = fn.(func(ctx context.Context, logger hclog.Logger, connInfo *CephConnect, pool, srcVol, dstVol string) error)(
+		c.pool.ctx, c.logger, connOpts, info.Source.Name, opts.Source.Volume, name)
 	if err != nil {
 		return nil, err
 	}
