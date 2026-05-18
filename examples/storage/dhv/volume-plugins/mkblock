@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# Copyright IBM Corp. 2024, 2025
+# SPDX-License-Identifier: MPL-2.0
+
+set -euo pipefail
+
+version='0.0.1'
+fingerprint() {
+  printf '{"version": "%s"}' "$version"
+}
+
+help() {
+  cat <<EOF
+Dynamic Host Volume plugin which creates a raw disk image of the
+the minimum requested size using \`fallocate\` and \`truncate\`
+of the maximum requested size.
+
+Usage:
+  $(basename "$0") [options] <create|delete|fingerprint> [path]
+
+Options:
+  -v|--verbose: Show shell commands (set -x)
+  -h|--help: Print this help text and exit
+
+Operations:
+  create: Creates the device at path (required)
+    required environment:
+      DHV_CAPACITY_MIN_BYTES
+    optional environment:
+      DHV_CAPACITY_MAX_BYTES
+  delete: Deletes the device at path (required)
+  version: Outputs this plugin's version: $version
+  fingerprint: Outputs plugin metadata: $(fingerprint)
+
+EOF
+}
+
+# parse args
+[ $# -eq 0 ] && { help; exit 1; }
+for arg in "$@"; do
+  case $arg in
+    -h|-help|--help) help; exit 0 ;;
+    fingerprint) fingerprint; exit 0 ;;
+    version) echo "$version"; exit 0 ;;
+    -v|--verbose) set -x; shift; ;;
+  esac
+done
+
+validate_path() {
+  local path="$1"
+  if [[ ! "$path" =~ [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} ]]; then
+    1>&2 echo "expected uuid-lookin ID in target host path; got: '$path'"
+    return 1
+  fi
+}
+
+_losetup() {
+  local path dev
+  path="$1"
+  dev="$(losetup --find --show "$path")"
+  ln -s "$dev" "$path.ln"
+}
+
+host_path="${2:-${DHV_VOLUMES_DIR}/${DHV_VOLUME_ID}}"
+case "$1" in
+  "create")
+    validate_path "$host_path"
+    [ -n "$DHV_VOLUMES_DIR" ] && mkdir -p "$DHV_VOLUMES_DIR"
+    # path should not already exist
+    if [ ! -f "$host_path" ]; then
+        # preallocate up to the min number of bytes
+        fallocate -l "$DHV_CAPACITY_MIN_BYTES" "$host_path"
+        if [ -n "$DHV_CAPACITY_MAX_BYTES" ]; then
+            # use truncate to modify to max size
+            truncate -s "$DHV_CAPACITY_MAX_BYTES" "$host_path"
+        fi
+    fi
+    # create loopback device if not exists
+    dev="$(losetup --find --nooverlap --show "$host_path")"
+    # output what Nomad expects
+    bytes="$(stat --format='%s' "$host_path")"
+    printf '{"path": "%s", "bytes": %s}' "$dev" "$bytes"
+    ;;
+  "delete")
+    validate_path "$host_path"
+    dev="$(losetup --associated "$host_path" | cut -d: -f1)"
+    losetup --detach "$dev"
+    rm -f "$host_path"
+    ;;
+  *)
+    echo "unknown operation: $1" 1>&2
+    exit 1 ;;
+esac
