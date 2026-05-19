@@ -1,4 +1,4 @@
-## UNRELEASED
+## 0.0.2-beta.1 (May 19, 2026)
 
 BUG FIXES:
 
@@ -16,6 +16,6 @@ IMPROVEMENTS:
 * net: Add support for macvtap interfaces [GH-203](https://github.com/hashicorp/nomad-driver-virt/pull/203)
 * storage: add storage package and disks [GH-158](https://github.com/hashicorp/nomad-driver-virt/pull/158)
 
-## 0.0.1-beta.1 (15 October, 2024)
+## 0.0.1-beta.1 (October 15, 2024)
 
 First beta release of initial v0.1.0 version.
