@@ -7,8 +7,6 @@ Nomad job spec.
 
 > **_IMPORTANT:_** This plugin is in tech preview, still under active development, there might be breaking changes in future releases
 
-**: This is an Alpha version still under development**
-
 ## Features
 
 * Use the job's `task.config` to define the virtual machine (VM).
