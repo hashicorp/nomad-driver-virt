@@ -9,14 +9,12 @@ import (
 	"net"
 	"net/netip"
 	"os"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-multierror"
-	"github.com/hashicorp/go-set/v3"
 	virtnet "github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
@@ -42,6 +40,11 @@ type virtTables struct {
 	// routingIngerfaceByIPGetter is the function that queries the host using
 	// the passed IP address and identifies the interface used to reach it.
 	routingInterfaceByIPGetter
+}
+
+// SetLogger sets the logger used.
+func (n *virtTables) SetLogger(logger hclog.Logger) {
+	n.logger = logger
 }
 
 // Configure configures iptables to enable port forwards based on the passed
@@ -72,12 +75,6 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 	// Create a new request to build up the desired changes.
 	req := newRequest()
 
-	// Parse the address to get the address with the mask included.
-	_, maskedTaskIP, err := parseAddr(ip)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse task IP address: %w", err)
-	}
-
 	// Iterate the ports configured within the network interface and pull these
 	// from the task allocated ports.
 	for _, port := range cfg.Ports {
@@ -101,7 +98,7 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 		}
 
 		// Parse the host IP so we can determine if it is a loopback address.
-		hostIP, maskedHostIP, err := parseAddr(reservedPort.HostIP)
+		hostIP, err := netip.ParseAddr(reservedPort.HostIP)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse host IP address: %w", err)
 		}
@@ -128,7 +125,7 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 			}
 
 			// Add chains required for loopback port forwarding.
-			req.addChains([]*chain{
+			req.addChain([]*chain{
 				{
 					table: n.names.tables.NAT,
 					chain: n.names.chains.Nomad.Output,
@@ -137,10 +134,10 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 					table: n.names.tables.NAT,
 					chain: n.names.chains.Nomad.Postrouting,
 				},
-			})
+			}...)
 
 			// Add the rules.
-			req.addRules([]*rule{
+			req.addRule([]*rule{
 				// Jump rules for the new chains.
 				{
 					table:    n.names.tables.NAT,
@@ -163,33 +160,33 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 				},
 				// Enable the actual forward.
 				{
-					table:    n.names.tables.NAT,
-					chain:    n.names.chains.Nomad.Output,
-					teardown: true,
-					spec: []string{"-s", maskedHostIP, "-o", iface, "-p", "tcp", "-m", "tcp",
+					table:     n.names.tables.NAT,
+					chain:     n.names.chains.Nomad.Output,
+					removable: true,
+					spec: []string{"-s", reservedPort.HostIP, "-o", iface, "-p", "tcp", "-m", "tcp",
 						"--dport", strconv.Itoa(reservedPort.Value), "-j", "DNAT", "--to-destination",
 						fmt.Sprintf("%s:%d", ip, reservedPort.To)},
 				},
-			})
+			}...)
 		} else {
 			// Add prerouting and filtering rule to enable the forward.
-			req.addRules([]*rule{
+			req.addRule([]*rule{
 				{
-					table:    n.names.tables.NAT,
-					chain:    n.names.chains.Nomad.Prerouting,
-					teardown: true,
-					spec: []string{"-d", maskedHostIP, "-i", iface, "-p", "tcp", "-m", "tcp",
+					table:     n.names.tables.NAT,
+					chain:     n.names.chains.Nomad.Prerouting,
+					removable: true,
+					spec: []string{"-d", reservedPort.HostIP, "-i", iface, "-p", "tcp", "-m", "tcp",
 						"--dport", strconv.Itoa(reservedPort.Value), "-j", "DNAT", "--to-destination",
 						fmt.Sprintf("%s:%d", ip, reservedPort.To)},
 				},
 				{
-					table:    n.names.tables.Filter,
-					chain:    n.names.chains.Nomad.Forward,
-					teardown: true,
-					spec: []string{"-d", maskedTaskIP, "-p", "tcp", "-m", "state", "--state", "NEW", "-m", "tcp",
+					table:     n.names.tables.Filter,
+					chain:     n.names.chains.Nomad.Forward,
+					removable: true,
+					spec: []string{"-d", ip, "-p", "tcp", "-m", "state", "--state", "NEW", "-m", "tcp",
 						"--dport", strconv.Itoa(reservedPort.To), "-j", "ACCEPT"},
 				},
-			})
+			}...)
 		}
 	}
 
@@ -199,7 +196,7 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 
 	return &virtnet.FilterRemoval{
 		Name: removalName,
-		Data: req.teardown(),
+		Data: req.removalInstructions(),
 	}, nil
 }
 
@@ -218,7 +215,7 @@ func (n *virtTables) Teardown(removal *virtnet.FilterRemoval) error {
 		return fmt.Errorf("invalid teardown data, cannot remove iptables rules")
 	}
 	req := newRequest()
-	req.addRules(rules.rules().Slice())
+	req.addRule(rules.rules().Slice()...)
 
 	return n.remove(req)
 }
@@ -233,7 +230,7 @@ func (n *virtTables) setup() error {
 	req := newRequest()
 
 	// Add the custom NAT and filter chains.
-	req.addChains([]*chain{
+	req.addChain([]*chain{
 		{
 			table: n.names.tables.NAT,
 			chain: n.names.chains.Nomad.Prerouting,
@@ -242,9 +239,9 @@ func (n *virtTables) setup() error {
 			table: n.names.tables.Filter,
 			chain: n.names.chains.Nomad.Forward,
 		},
-	})
+	}...)
 	// Add the jump rules to the custom chains.
-	req.addRules([]*rule{
+	req.addRule([]*rule{
 		{
 			table:    n.names.tables.NAT,
 			chain:    n.names.chains.Prerouting,
@@ -257,7 +254,7 @@ func (n *virtTables) setup() error {
 			position: 1,
 			spec:     []string{"-j", n.names.chains.Nomad.Forward},
 		},
-	})
+	}...)
 
 	// Apply any updates that are required.
 	if err := n.add(req); err != nil {
@@ -274,27 +271,17 @@ func (n *virtTables) add(req *request) error {
 	n.m.Lock()
 	defer n.m.Unlock()
 
-	// First collect the existing lists of chains and rules for
-	// the entries in the request.
-	chainLists, ruleLists, err := n.buildLists(req)
-	if err != nil {
-		return err
-	}
-
-	// Prune any chains that already exist.
-	req.chains.RemoveFunc(func(c *chain) bool {
-		return chainLists.Contains(c)
-	})
-
-	// Prune any rules that already exist.
-	req.rules.RemoveFunc(func(r *rule) bool {
-		return ruleLists.Contains(r)
-	})
-
 	// Start with creating any needed chains.
 	for _, c := range req.sortedChains() {
-		if err := n.ipt.NewChain(c.table, c.chain); err != nil {
-			return fmt.Errorf("failed to create new chain: %w", err)
+		exists, err := n.ipt.ChainExists(c.table, c.chain)
+		if err != nil {
+			return fmt.Errorf("failed to check chain existence: %w", err)
+		}
+
+		if !exists {
+			if err := n.ipt.NewChain(c.table, c.chain); err != nil {
+				return fmt.Errorf("failed to create new chain: %w", err)
+			}
 		}
 	}
 
@@ -303,9 +290,9 @@ func (n *virtTables) add(req *request) error {
 	for _, r := range req.sortedRules() {
 		var err error
 		if r.position > 0 {
-			err = n.ipt.Insert(r.table, r.chain, r.position, r.spec...)
+			err = n.ipt.InsertUnique(r.table, r.chain, r.position, r.spec...)
 		} else {
-			err = n.ipt.Append(r.table, r.chain, r.spec...)
+			err = n.ipt.AppendUnique(r.table, r.chain, r.spec...)
 		}
 
 		if err != nil {
@@ -326,85 +313,35 @@ func (n *virtTables) remove(req *request) error {
 	n.m.Lock()
 	defer n.m.Unlock()
 
-	chainLists, ruleLists, err := n.buildLists(req)
-	if err != nil {
-		return err
-	}
-
-	// Prune any chains that do not exist.
-	req.chains.RemoveFunc(func(c *chain) bool {
-		return !chainLists.Contains(c)
-	})
-
-	// Prune any rules that do not exist.
+	// Prune any rules that are on chains to be deleted since the
+	// rules will be cleared before the chain is deleted.
 	req.rules.RemoveFunc(func(r *rule) bool {
-		return !ruleLists.Contains(r)
+		return req.chains.Contains(r.mkchain())
 	})
 
 	var mErr *multierror.Error
 
-	// Start with removing rules.
+	// Remove rules in the request.
 	for _, r := range req.sortedRules() {
-		if err := n.ipt.Delete(r.table, r.chain, r.spec...); err != nil {
-			mErr = multierror.Append(mErr, err)
+		if err := n.ipt.DeleteIfExists(r.table, r.chain, r.spec...); err != nil {
+			// NOTE: attempting to delete jump rules that don't exist will
+			// cause a does not exist error. Check error and ignore.
+			if !isNotExistErr(err) {
+				mErr = multierror.Append(mErr, err)
+			}
 		}
 	}
 
-	// Now remove any chains.
+	// Remove chains in the request.
 	for _, c := range req.sortedChains() {
-		// First clear the chain.
-		if err := n.ipt.ClearChain(c.table, c.chain); err != nil {
-			mErr = multierror.Append(mErr, err)
-			continue
-		}
-
-		// Now delete the chain.
-		if err := n.ipt.DeleteChain(c.table, c.chain); err != nil {
+		// Clear and delete the chain. This function will check that
+		// the chain exists so we don't need to do that here.
+		if err := n.ipt.ClearAndDeleteChain(c.table, c.chain); err != nil {
 			mErr = multierror.Append(mErr, err)
 		}
 	}
 
 	return mErr.ErrorOrNil()
-}
-
-// buildLists gathers lists of existing chains on tables and existing rules on chains that
-// are relevant to the request.
-func (n *virtTables) buildLists(req *request) (chainLists set.Collection[*chain], ruleLists set.Collection[*rule], err error) {
-	chainLists = set.NewHashSet[*chain](0)
-	for _, table := range req.tableList() {
-		list, err := n.ipt.ListChains(table)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list chains in table %q: %w", table, err)
-		}
-		for _, item := range list {
-			chainLists.Insert(&chain{table: table, chain: item})
-		}
-	}
-
-	ruleLists = set.NewHashSet[*rule](0)
-	for _, c := range req.ruleChains() {
-		// If the chain doesn't exist, don't attempt to list
-		// it as it will just generate an error.
-		if !chainLists.Contains(c) {
-			continue
-		}
-
-		list, err := n.ipt.List(c.table, c.chain)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to list rules in chain %q on table %q: %w", c.table, c.chain, err)
-		}
-		for _, item := range list {
-			parts := strings.Split(item, " ")
-			r := &rule{
-				table: c.table,
-				chain: c.chain,
-				spec:  parts[slices.Index(parts, c.chain)+1:],
-			}
-			ruleLists.Insert(r)
-		}
-	}
-
-	return chainLists, ruleLists, nil
 }
 
 // loopbackPortForwardsSupported returns if the host has been configured for routing localnet packets.
@@ -442,6 +379,7 @@ func getInterfaceByIP(ip net.IP) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	for _, iface := range interfaces {
 		if addrs, err := iface.Addrs(); err == nil {
 			for _, addr := range addrs {
@@ -453,10 +391,9 @@ func getInterfaceByIP(ip net.IP) (string, error) {
 					continue
 				}
 			}
-		} else {
-			continue
 		}
 	}
+
 	return "", fmt.Errorf("failed to find interface for IP %q", ip.String())
 }
 
@@ -486,22 +423,4 @@ func getRoutingInterfaceByIP(ip string) (string, error) {
 	}
 
 	return "", fmt.Errorf("failed to find interface for IP %q", ip)
-}
-
-// parseAddr will parse the given IP address and return back result along
-// with a formatted string of the address that includes the subnet mask.
-func parseAddr(ip string) (addr netip.Addr, maskedIP string, err error) {
-	addr, err = netip.ParseAddr(ip)
-	if err != nil {
-		return
-	}
-
-	maskedIP = ip
-	if addr.Is4() {
-		maskedIP += "/32"
-	} else if addr.Is6() {
-		maskedIP += "/128"
-	}
-
-	return
 }

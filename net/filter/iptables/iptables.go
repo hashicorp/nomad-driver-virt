@@ -34,11 +34,15 @@ const (
 // implementations for testing.
 type IPTables interface {
 	Append(table, chain string, rulespec ...string) error
+	AppendUnique(table, chain string, rulespec ...string) error
+	ChainExists(table, chain string) (bool, error)
+	ClearAndDeleteChain(table, chain string) error
 	ClearChain(table, chain string) error
 	Delete(table, chain string, rulespec ...string) error
 	DeleteChain(table, chain string) error
 	DeleteIfExists(table, chain string, rulespec ...string) error
 	Insert(table, chain string, pos int, rulespec ...string) error
+	InsertUnique(table, chain string, pos int, rulespec ...string) error
 	ListChains(table string) ([]string, error)
 	List(table, chain string) ([]string, error)
 	NewChain(table, chain string) error
@@ -47,7 +51,7 @@ type IPTables interface {
 // New returns the filter.Filter interface instance. If the singleton instance does not yet
 // exist it will create the instance and run setup. Otherwise it will return the
 // existing instance.
-func New(logger hclog.Logger) (*virtTables, error) {
+func New() (*virtTables, error) {
 	loadLock.Lock()
 	defer loadLock.Unlock()
 
@@ -65,7 +69,7 @@ func New(logger hclog.Logger) (*virtTables, error) {
 		interfaceByIPGetter:        getInterfaceByIP,
 		names:                      NewNames(),
 		routingInterfaceByIPGetter: getRoutingInterfaceByIP,
-		logger:                     logger.Named("iptables"),
+		logger:                     hclog.Default().Named("iptables"),
 	}
 
 	if err := nt.setup(); err != nil {
@@ -74,4 +78,15 @@ func New(logger hclog.Logger) (*virtTables, error) {
 
 	singleton = nt
 	return singleton, nil
+}
+
+// isNotExistErr is a helper to check if the error was caused
+// by a rule or chain not existing.
+func isNotExistErr(err error) bool {
+	iptErr, ok := err.(*iptables.Error)
+	if !ok {
+		return false
+	}
+
+	return iptErr.IsNotExist()
 }

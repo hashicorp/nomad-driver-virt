@@ -34,24 +34,20 @@ func Test_virtTables_Configure(t *testing.T) {
 			n := TestNewNames()
 			hostIP := "192.168.44.22"
 			taskIP := "10.0.22.33"
-			maskedHostIP := "192.168.44.22/32"
-			maskedTaskIP := "10.0.22.33/32"
 			ifaceName := "test0"
 
 			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat"},
-				mock_iptables.ListChains{Table: "filter"},
-				mock_iptables.Append{Table: "nat", Chain: n.chains.Nomad.Prerouting, RuleSpec: []string{
-					"-d", maskedHostIP, "-i", ifaceName, "-p", "tcp", "-m", "tcp", "--dport", "22222",
+				mock_iptables.AppendUnique{Table: "nat", Chain: n.chains.Nomad.Prerouting, RuleSpec: []string{
+					"-d", hostIP, "-i", ifaceName, "-p", "tcp", "-m", "tcp", "--dport", "22222",
 					"-j", "DNAT", "--to-destination", taskIP + ":8000"}},
-				mock_iptables.Append{Table: "filter", Chain: n.chains.Nomad.Forward, RuleSpec: []string{
-					"-d", maskedTaskIP, "-p", "tcp", "-m", "state", "--state", "NEW", "-m", "tcp",
+				mock_iptables.AppendUnique{Table: "filter", Chain: n.chains.Nomad.Forward, RuleSpec: []string{
+					"-d", taskIP, "-p", "tcp", "-m", "state", "--state", "NEW", "-m", "tcp",
 					"--dport", "8000", "-j", "ACCEPT"}},
-				mock_iptables.Append{Table: "nat", Chain: n.chains.Nomad.Prerouting, RuleSpec: []string{
-					"-d", maskedHostIP, "-i", ifaceName, "-p", "tcp", "-m", "tcp", "--dport", "22223",
+				mock_iptables.AppendUnique{Table: "nat", Chain: n.chains.Nomad.Prerouting, RuleSpec: []string{
+					"-d", hostIP, "-i", ifaceName, "-p", "tcp", "-m", "tcp", "--dport", "22223",
 					"-j", "DNAT", "--to-destination", taskIP + ":2222"}},
-				mock_iptables.Append{Table: "filter", Chain: n.chains.Nomad.Forward, RuleSpec: []string{
-					"-d", maskedTaskIP, "-p", "tcp", "-m", "state", "--state", "NEW", "-m", "tcp",
+				mock_iptables.AppendUnique{Table: "filter", Chain: n.chains.Nomad.Forward, RuleSpec: []string{
+					"-d", taskIP, "-p", "tcp", "-m", "state", "--state", "NEW", "-m", "tcp",
 					"--dport", "2222", "-j", "ACCEPT"}},
 			)
 			defer ipt.AssertExpectations()
@@ -83,21 +79,21 @@ func Test_virtTables_Configure(t *testing.T) {
 
 			expected := [][]string{
 				{
-					"nat", n.chains.Nomad.Prerouting, "-d", maskedHostIP, "-i", ifaceName, "-p",
+					"nat", n.chains.Nomad.Prerouting, "-d", hostIP, "-i", ifaceName, "-p",
 					"tcp", "-m", "tcp", "--dport", "22222", "-j", "DNAT", "--to-destination",
 					taskIP + ":8000",
 				},
 				{
-					"filter", n.chains.Nomad.Forward, "-d", maskedTaskIP, "-p", "tcp", "-m",
+					"filter", n.chains.Nomad.Forward, "-d", taskIP, "-p", "tcp", "-m",
 					"state", "--state", "NEW", "-m", "tcp", "--dport", "8000", "-j", "ACCEPT",
 				},
 				{
-					"nat", n.chains.Nomad.Prerouting, "-d", maskedHostIP, "-i", ifaceName, "-p",
+					"nat", n.chains.Nomad.Prerouting, "-d", hostIP, "-i", ifaceName, "-p",
 					"tcp", "-m", "tcp", "--dport", "22223", "-j", "DNAT", "--to-destination",
 					taskIP + ":2222",
 				},
 				{
-					"filter", n.chains.Nomad.Forward, "-d", maskedTaskIP, "-p", "tcp", "-m",
+					"filter", n.chains.Nomad.Forward, "-d", taskIP, "-p", "tcp", "-m",
 					"state", "--state", "NEW", "-m", "tcp", "--dport", "2222", "-j", "ACCEPT",
 				},
 			}
@@ -111,21 +107,21 @@ func Test_virtTables_Configure(t *testing.T) {
 			n := TestNewNames()
 			hostIP := "127.0.0.1"
 			taskIP := "10.0.22.33"
-			maskedHostIP := "127.0.0.1/32"
 
 			ifaceName := "testlo0"
 			dstIfaceName := "testbr0"
 
 			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat"},
+				mock_iptables.ChainExists{Table: "nat", Chain: n.chains.Nomad.Output},
+				mock_iptables.ChainExists{Table: "nat", Chain: n.chains.Nomad.Postrouting},
 				mock_iptables.NewChain{Table: "nat", Chain: n.chains.Nomad.Output},
 				mock_iptables.NewChain{Table: "nat", Chain: n.chains.Nomad.Postrouting},
-				mock_iptables.Insert{Table: "nat", Chain: "OUTPUT", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Output}},
-				mock_iptables.Insert{Table: "nat", Chain: "POSTROUTING", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Postrouting}},
-				mock_iptables.Append{Table: "nat", Chain: n.chains.Nomad.Postrouting, RuleSpec: []string{
+				mock_iptables.InsertUnique{Table: "nat", Chain: "OUTPUT", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Output}},
+				mock_iptables.InsertUnique{Table: "nat", Chain: "POSTROUTING", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Postrouting}},
+				mock_iptables.AppendUnique{Table: "nat", Chain: n.chains.Nomad.Postrouting, RuleSpec: []string{
 					"-o", dstIfaceName, "-m", "addrtype", "--src-type", "LOCAL", "--dst-type", "UNICAST", "-j", "MASQUERADE"}},
-				mock_iptables.Append{Table: "nat", Chain: n.chains.Nomad.Output, RuleSpec: []string{
-					"-s", maskedHostIP, "-o", ifaceName, "-p", "tcp", "-m", "tcp", "--dport", "22222", "-j", "DNAT",
+				mock_iptables.AppendUnique{Table: "nat", Chain: n.chains.Nomad.Output, RuleSpec: []string{
+					"-s", hostIP, "-o", ifaceName, "-p", "tcp", "-m", "tcp", "--dport", "22222", "-j", "DNAT",
 					"--to-destination", taskIP + ":8000"}},
 			)
 			defer ipt.AssertExpectations()
@@ -153,7 +149,7 @@ func Test_virtTables_Configure(t *testing.T) {
 
 			expected := [][]string{
 				{
-					"nat", n.chains.Nomad.Output, "-s", maskedHostIP, "-o", ifaceName, "-p", "tcp", "-m", "tcp",
+					"nat", n.chains.Nomad.Output, "-s", hostIP, "-o", ifaceName, "-p", "tcp", "-m", "tcp",
 					"--dport", "22222", "-j", "DNAT", "--to-destination", taskIP + ":8000",
 				},
 			}
@@ -239,21 +235,21 @@ func Test_virtTables_Configure(t *testing.T) {
 
 			expected := [][]string{
 				{
-					"nat", n.chains.Nomad.Prerouting, "-d", maskedHostIP, "-i", ifaceName, "-p",
+					"nat", n.chains.Nomad.Prerouting, "-d", hostIP, "-i", ifaceName, "-p",
 					"tcp", "-m", "tcp", "--dport", "22222", "-j", "DNAT", "--to-destination",
 					taskIP + ":8000",
 				},
 				{
-					"filter", n.chains.Nomad.Forward, "-d", maskedTaskIP, "-p", "tcp", "-m",
+					"filter", n.chains.Nomad.Forward, "-d", taskIP, "-p", "tcp", "-m",
 					"state", "--state", "NEW", "-m", "tcp", "--dport", "8000", "-j", "ACCEPT",
 				},
 				{
-					"nat", n.chains.Nomad.Prerouting, "-d", maskedHostIP, "-i", ifaceName, "-p",
+					"nat", n.chains.Nomad.Prerouting, "-d", hostIP, "-i", ifaceName, "-p",
 					"tcp", "-m", "tcp", "--dport", "22223", "-j", "DNAT", "--to-destination",
 					taskIP + ":2222",
 				},
 				{
-					"filter", n.chains.Nomad.Forward, "-d", maskedTaskIP, "-p", "tcp", "-m",
+					"filter", n.chains.Nomad.Forward, "-d", taskIP, "-p", "tcp", "-m",
 					"state", "--state", "NEW", "-m", "tcp", "--dport", "2222", "-j", "ACCEPT",
 				},
 			}
@@ -278,8 +274,10 @@ func Test_virtTables_Configure(t *testing.T) {
 				fmt.Sprintf("-A %s -d %s -p tcp -m state --state NEW -m tcp --dport 2222 -j ACCEPT", n.chains.Nomad.Forward, maskedTaskIP),
 			}
 
-			must.SliceContainsSubset(t, natRules, expectedNats)
-			must.SliceContainsSubset(t, filterRules, expectedFilters)
+			must.SliceContainsSubset(t, natRules, expectedNats,
+				must.Sprintf("nat rules: %#v", natRules))
+			must.SliceContainsSubset(t, filterRules, expectedFilters,
+				must.Sprintf("filter rules: %#v", filterRules))
 		})
 
 		t.Run("loopback", func(t *testing.T) {
@@ -313,7 +311,7 @@ func Test_virtTables_Configure(t *testing.T) {
 
 			expected := [][]string{
 				{
-					"nat", n.chains.Nomad.Output, "-s", maskedHostIP, "-o", ifaceName, "-p", "tcp", "-m", "tcp",
+					"nat", n.chains.Nomad.Output, "-s", hostIP, "-o", ifaceName, "-p", "tcp", "-m", "tcp",
 					"--dport", "22222", "-j", "DNAT", "--to-destination", taskIP + ":8000",
 				},
 			}
@@ -336,9 +334,12 @@ func Test_virtTables_Configure(t *testing.T) {
 				fmt.Sprintf("-A %s -s %s -o %s -p tcp -m tcp --dport 22222 -j DNAT --to-destination %s:8000", n.chains.Nomad.Output, maskedHostIP, ifaceName, taskIP),
 			}
 
-			must.SliceContainsSubset(t, natChains, []string{n.chains.Postrouting, n.chains.Output})
-			must.SliceContainsSubset(t, postRules, expectedPostRules)
-			must.SliceContainsSubset(t, outRules, expectedOutRules)
+			must.SliceContainsSubset(t, natChains, []string{n.chains.Postrouting, n.chains.Output},
+				must.Sprintf("nat chains: %#v", natChains))
+			must.SliceContainsSubset(t, postRules, expectedPostRules,
+				must.Sprintf("POSTROUTING rules: %#v", postRules))
+			must.SliceContainsSubset(t, outRules, expectedOutRules,
+				must.Sprintf("OUTPUT rules: %#v", outRules))
 		})
 
 		t.Run("with teardown", func(t *testing.T) {
@@ -424,14 +425,12 @@ func Test_virtTables_setup(t *testing.T) {
 		t.Run("not setup", func(t *testing.T) {
 			n := TestNewNames()
 			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat", Result: []string{"PREROUTING"}},
-				mock_iptables.ListChains{Table: "filter", Result: []string{"FORWARD"}},
-				mock_iptables.List{Table: "nat", Chain: "PREROUTING"},
-				mock_iptables.List{Table: "filter", Chain: "FORWARD"},
+				mock_iptables.ChainExists{Table: "nat", Chain: n.chains.Nomad.Prerouting},
+				mock_iptables.ChainExists{Table: "filter", Chain: n.chains.Nomad.Forward},
 				mock_iptables.NewChain{Table: "nat", Chain: n.chains.Nomad.Prerouting},
 				mock_iptables.NewChain{Table: "filter", Chain: n.chains.Nomad.Forward},
-				mock_iptables.Insert{Table: "nat", Chain: "PREROUTING", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Prerouting}},
-				mock_iptables.Insert{Table: "filter", Chain: "FORWARD", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Forward}},
+				mock_iptables.InsertUnique{Table: "nat", Chain: "PREROUTING", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Prerouting}},
+				mock_iptables.InsertUnique{Table: "filter", Chain: "FORWARD", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Forward}},
 			)
 			defer ipt.AssertExpectations()
 
@@ -442,18 +441,16 @@ func Test_virtTables_setup(t *testing.T) {
 		t.Run("already setup", func(t *testing.T) {
 			n := TestNewNames()
 			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat", Result: []string{"PREROUTING"}},
-				mock_iptables.ListChains{Table: "filter", Result: []string{"FORWARD"}},
-				mock_iptables.List{Table: "nat", Chain: "PREROUTING"},
-				mock_iptables.List{Table: "filter", Chain: "FORWARD"},
+				mock_iptables.ChainExists{Table: "nat", Chain: n.chains.Nomad.Prerouting},
+				mock_iptables.ChainExists{Table: "filter", Chain: n.chains.Nomad.Forward},
 				mock_iptables.NewChain{Table: "nat", Chain: n.chains.Nomad.Prerouting},
 				mock_iptables.NewChain{Table: "filter", Chain: n.chains.Nomad.Forward},
-				mock_iptables.Insert{Table: "nat", Chain: "PREROUTING", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Prerouting}},
-				mock_iptables.Insert{Table: "filter", Chain: "FORWARD", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Forward}},
-				mock_iptables.ListChains{Table: "nat", Result: []string{"PREROUTING", n.chains.Nomad.Prerouting}},
-				mock_iptables.ListChains{Table: "filter", Result: []string{"FORWARD", n.chains.Nomad.Forward}},
-				mock_iptables.List{Table: "nat", Chain: "PREROUTING", Result: []string{"-A PREROUTING -j " + n.chains.Nomad.Prerouting}},
-				mock_iptables.List{Table: "filter", Chain: "FORWARD", Result: []string{"-A FORWARD -j " + n.chains.Nomad.Forward}},
+				mock_iptables.InsertUnique{Table: "nat", Chain: "PREROUTING", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Prerouting}},
+				mock_iptables.InsertUnique{Table: "filter", Chain: "FORWARD", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Forward}},
+				mock_iptables.ChainExists{Table: "nat", Chain: n.chains.Nomad.Prerouting, Result: true},
+				mock_iptables.ChainExists{Table: "filter", Chain: n.chains.Nomad.Forward, Result: true},
+				mock_iptables.InsertUnique{Table: "nat", Chain: "PREROUTING", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Prerouting}},
+				mock_iptables.InsertUnique{Table: "filter", Chain: "FORWARD", Pos: 1, RuleSpec: []string{"-j", n.chains.Nomad.Forward}},
 			)
 			defer ipt.AssertExpectations()
 			vt, _ := TestNew(t, WithNames(t, n), WithIPTables(ipt))
@@ -472,7 +469,6 @@ func Test_virtTables_setup(t *testing.T) {
 
 		t.Run("not setup", func(t *testing.T) {
 			vt, cleanup := TestNew(t)
-			// Perform an initial cleanup to provide a clean start.
 			t.Cleanup(cleanup)
 
 			// Run the setup.
@@ -533,16 +529,17 @@ func Test_virtTables_add(t *testing.T) {
 			nomadTest2 := genChainName()
 
 			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat"},
+				mock_iptables.ChainExists{Table: "nat", Chain: nomadTest1},
+				mock_iptables.ChainExists{Table: "nat", Chain: nomadTest2},
 				mock_iptables.NewChain{Table: "nat", Chain: nomadTest1},
 				mock_iptables.NewChain{Table: "nat", Chain: nomadTest2},
-				mock_iptables.Append{Table: "nat", Chain: nomadTest1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
+				mock_iptables.AppendUnique{Table: "nat", Chain: nomadTest1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
 			)
 			defer ipt.AssertExpectations()
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChains([]*chain{
+			req.addChain([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -551,7 +548,7 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			})
+			}...)
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -566,17 +563,18 @@ func Test_virtTables_add(t *testing.T) {
 			nomadTest2 := genChainName()
 
 			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat"},
+				mock_iptables.ChainExists{Table: "nat", Chain: nomadTest1},
+				mock_iptables.ChainExists{Table: "nat", Chain: nomadTest2},
 				mock_iptables.NewChain{Table: "nat", Chain: nomadTest1},
 				mock_iptables.NewChain{Table: "nat", Chain: nomadTest2},
-				mock_iptables.Append{Table: "nat", Chain: nomadTest1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
-				mock_iptables.Insert{Table: "nat", Chain: nomadTest2, Pos: 1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
+				mock_iptables.AppendUnique{Table: "nat", Chain: nomadTest1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
+				mock_iptables.InsertUnique{Table: "nat", Chain: nomadTest2, Pos: 1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
 			)
 			defer ipt.AssertExpectations()
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChains([]*chain{
+			req.addChain([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -585,8 +583,8 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			})
-			req.addRules([]*rule{
+			}...)
+			req.addRule([]*rule{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -598,7 +596,7 @@ func Test_virtTables_add(t *testing.T) {
 					position: 1,
 					spec:     []string{"-p", "tcp", "-j", "ACCEPT"},
 				},
-			})
+			}...)
 
 			must.NoError(t, vt.add(req))
 		})
@@ -608,15 +606,16 @@ func Test_virtTables_add(t *testing.T) {
 			nomadTest2 := genChainName()
 
 			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat", Result: []string{nomadTest2}},
+				mock_iptables.ChainExists{Table: "nat", Chain: nomadTest1},
+				mock_iptables.ChainExists{Table: "nat", Chain: nomadTest2, Result: true},
 				mock_iptables.NewChain{Table: "nat", Chain: nomadTest1},
-				mock_iptables.Append{Table: "nat", Chain: nomadTest1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
+				mock_iptables.AppendUnique{Table: "nat", Chain: nomadTest1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
 			)
 			defer ipt.AssertExpectations()
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChains([]*chain{
+			req.addChain([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -625,7 +624,7 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			})
+			}...)
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -640,14 +639,15 @@ func Test_virtTables_add(t *testing.T) {
 			nomadTest2 := genChainName()
 
 			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat", Result: []string{nomadTest1, nomadTest2}},
-				mock_iptables.List{Table: "nat", Chain: nomadTest1, Result: []string{"-A " + nomadTest1 + " -p tcp -j ACCEPT"}},
+				mock_iptables.ChainExists{Table: "nat", Chain: nomadTest1, Result: true},
+				mock_iptables.ChainExists{Table: "nat", Chain: nomadTest2, Result: true},
+				mock_iptables.AppendUnique{Table: "nat", Chain: nomadTest1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
 			)
 			defer ipt.AssertExpectations()
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChains([]*chain{
+			req.addChain([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -656,7 +656,7 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			})
+			}...)
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -676,7 +676,7 @@ func Test_virtTables_add(t *testing.T) {
 			t.Cleanup(chainRemover(t, vt.ipt, nomadTest1, nomadTest2))
 
 			req := newRequest()
-			req.addChains([]*chain{
+			req.addChain([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -685,7 +685,7 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			})
+			}...)
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -703,7 +703,7 @@ func Test_virtTables_add(t *testing.T) {
 			t.Cleanup(chainRemover(t, vt.ipt, nomadTest1, nomadTest2))
 
 			req := newRequest()
-			req.addChains([]*chain{
+			req.addChain([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -712,8 +712,8 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			})
-			req.addRules([]*rule{
+			}...)
+			req.addRule([]*rule{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -725,7 +725,7 @@ func Test_virtTables_add(t *testing.T) {
 					position: 1,
 					spec:     []string{"-p", "tcp", "-j", "ACCEPT"},
 				},
-			})
+			}...)
 
 			must.NoError(t, vt.add(req))
 
@@ -753,7 +753,7 @@ func Test_virtTables_add(t *testing.T) {
 			must.NoError(t, vt.ipt.NewChain("nat", nomadTest2))
 
 			req := newRequest()
-			req.addChains([]*chain{
+			req.addChain([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -762,7 +762,7 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			})
+			}...)
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -793,7 +793,7 @@ func Test_virtTables_add(t *testing.T) {
 			must.NoError(t, vt.ipt.Append("nat", nomadTest1, "-p", "tcp", "-j", "ACCEPT"))
 
 			req := newRequest()
-			req.addChains([]*chain{
+			req.addChain([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -802,7 +802,7 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			})
+			}...)
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -830,51 +830,14 @@ func Test_virtTables_remove(t *testing.T) {
 			nomadTest2 := genChainName()
 
 			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat", Result: []string{nomadTest1, nomadTest2}},
-				mock_iptables.List{Table: "nat", Chain: nomadTest1, Result: []string{"-A " + nomadTest1 + " -p tcp -j ACCEPT"}},
-				mock_iptables.Delete{Table: "nat", Chain: nomadTest1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
-				mock_iptables.ClearChain{Table: "nat", Chain: nomadTest2},
-				mock_iptables.DeleteChain{Table: "nat", Chain: nomadTest2},
+				mock_iptables.DeleteIfExists{Table: "nat", Chain: nomadTest1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
+				mock_iptables.ClearAndDeleteChain{Table: "nat", Chain: nomadTest2},
 			)
 			defer ipt.AssertExpectations()
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
-			req.addRule(&rule{
-				table: "nat",
-				chain: nomadTest1,
-				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
-			})
-
-			must.NoError(t, vt.remove(req))
-		})
-
-		t.Run("no rules", func(t *testing.T) {
-			nomadTest1 := genChainName()
-			nomadTest2 := genChainName()
-
-			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat", Result: []string{nomadTest1, nomadTest2}},
-				mock_iptables.List{Table: "nat", Chain: nomadTest1},
-				mock_iptables.ClearChain{Table: "nat", Chain: nomadTest2},
-				mock_iptables.DeleteChain{Table: "nat", Chain: nomadTest2},
-			)
-			defer ipt.AssertExpectations()
-
-			vt, _ := TestNew(t, WithIPTables(ipt))
-			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
+			req.addChain(&chain{table: "nat", chain: nomadTest2})
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -886,21 +849,59 @@ func Test_virtTables_remove(t *testing.T) {
 
 		t.Run("no chains", func(t *testing.T) {
 			nomadTest1 := genChainName()
-			nomadTest2 := genChainName()
 
 			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat"},
+				mock_iptables.DeleteIfExists{Table: "nat", Chain: nomadTest1, RuleSpec: []string{"-p", "tcp", "-j", "ACCEPT"}},
 			)
 			defer ipt.AssertExpectations()
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
+			req.addRule(&rule{
+				table: "nat",
+				chain: nomadTest1,
+				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
 			})
+
+			must.NoError(t, vt.remove(req))
+		})
+
+		t.Run("no rules", func(t *testing.T) {
+			nomadTest1 := genChainName()
+
+			ipt := mock_iptables.New(t).Expect(
+				mock_iptables.ClearAndDeleteChain{Table: "nat", Chain: nomadTest1},
+			)
+			defer ipt.AssertExpectations()
+
+			vt, _ := TestNew(t, WithIPTables(ipt))
+			req := newRequest()
+			req.addChain(&chain{table: "nat", chain: nomadTest1})
+
+			must.NoError(t, vt.remove(req))
+		})
+
+		t.Run("empty request", func(t *testing.T) {
+			ipt := mock_iptables.New(t)
+			defer ipt.AssertExpectations()
+
+			vt, _ := TestNew(t, WithIPTables(ipt))
+			req := newRequest()
+
+			must.NoError(t, vt.remove(req))
+		})
+
+		t.Run("rule on deleted chain", func(t *testing.T) {
+			nomadTest1 := genChainName()
+
+			ipt := mock_iptables.New(t).Expect(
+				mock_iptables.ClearAndDeleteChain{Table: "nat", Chain: nomadTest1},
+			)
+			defer ipt.AssertExpectations()
+
+			vt, _ := TestNew(t, WithIPTables(ipt))
+			req := newRequest()
+			req.addChain(&chain{table: "nat", chain: nomadTest1})
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -922,18 +923,9 @@ func Test_virtTables_remove(t *testing.T) {
 			must.NoError(t, vt.ipt.NewChain("nat", nomadTest1))
 			must.NoError(t, vt.ipt.NewChain("nat", nomadTest2))
 			must.NoError(t, vt.ipt.Append("nat", nomadTest1, "-p", "tcp", "-j", "ACCEPT"))
-			t.Cleanup(func() {
-				vt.ipt.ClearChain("nat", nomadTest1)
-				vt.ipt.DeleteChain("nat", nomadTest2)
-				vt.ipt.DeleteChain("nat", nomadTest1)
-			})
+
 			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
+			req.addChain(&chain{table: "nat", chain: nomadTest2})
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -951,7 +943,7 @@ func Test_virtTables_remove(t *testing.T) {
 			must.Eq(t, rules, []string{"-N " + nomadTest1})
 		})
 
-		t.Run("no rules", func(t *testing.T) {
+		t.Run("no existing rules", func(t *testing.T) {
 			nomadTest1 := genChainName()
 			nomadTest2 := genChainName()
 
@@ -962,12 +954,7 @@ func Test_virtTables_remove(t *testing.T) {
 			must.NoError(t, vt.ipt.NewChain("nat", nomadTest2))
 
 			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
+			req.addChain(&chain{table: "nat", chain: nomadTest2})
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -985,20 +972,14 @@ func Test_virtTables_remove(t *testing.T) {
 			must.Eq(t, rules, []string{"-N " + nomadTest1})
 		})
 
-		t.Run("no chains", func(t *testing.T) {
+		t.Run("no existing chains", func(t *testing.T) {
 			nomadTest1 := genChainName()
 			nomadTest2 := genChainName()
 
 			vt, _ := TestNew(t)
-			t.Cleanup(chainRemover(t, vt.ipt, nomadTest1, nomadTest2))
 
 			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
+			req.addChain(&chain{table: "nat", chain: nomadTest2})
 			req.addRule(&rule{
 				table: "nat",
 				chain: nomadTest1,
@@ -1011,230 +992,6 @@ func Test_virtTables_remove(t *testing.T) {
 			must.NoError(t, err)
 			must.SliceNotContains(t, chains, nomadTest1)
 			must.SliceNotContains(t, chains, nomadTest2)
-		})
-	})
-}
-
-func Test_virtTables_buildLists(t *testing.T) {
-	t.Run("mock", func(t *testing.T) {
-		t.Run("empty sets", func(t *testing.T) {
-			nomadTest1 := genChainName()
-			nomadTest2 := genChainName()
-
-			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat"},
-			)
-			defer ipt.AssertExpectations()
-
-			vt, _ := TestNew(t, WithIPTables(ipt))
-			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest1,
-				},
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
-			req.addRule(&rule{
-				table: "nat",
-				chain: nomadTest2,
-			})
-
-			chains, rules, err := vt.buildLists(req)
-			must.NoError(t, err)
-			must.Empty(t, chains)
-			must.Empty(t, rules)
-		})
-
-		t.Run("chain exists", func(t *testing.T) {
-			nomadTest1 := genChainName()
-			nomadTest2 := genChainName()
-
-			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat", Result: []string{nomadTest2}},
-				// NOTE: empty chain will contain an empty rule
-				mock_iptables.List{Table: "nat", Chain: nomadTest2, Result: []string{"-N " + nomadTest2}},
-			)
-			defer ipt.AssertExpectations()
-
-			vt, _ := TestNew(t, WithIPTables(ipt))
-			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest1,
-				},
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
-			req.addRule(&rule{
-				table: "nat",
-				chain: nomadTest2,
-			})
-
-			chains, rules, err := vt.buildLists(req)
-			must.NoError(t, err)
-
-			must.SliceEqual(t, chains.Slice(), []*chain{{table: "nat", chain: nomadTest2}})
-			must.SliceEqual(t, rules.Slice(), []*rule{{table: "nat", chain: nomadTest2}})
-		})
-
-		t.Run("rules exists", func(t *testing.T) {
-			nomadTest1 := genChainName()
-			nomadTest2 := genChainName()
-
-			ipt := mock_iptables.New(t).Expect(
-				mock_iptables.ListChains{Table: "nat", Result: []string{nomadTest2}},
-				mock_iptables.List{Table: "nat", Chain: nomadTest2, Result: []string{"-A " + nomadTest2 + " -p tcp -j ACCEPT"}},
-			)
-			defer ipt.AssertExpectations()
-
-			vt, _ := TestNew(t, WithIPTables(ipt))
-			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest1,
-				},
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
-			req.addRules([]*rule{
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-				{
-					table: "nat",
-					chain: nomadTest1,
-				},
-			})
-
-			chains, rules, err := vt.buildLists(req)
-			must.NoError(t, err)
-
-			must.SliceEqual(t, chains.Slice(), []*chain{{table: "nat", chain: nomadTest2}})
-			expectedRule := &rule{table: "nat", chain: nomadTest2, spec: []string{"-p", "tcp", "-j", "ACCEPT"}}
-			must.True(t, rules.Contains(expectedRule),
-				must.Sprintf("missing expected rule: %s", expectedRule))
-		})
-	})
-
-	t.Run("direct", func(t *testing.T) {
-		t.Run("empty sets", func(t *testing.T) {
-			nomadTest1 := genChainName()
-			nomadTest2 := genChainName()
-
-			vt, _ := TestNew(t)
-			t.Cleanup(chainRemover(t, vt.ipt, nomadTest1, nomadTest2))
-
-			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest1,
-				},
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
-			req.addRule(&rule{
-				table: "nat",
-				chain: nomadTest2,
-			})
-
-			chains, rules, err := vt.buildLists(req)
-			must.NoError(t, err)
-			// NOTE: There's probably other chains, so just confirm that
-			// the test chains aren't included.
-			must.SliceNotContains(t, chains.Slice(), &chain{table: "nat", chain: nomadTest1})
-			must.SliceNotContains(t, chains.Slice(), &chain{table: "nat", chain: nomadTest2})
-			must.Empty(t, rules)
-		})
-
-		t.Run("chain exists", func(t *testing.T) {
-			nomadTest1 := genChainName()
-			nomadTest2 := genChainName()
-
-			vt, _ := TestNew(t)
-			t.Cleanup(chainRemover(t, vt.ipt, nomadTest1, nomadTest2))
-
-			must.NoError(t, vt.ipt.NewChain("nat", nomadTest2))
-			t.Cleanup(func() { vt.ipt.DeleteChain("nat", nomadTest2) })
-
-			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest1,
-				},
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
-			req.addRule(&rule{
-				table: "nat",
-				chain: nomadTest2,
-			})
-
-			chains, rules, err := vt.buildLists(req)
-			must.NoError(t, err)
-
-			must.SliceContains(t, chains.Slice(), &chain{table: "nat", chain: nomadTest2})
-			must.SliceEqual(t, rules.Slice(), []*rule{{table: "nat", chain: nomadTest2}})
-		})
-
-		t.Run("rules exists", func(t *testing.T) {
-			nomadTest1 := genChainName()
-			nomadTest2 := genChainName()
-
-			vt, _ := TestNew(t)
-			t.Cleanup(chainRemover(t, vt.ipt, nomadTest1, nomadTest2))
-
-			must.NoError(t, vt.ipt.NewChain("nat", nomadTest2))
-			must.NoError(t, vt.ipt.Append("nat", nomadTest2, "-p", "tcp", "-j", "ACCEPT"))
-			t.Cleanup(func() {
-				vt.ipt.ClearChain("nat", nomadTest2)
-				vt.ipt.DeleteChain("nat", nomadTest2)
-			})
-			req := newRequest()
-			req.addChains([]*chain{
-				{
-					table: "nat",
-					chain: nomadTest1,
-				},
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-			})
-			req.addRules([]*rule{
-				{
-					table: "nat",
-					chain: nomadTest2,
-				},
-				{
-					table: "nat",
-					chain: nomadTest1,
-				},
-			})
-
-			chains, rules, err := vt.buildLists(req)
-			must.NoError(t, err)
-
-			must.SliceContains(t, chains.Slice(), &chain{table: "nat", chain: nomadTest2})
-			expectedRule := &rule{table: "nat", chain: nomadTest2, spec: []string{"-p", "tcp", "-j", "ACCEPT"}}
-			must.True(t, rules.Contains(expectedRule),
-				must.Sprintf("missing expected rule: %s", expectedRule))
 		})
 	})
 }
@@ -1336,12 +1093,9 @@ func chainRemover(t *testing.T, ipt IPTables, names ...string) func() {
 	return func() {
 		t.Helper()
 		for _, name := range names {
-			if err := ipt.ClearChain("nat", name); err != nil {
-				t.Logf("error clearing chain %q in nat table (%s), continuing...", name, err)
-				continue
-			}
-			if err := ipt.DeleteChain("nat", name); err != nil {
+			if err := ipt.ClearAndDeleteChain("nat", name); err != nil {
 				t.Logf("error deleting chain %q in nat table (%s), continuing...", name, err)
+				continue
 			}
 		}
 	}

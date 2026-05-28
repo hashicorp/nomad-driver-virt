@@ -4,6 +4,7 @@
 package iptables
 
 import (
+	"cmp"
 	"fmt"
 	"slices"
 	"strings"
@@ -36,6 +37,15 @@ func (r Rules) rules() set.Collection[*rule] {
 	return result
 }
 
+// chains is a slice of chain pointers.
+type chains []*chain
+
+// sort sorts the chain slice by the stamp value.
+func (c chains) sort() chains {
+	slices.SortFunc(c, func(a, b *chain) int { return cmp.Compare(a.stamp, b.stamp) })
+	return c
+}
+
 // chain represents an iptables chain.
 type chain struct {
 	table string // table name
@@ -63,14 +73,34 @@ func (c *chain) Hash() string {
 	return c.table + c.chain
 }
 
+// rules is a slice of rule pointers.
+type rules []*rule
+
+// sort sorts the rule slice by the stamp value.
+func (r rules) sort() rules {
+	slices.SortFunc(r, func(a, b *rule) int { return cmp.Compare(a.stamp, b.stamp) })
+	return r
+}
+
+// removables returns all rules marked as removable.
+func (r rules) removables() rules {
+	return slices.Collect(func(yield func(*rule) bool) {
+		for _, rule := range r {
+			if rule.removable && !yield(rule) {
+				return
+			}
+		}
+	})
+}
+
 // rule represents an iptables rule.
 type rule struct {
-	table    string   // table name
-	chain    string   // chain name
-	position int      // position of the rule if it should be inserted
-	spec     []string // rule specification
-	teardown bool     // rule should be included in teardown list
-	stamp    uint     // sorting value for collections
+	table     string   // table name.
+	chain     string   // chain name.
+	position  int      // position of the rule if it should be inserted.
+	spec      []string // rule specification.
+	removable bool     // rule should be removed during teardown.
+	stamp     uint     // sorting value for collections.
 }
 
 // setStamp sets the stamp value on the rule.

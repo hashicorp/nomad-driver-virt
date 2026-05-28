@@ -4,98 +4,71 @@
 package iptables
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/shoenig/test/must"
 )
 
-func Test_request_tablesList(t *testing.T) {
-	req := newRequest()
-
-	// Start with an empty request.
-	must.SliceEmpty(t, req.tableList())
-
-	// Add a chain.
-	req.addChain(&chain{table: "test-table", chain: "test-chain"})
-	must.Size(t, 1, req.chains, must.Sprint("expected 1 chain entry"))
-	must.SliceContainsAll(t, req.tableList(), []string{"test-table"})
-
-	// Add another chain on different table.
-	req.addChain(&chain{table: "mock-table", chain: "mock-chain"})
-	must.Size(t, 2, req.chains, must.Sprint("expected 2 chain entries"))
-	must.SliceContainsAll(t, req.tableList(), []string{"test-table", "mock-table"})
-
-	// Add chain on existing table.
-	req.addChain(&chain{table: "test-table", chain: "mock-chain"})
-	must.Size(t, 3, req.chains, must.Sprint("expected 3 chain entries"))
-	must.SliceContainsAll(t, req.tableList(), []string{"test-table", "mock-table"})
-
-	// Add a rule.
-	req.addRule(&rule{table: "faux-table", chain: "test-chain"})
-	must.Size(t, 1, req.rules, must.Sprint("expected 1 chain entry"))
-	must.SliceContainsAll(t, req.tableList(), []string{"test-table", "mock-table", "faux-table"})
-}
-
-func Test_request_chainList(t *testing.T) {
-	req := newRequest()
-
-	// Start with an empty request.
-	must.SliceEmpty(t, req.chainList())
-
-	// Add a rule.
-	req.addRule(&rule{table: "test-table", chain: "test-chain"})
-	must.Size(t, 1, req.rules, must.Sprint("expected 1 rule entry"))
-	expectedChains := []*chain{{table: "test-table", chain: "test-chain"}}
-	must.SliceContainsAll(t, req.chainList(), expectedChains)
-
-	// Add a rule on a different chain but same table.
-	req.addRule(&rule{table: "test-table", chain: "mock-chain"})
-	must.Size(t, 2, req.rules, must.Sprint("expected 2 rule entries"))
-	expectedChains = append(expectedChains, &chain{table: "test-table", chain: "mock-chain"})
-	must.SliceContainsAll(t, req.chainList(), expectedChains)
-
-	// Add a rule on a different table and but same chain name.
-	req.addRule(&rule{table: "mock-table", chain: "mock-chain"})
-	must.Size(t, 3, req.rules, must.Sprint("expected 3 rule entries"))
-	expectedChains = append(expectedChains, &chain{table: "mock-table", chain: "mock-chain"})
-	must.SliceContainsAll(t, req.chainList(), expectedChains)
-
-	// Add a rule on an existing table and chain.
-	req.addRule(&rule{table: "test-table", chain: "test-chain", position: 1})
-	must.Size(t, 3, req.rules, must.Sprint("expected 3 rule entry"))
-	must.SliceContainsAll(t, req.chainList(), expectedChains)
-}
-
-func Test_request_teardown(t *testing.T) {
+func Test_request_removalInstructions(t *testing.T) {
 	req := newRequest()
 	expectedTeardown := make(Rules, 0)
 
 	// Start with an empty request.
-	must.Empty(t, req.teardown())
+	must.Empty(t, req.removalInstructions())
 
 	// Add a chain entry.
 	req.chains.Insert(&chain{table: "test-table", chain: "test-chain"})
 	must.Size(t, 1, req.chains)
 
 	// No teardown entries should be provided from chains.
-	must.Empty(t, req.teardown())
+	must.Empty(t, req.removalInstructions())
 
 	// Add a rule entry.
 	req.addRule(&rule{table: "test-table", chain: "test-chain"})
 	must.Size(t, 1, req.rules)
 
 	// Rule is not marked as teardown so no entries should be returned.
-	must.Empty(t, req.teardown())
+	must.Empty(t, req.removalInstructions())
 
-	// Add a rule entry marked as teardown.
-	req.addRule(&rule{table: "mock-table", chain: "test-chain", teardown: true})
+	// Add a rule entry marked as removable.
+	req.addRule(&rule{table: "mock-table", chain: "test-chain", removable: true})
 	must.Size(t, 2, req.rules)
 	expectedTeardown = append(expectedTeardown, []string{"mock-table", "test-chain"})
-	must.SliceContainsAll(t, expectedTeardown, req.teardown())
+	must.SliceContainsAll(t, expectedTeardown, req.removalInstructions())
 
-	// Add another rule entry marked as teardown.
-	req.addRule(&rule{table: "mock-table", chain: "mock-chain", teardown: true})
+	// Add another rule entry marked as removable.
+	req.addRule(&rule{table: "mock-table", chain: "mock-chain", removable: true})
 	must.Size(t, 3, req.rules)
 	expectedTeardown = append(expectedTeardown, []string{"mock-table", "mock-chain"})
-	must.SliceContainsAll(t, expectedTeardown, req.teardown())
+	must.SliceContainsAll(t, expectedTeardown, req.removalInstructions())
+}
+
+func Test_request_sortedRules(t *testing.T) {
+	list := make([]*rule, 50)
+	for i := range len(list) {
+		list[i] = &rule{
+			table: "test-table",
+			chain: "test-chain",
+			spec:  []string{fmt.Sprintf("rule-%d", i)},
+		}
+	}
+	req := newRequest()
+	req.addRule(list...)
+
+	must.Eq(t, list, req.sortedRules())
+}
+
+func Test_request_sortedChains(t *testing.T) {
+	list := make([]*chain, 50)
+	for i := range len(list) {
+		list[i] = &chain{
+			table: "test-table",
+			chain: fmt.Sprintf("test-chain-%d", i),
+		}
+	}
+	req := newRequest()
+	req.addChain(list...)
+
+	must.Eq(t, list, req.sortedChains())
 }

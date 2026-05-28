@@ -56,6 +56,140 @@ func TestIPTables_Append(t *testing.T) {
 	})
 }
 
+func TestIPTables_AppendUnique(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		iptables := New(t)
+		iptables.ExpectAppendUnique(AppendUnique{
+			Table:    "default",
+			Chain:    "default",
+			RuleSpec: []string{"RULE1"},
+		})
+
+		err := iptables.AppendUnique("default", "default", "RULE1")
+		must.NoError(t, err)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		iptables := New(t)
+		iptables.ExpectAppendUnique(AppendUnique{
+			Table:    "default",
+			Chain:    "default",
+			RuleSpec: []string{"RULE1"},
+			Err:      mock.MockTestErr,
+		})
+
+		err := iptables.AppendUnique("default", "default", "RULE1")
+		must.ErrorIs(t, err, mock.MockTestErr)
+	})
+
+	t.Run("incorrect arguments", func(t *testing.T) {
+		iptables := New(mock.MockT())
+		iptables.ExpectAppendUnique(AppendUnique{
+			Table:    "default",
+			Chain:    "non-default",
+			RuleSpec: []string{"RULE1"},
+		})
+		defer mock.AssertIncorrectArguments(t, "AppendUnique")
+
+		iptables.AppendUnique("default", "default")
+	})
+
+	t.Run("unexpected", func(t *testing.T) {
+		iptables := New(mock.MockT())
+		defer mock.AssertUnexpectedCall(t, "AppendUnique")
+
+		iptables.AppendUnique("default", "default")
+	})
+}
+
+func TestIPTables_ChainExists(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		iptables := New(t)
+		iptables.ExpectChainExists(ChainExists{
+			Table:  "default",
+			Chain:  "default",
+			Result: true,
+		})
+
+		result, err := iptables.ChainExists("default", "default")
+		must.True(t, result)
+		must.NoError(t, err)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		iptables := New(t)
+		iptables.ExpectChainExists(ChainExists{
+			Table: "default",
+			Chain: "default",
+			Err:   mock.MockTestErr,
+		})
+
+		_, err := iptables.ChainExists("default", "default")
+		must.ErrorIs(t, err, mock.MockTestErr)
+	})
+
+	t.Run("incorrect arguments", func(t *testing.T) {
+		iptables := New(mock.MockT())
+		iptables.ExpectChainExists(ChainExists{
+			Table: "default",
+			Chain: "default",
+		})
+		defer mock.AssertIncorrectArguments(t, "ChainExists")
+
+		iptables.ChainExists("default", "non-default")
+	})
+
+	t.Run("unexpected", func(t *testing.T) {
+		iptables := New(mock.MockT())
+		defer mock.AssertUnexpectedCall(t, "ChainExists")
+
+		iptables.ChainExists("default", "default")
+	})
+}
+
+func TestIPTables_ClearAndDeleteChain(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		iptables := New(t)
+		iptables.ExpectClearAndDeleteChain(ClearAndDeleteChain{
+			Table: "default",
+			Chain: "default",
+		})
+
+		err := iptables.ClearAndDeleteChain("default", "default")
+		must.NoError(t, err)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		iptables := New(t)
+		iptables.ExpectClearAndDeleteChain(ClearAndDeleteChain{
+			Table: "default",
+			Chain: "default",
+			Err:   mock.MockTestErr,
+		})
+
+		err := iptables.ClearAndDeleteChain("default", "default")
+		must.ErrorIs(t, err, mock.MockTestErr)
+	})
+
+	t.Run("incorrect arguments", func(t *testing.T) {
+		iptables := New(mock.MockT())
+		iptables.ExpectClearAndDeleteChain(ClearAndDeleteChain{
+			Table: "default",
+			Chain: "default",
+		})
+		defer mock.AssertIncorrectArguments(t, "ClearAndDeleteChain")
+
+		iptables.ClearAndDeleteChain("default", "non-default")
+	})
+
+	t.Run("unexpected", func(t *testing.T) {
+		iptables := New(mock.MockT())
+		defer mock.AssertUnexpectedCall(t, "ClearAndDeleteChain")
+
+		iptables.ClearAndDeleteChain("default", "default")
+	})
+}
+
 func TestIPTables_ClearChain(t *testing.T) {
 	t.Run("ok", func(t *testing.T) {
 		iptables := New(t)
@@ -278,6 +412,55 @@ func TestIPTables_Insert(t *testing.T) {
 		defer mock.AssertUnexpectedCall(t, "Insert")
 
 		iptables.Insert("default", "non-default", 1, "RULE1")
+	})
+}
+
+func TestIPTables_InsertUnique(t *testing.T) {
+	t.Run("ok", func(t *testing.T) {
+		iptables := New(t)
+		iptables.ExpectInsertUnique(InsertUnique{
+			Table:    "default",
+			Chain:    "default",
+			Pos:      1,
+			RuleSpec: []string{"RULE1"},
+		})
+
+		err := iptables.InsertUnique("default", "default", 1, "RULE1")
+		must.NoError(t, err)
+	})
+
+	t.Run("error", func(t *testing.T) {
+		iptables := New(t)
+		iptables.ExpectInsertUnique(InsertUnique{
+			Table:    "default",
+			Chain:    "default",
+			Pos:      1,
+			RuleSpec: []string{"RULE1"},
+			Err:      mock.MockTestErr,
+		})
+
+		err := iptables.InsertUnique("default", "default", 1, "RULE1")
+		must.ErrorIs(t, err, mock.MockTestErr)
+	})
+
+	t.Run("incorrect arguments", func(t *testing.T) {
+		iptables := New(mock.MockT())
+		iptables.ExpectInsertUnique(InsertUnique{
+			Table:    "default",
+			Chain:    "default",
+			Pos:      1,
+			RuleSpec: []string{"RULE1"},
+		})
+		defer mock.AssertIncorrectArguments(t, "InsertUnique")
+
+		iptables.InsertUnique("default", "non-default", 1, "RULE1")
+	})
+
+	t.Run("unexpected", func(t *testing.T) {
+		iptables := New(mock.MockT())
+		defer mock.AssertUnexpectedCall(t, "InsertUnique")
+
+		iptables.InsertUnique("default", "non-default", 1, "RULE1")
 	})
 }
 

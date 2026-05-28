@@ -178,6 +178,6 @@ func (n *virtTables) cleanup(t must.T) {
 	})
 
 	if err := n.remove(req); err != nil {
-		t.Fatalf("error encountered during iptables cleanup: %w", err)
+		t.Fatalf("error encountered during iptables cleanup: %s", err)
 	}
 }

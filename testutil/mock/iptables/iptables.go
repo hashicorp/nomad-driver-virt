@@ -21,6 +21,23 @@ type Append struct {
 	Err          error
 }
 
+type AppendUnique struct {
+	Table, Chain string
+	RuleSpec     []string
+	Err          error
+}
+
+type ChainExists struct {
+	Table, Chain string
+	Result       bool
+	Err          error
+}
+
+type ClearAndDeleteChain struct {
+	Table, Chain string
+	Err          error
+}
+
 type ClearChain struct {
 	Table, Chain string
 	Err          error
@@ -50,6 +67,13 @@ type Insert struct {
 	Err          error
 }
 
+type InsertUnique struct {
+	Table, Chain string
+	Pos          int
+	RuleSpec     []string
+	Err          error
+}
+
 type List struct {
 	Table  string
 	Chain  string
@@ -69,17 +93,21 @@ type NewChain struct {
 }
 
 type mockIPTables struct {
-	appends        []Append
-	clearChains    []ClearChain
-	deletes        []Delete
-	deleteChains   []DeleteChain
-	deleteIfExists []DeleteIfExists
-	inserts        []Insert
-	lists          []List
-	listChains     []ListChains
-	newChains      []NewChain
-	t              must.T
-	m              sync.Mutex
+	appends              []Append
+	appendUniques        []AppendUnique
+	chainExists          []ChainExists
+	clearAndDeleteChains []ClearAndDeleteChain
+	clearChains          []ClearChain
+	deletes              []Delete
+	deleteChains         []DeleteChain
+	deleteIfExists       []DeleteIfExists
+	inserts              []Insert
+	insertUniques        []InsertUnique
+	lists                []List
+	listChains           []ListChains
+	newChains            []NewChain
+	t                    must.T
+	m                    sync.Mutex
 }
 
 // Expect adds a list of expected calls.
@@ -88,6 +116,12 @@ func (m *mockIPTables) Expect(calls ...any) *mockIPTables {
 		switch c := call.(type) {
 		case Append:
 			m.ExpectAppend(c)
+		case AppendUnique:
+			m.ExpectAppendUnique(c)
+		case ChainExists:
+			m.ExpectChainExists(c)
+		case ClearAndDeleteChain:
+			m.ExpectClearAndDeleteChain(c)
 		case ClearChain:
 			m.ExpectClearChain(c)
 		case Delete:
@@ -98,6 +132,8 @@ func (m *mockIPTables) Expect(calls ...any) *mockIPTables {
 			m.ExpectDeleteIfExists(c)
 		case Insert:
 			m.ExpectInsert(c)
+		case InsertUnique:
+			m.ExpectInsertUnique(c)
 		case List:
 			m.ExpectList(c)
 		case ListChains:
@@ -118,6 +154,33 @@ func (m *mockIPTables) ExpectAppend(app Append) *mockIPTables {
 	defer m.m.Unlock()
 
 	m.appends = append(m.appends, app)
+	return m
+}
+
+// ExpectAppendUnique adds an expected AppendUnique call.
+func (m *mockIPTables) ExpectAppendUnique(app AppendUnique) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.appendUniques = append(m.appendUniques, app)
+	return m
+}
+
+// ExpectChainExists adds an expected ChainExists call.
+func (m *mockIPTables) ExpectChainExists(c ChainExists) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.chainExists = append(m.chainExists, c)
+	return m
+}
+
+// ExpectClearAndDeleteChain adds an expected ClearAndDeleteChain call.
+func (m *mockIPTables) ExpectClearAndDeleteChain(c ClearAndDeleteChain) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.clearAndDeleteChains = append(m.clearAndDeleteChains, c)
 	return m
 }
 
@@ -166,6 +229,15 @@ func (m *mockIPTables) ExpectInsert(ins Insert) *mockIPTables {
 	return m
 }
 
+// ExpectInsertUnique adds an expected InsertUnique call.
+func (m *mockIPTables) ExpectInsertUnique(ins InsertUnique) *mockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.insertUniques = append(m.insertUniques, ins)
+	return m
+}
+
 // ExpectList adds an expected List call.
 func (m *mockIPTables) ExpectList(list List) *mockIPTables {
 	m.m.Lock()
@@ -211,6 +283,71 @@ func (m *mockIPTables) Append(table, chain string, rulespec ...string) error {
 	}
 	must.Eq(m.t, call, received,
 		must.Sprint("Append received incorrect arguments"))
+
+	return call.Err
+}
+
+func (m *mockIPTables) AppendUnique(table, chain string, rulespec ...string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.appendUniques,
+		must.Sprintf("Unexpected call to AppendUnique - AppendUnique(%q, %q, %q)", table, chain, rulespec))
+	call := m.appendUniques[0]
+	m.appendUniques = m.appendUniques[1:]
+	received := AppendUnique{
+		Table:    table,
+		Chain:    chain,
+		RuleSpec: rulespec,
+		Err:      call.Err,
+	}
+	must.Eq(m.t, call, received,
+		must.Sprint("AppendUnique received incorrect arguments"))
+
+	return call.Err
+}
+
+func (m *mockIPTables) ChainExists(table, chain string) (bool, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.chainExists,
+		must.Sprintf("Unexpected call to ChainExists - ChainExists(%q, %q)", table, chain))
+	call := m.chainExists[0]
+	m.chainExists = m.chainExists[1:]
+	received := ChainExists{
+		Table:  table,
+		Chain:  chain,
+		Result: call.Result,
+		Err:    call.Err,
+	}
+	must.Eq(m.t, call, received,
+		must.Sprint("ChainExists received incorrect arguments"))
+
+	return call.Result, call.Err
+}
+
+func (m *mockIPTables) ClearAndDeleteChain(table, chain string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.clearAndDeleteChains,
+		must.Sprintf("Unexpected call to ClearAndDeleteChain - ClearAndDeleteChain(%q, %q)", table, chain))
+	call := m.clearAndDeleteChains[0]
+	m.clearAndDeleteChains = m.clearAndDeleteChains[1:]
+	received := ClearAndDeleteChain{
+		Table: table,
+		Chain: chain,
+		Err:   call.Err,
+	}
+	must.Eq(m.t, call, received,
+		must.Sprint("ClearAndDeleteChain received incorrect arguments"))
 
 	return call.Err
 }
@@ -324,6 +461,29 @@ func (m *mockIPTables) Insert(table, chain string, pos int, rulespec ...string) 
 	return call.Err
 }
 
+func (m *mockIPTables) InsertUnique(table, chain string, pos int, rulespec ...string) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.insertUniques,
+		must.Sprintf("Unexpected call to InsertUnique - InsertUnique(%q, %q, %q, %q)", table, chain, pos, rulespec))
+	call := m.insertUniques[0]
+	m.insertUniques = m.insertUniques[1:]
+	received := InsertUnique{
+		Table:    table,
+		Chain:    chain,
+		Pos:      pos,
+		RuleSpec: rulespec,
+		Err:      call.Err,
+	}
+	must.Eq(m.t, call, received,
+		must.Sprint("InsertUnique received incorrect arguments"))
+
+	return call.Err
+}
+
 func (m *mockIPTables) List(table, chain string) ([]string, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
@@ -393,6 +553,12 @@ func (m *mockIPTables) AssertExpectations() {
 
 	must.SliceEmpty(m.t, m.appends,
 		must.Sprintf("Append expecting %d more invocations", len(m.appends)))
+	must.SliceEmpty(m.t, m.appendUniques,
+		must.Sprintf("AppendUnique expecting %d more invocations", len(m.appendUniques)))
+	must.SliceEmpty(m.t, m.chainExists,
+		must.Sprintf("ChainExists expecting %d more invocations", len(m.chainExists)))
+	must.SliceEmpty(m.t, m.clearAndDeleteChains,
+		must.Sprintf("ClearAndDeleteChain expecting %d more invocations", len(m.clearAndDeleteChains)))
 	must.SliceEmpty(m.t, m.clearChains,
 		must.Sprintf("ClearChain expecting %d more invocations", len(m.clearChains)))
 	must.SliceEmpty(m.t, m.deletes,
@@ -403,6 +569,8 @@ func (m *mockIPTables) AssertExpectations() {
 		must.Sprintf("DeleteIfExists expecting %d more invocations", len(m.deleteIfExists)))
 	must.SliceEmpty(m.t, m.inserts,
 		must.Sprintf("Insert expecting %d more invocations", len(m.inserts)))
+	must.SliceEmpty(m.t, m.insertUniques,
+		must.Sprintf("InsertUnique expecting %d more invocations", len(m.insertUniques)))
 	must.SliceEmpty(m.t, m.lists,
 		must.Sprintf("List expecting %d more invocations", len(m.lists)))
 	must.SliceEmpty(m.t, m.listChains,

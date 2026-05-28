@@ -4,6 +4,8 @@
 package iptables
 
 import (
+	"fmt"
+	"math/rand"
 	"testing"
 
 	"github.com/shoenig/test/must"
@@ -36,7 +38,7 @@ func TestRules_rules(t *testing.T) {
 				spec: []string{"spec", "values"}}},
 		},
 		{
-			desc: "duplicaes",
+			desc: "duplicates",
 			Rules: Rules{
 				{"table-name", "chain-name", "spec", "values"},
 				{"mock-name", "chain-name", "spec", "values"},
@@ -66,6 +68,26 @@ func TestRules_rules(t *testing.T) {
 			must.SliceContainsAll(t, tc.result, res.Slice())
 		})
 	}
+}
+
+func Test_chains_sort(t *testing.T) {
+	orig := make([]*chain, 50)
+	for i := range len(orig) {
+		orig[i] = &chain{
+			table: "test-table",
+			chain: fmt.Sprintf("test-chain-%d", i),
+			stamp: uint(i),
+		}
+	}
+
+	// Create a shuffled chains to sort.
+	p := rand.Perm(len(orig))
+	list := make(chains, len(orig))
+	for i, j := range p {
+		list[i] = orig[j]
+	}
+
+	must.Eq(t, orig, list.sort())
 }
 
 func Test_chain_Equal(t *testing.T) {
@@ -100,6 +122,12 @@ func Test_chain_Equal(t *testing.T) {
 			equal: true,
 		},
 		{
+			desc:  "ok stamped",
+			lhs:   &chain{table: "test-table", chain: "mock-chain", stamp: 2},
+			rhs:   &chain{table: "test-table", chain: "mock-chain", stamp: 3},
+			equal: true,
+		},
+		{
 			desc: "diff table",
 			lhs:  &chain{table: "mock-table", chain: "test-chain"},
 			rhs:  &chain{table: "test-table", chain: "test-chain"},
@@ -125,6 +153,47 @@ func Test_chain_Equal(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_rules_sort(t *testing.T) {
+	orig := make([]*rule, 50)
+	for i := range len(orig) {
+		orig[i] = &rule{
+			table: "test-table",
+			chain: "test-chain",
+			spec:  []string{fmt.Sprintf("rule-%d", i)},
+			stamp: uint(i),
+		}
+	}
+
+	// Create a shuffled rules to sort.
+	p := rand.Perm(len(orig))
+	list := make(rules, len(orig))
+	for i, j := range p {
+		list[i] = orig[j]
+	}
+
+	must.Eq(t, orig, list.sort())
+}
+
+func Test_rules_removables(t *testing.T) {
+	removables := make(rules, 16)
+	list := make(rules, 50)
+	for i := range len(list) {
+		list[i] = &rule{
+			table: "test-table",
+			chain: "test-chain",
+			spec:  []string{fmt.Sprintf("rule-%d", i)},
+			stamp: uint(i),
+		}
+
+		if i > 0 && i%3 == 0 {
+			list[i].removable = true
+			removables[(i/3)-1] = list[i]
+		}
+	}
+
+	must.Eq(t, removables, list.removables())
 }
 
 func Test_rule_Equal(t *testing.T) {
@@ -174,6 +243,12 @@ func Test_rule_Equal(t *testing.T) {
 			desc:  "ok table chain spec",
 			lhs:   &rule{table: "test-table", chain: "test-chain", spec: []string{"test", "spec"}},
 			rhs:   &rule{table: "test-table", chain: "test-chain", spec: []string{"test", "spec"}},
+			equal: true,
+		},
+		{
+			desc:  "ok stamped",
+			lhs:   &rule{table: "test-table", chain: "test-chain", spec: []string{"test", "spec"}, stamp: 0},
+			rhs:   &rule{table: "test-table", chain: "test-chain", spec: []string{"test", "spec"}, stamp: 1},
 			equal: true,
 		},
 		{

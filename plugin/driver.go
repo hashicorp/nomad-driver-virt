@@ -130,6 +130,9 @@ func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
 	ctx, cancel := context.WithCancel(context.Background())
 	logger = logger.Named(pluginName)
 
+	// Set the default logger.
+	hclog.SetDefault(logger)
+
 	// Should we check if extentions and kernel modules are there?
 	// grep -E 'svm|vmx' /proc/cpuinfo
 	// lsmod | grep kvm -> kvm_intel, kvm_amd, nvme-tcp

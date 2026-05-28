@@ -4,8 +4,6 @@
 package iptables
 
 import (
-	"cmp"
-	"slices"
 	"sync"
 
 	"github.com/hashicorp/go-set/v3"
@@ -33,99 +31,25 @@ type request struct {
 	m          sync.Mutex                   // mutex to sync stamping
 }
 
-// tableList returns the list of table name referenced in the
-// request.
-func (r *request) tableList() []string {
-	s := set.New[string](0)
-	tables := make([]string, 0)
-
-	for _, c := range r.sortedChains() {
-		if s.Insert(c.table) {
-			tables = append(tables, c.table)
-		}
-	}
-
-	for _, ru := range r.sortedRules() {
-		if s.Insert(ru.table) {
-			tables = append(tables, ru.table)
-		}
-	}
-
-	return tables
-}
-
-// chainTables returns the collection of table names defined
-// in the request's chain collection.
-func (r *request) chainTables() []string {
-	s := set.New[string](0)
-	tables := make([]string, 0)
-
-	for _, c := range r.sortedChains() {
-		if s.Insert(c.table) {
-			tables = append(tables, c.table)
-		}
-	}
-
-	return tables
-}
-
-// chainList returns the list of chains referenced in the request.
-func (r *request) chainList() []*chain {
-	s := set.NewHashSet[*chain](0)
-	chains := make([]*chain, 0)
-	for _, ru := range r.sortedRules() {
-		c := ru.mkchain()
-		if s.Insert(c) {
-			chains = append(chains, c)
-		}
-	}
-
-	return chains
-}
-
-// ruleChains returns the collection chains defined in the
-// request's rule collection.
-func (r *request) ruleChains() []*chain {
-	s := set.NewHashSet[*chain](0)
-	chains := make([]*chain, 0)
-	for _, rule := range r.sortedRules() {
-		c := &chain{table: rule.table, chain: rule.chain}
-		if s.Insert(c) {
-			chains = append(chains, c)
-		}
-	}
-
-	return chains
-}
-
 // sortedRules returns the rules as a sorted slice based on
 // stamp value.
 // NOTE: accessing rules directly is unsorted due to map backing.
-func (r *request) sortedRules() []*rule {
-	rules := r.rules.Slice()
-	slices.SortFunc(rules, func(a, b *rule) int { return cmp.Compare(a.stamp, b.stamp) })
-
-	return rules
+func (r *request) sortedRules() rules {
+	return rules(r.rules.Slice()).sort()
 }
 
 // sortedChains returns the chain as a sorted slice based on
 // stamp value.
 // NOTE: accessing chains directly is unsorted due to map backing.
-func (r *request) sortedChains() []*chain {
-	chains := r.chains.Slice()
-	slices.SortFunc(chains, func(a, b *chain) int { return cmp.Compare(a.stamp, b.stamp) })
-
-	return chains
+func (r *request) sortedChains() chains {
+	return chains(r.chains.Slice()).sort()
 }
 
-// teardown returns the raw collection of rules from the
+// removalInstructions returns the raw collection of rules from the
 // request that have been flagged as teardown.
-func (r *request) teardown() Rules {
+func (r *request) removalInstructions() Rules {
 	result := make([][]string, 0)
-	for _, r := range r.sortedRules() {
-		if !r.teardown {
-			continue
-		}
+	for _, r := range r.sortedRules().removables() {
 		result = append(result, r.slice())
 	}
 
@@ -137,26 +61,16 @@ type stampable interface {
 	setStamp(uint)
 }
 
-// addChain adds a single chain to the request.
+// addChain adds chains to the request.
 func (r *request) addChain(chains ...*chain) {
-	r.addChains(chains)
-}
-
-// addChains adds a chain slice to the request.
-func (r *request) addChains(chains []*chain) {
 	for _, c := range chains {
 		r.stamp(c)
 		r.chains.Insert(c)
 	}
 }
 
-// addRule adds a single rule to the request.
+// addRule adds rules to the request.
 func (r *request) addRule(rules ...*rule) {
-	r.addRules(rules)
-}
-
-// addRules adds a rule slice to the request.
-func (r *request) addRules(rules []*rule) {
 	for _, rule := range rules {
 		r.stamp(rule)
 		r.rules.Insert(rule)
