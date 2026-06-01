@@ -1,4 +1,4 @@
-// Copyright IBM Corp. 2024, 2025
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package iptables
@@ -37,13 +37,65 @@ func (r Rules) rules() set.Collection[*rule] {
 	return result
 }
 
-// chains is a slice of chain pointers.
-type chains []*chain
+// stampFn is the signature for a stamping function.
+type stampFn func(stampable)
 
-// sort sorts the chain slice by the stamp value.
-func (c chains) sort() chains {
-	slices.SortFunc(c, func(a, b *chain) int { return cmp.Compare(a.stamp, b.stamp) })
-	return c
+// stampable describes a type that can be stamped.
+type stampable interface {
+	setStamp(uint)
+}
+
+// newChains creates a new chains collection with a stamping
+// function to stamp chains.
+func newChains(fn stampFn) *chains {
+	return &chains{
+		HashSet: set.NewHashSet[*chain](0),
+		stampFn: fn,
+	}
+}
+
+// chains is a slice of chain pointers.
+type chains struct {
+	*set.HashSet[*chain, string]
+	stampFn
+}
+
+// Insert inserts a chain into the collection.
+func (c *chains) Insert(item *chain) bool {
+	if c.stampFn != nil {
+		c.stampFn(item)
+	}
+
+	return c.HashSet.Insert(item)
+}
+
+// InsertSlice inserts a chain slice into the collection.
+func (c *chains) InsertSlice(items []*chain) bool {
+	if c.stampFn != nil {
+		for _, i := range items {
+			c.stampFn(i)
+		}
+	}
+
+	return c.HashSet.InsertSlice(items)
+}
+
+// InsertSet inserts a chain set into the collection.
+func (c *chains) InsertSet(items set.Collection[*chain]) bool {
+	if c.stampFn != nil {
+		for _, i := range items.Slice() {
+			c.stampFn(i)
+		}
+	}
+
+	return c.HashSet.InsertSet(items)
+}
+
+// Slice returns the chain slice of the collection, sorted by stamp.
+func (c *chains) Slice() []*chain {
+	s := c.HashSet.Slice()
+	slices.SortFunc(s, func(a, b *chain) int { return cmp.Compare(a.stamp, b.stamp) })
+	return s
 }
 
 // chain represents an iptables chain.
@@ -73,24 +125,73 @@ func (c *chain) Hash() string {
 	return c.table + c.chain
 }
 
-// rules is a slice of rule pointers.
-type rules []*rule
+// newRules creates a new rules collection with a stamping
+// function to stamp rules.
+func newRules(fn stampFn) *rules {
+	return &rules{
+		HashSet: set.NewHashSet[*rule](0),
+		stampFn: fn,
+	}
+}
 
-// sort sorts the rule slice by the stamp value.
-func (r rules) sort() rules {
-	slices.SortFunc(r, func(a, b *rule) int { return cmp.Compare(a.stamp, b.stamp) })
-	return r
+// rules is a slice of rule pointers.
+type rules struct {
+	*set.HashSet[*rule, string]
+	stampFn
+}
+
+// Insert inserts a rule into the collection.
+func (r *rules) Insert(item *rule) bool {
+	if r.stampFn != nil {
+		r.stampFn(item)
+	}
+
+	return r.HashSet.Insert(item)
+}
+
+// InsertSlice inserts a rule slice into the collection.
+func (r *rules) InsertSlice(items []*rule) bool {
+	if r.stampFn != nil {
+		for _, i := range items {
+			r.stampFn(i)
+		}
+	}
+
+	return r.HashSet.InsertSlice(items)
+}
+
+// InsertSet inserts a rule set into the collection.
+func (r *rules) InsertSet(items set.Collection[*rule]) bool {
+	if r.stampFn != nil {
+		for _, i := range items.Slice() {
+			r.stampFn(i)
+		}
+	}
+
+	return r.HashSet.InsertSet(items)
+}
+
+// Slice returns the rule slice of the collection, sorted by stamp.
+func (r *rules) Slice() []*rule {
+	s := r.HashSet.Slice()
+	slices.SortFunc(s, func(a, b *rule) int { return cmp.Compare(a.stamp, b.stamp) })
+	return s
 }
 
 // removables returns all rules marked as removable.
-func (r rules) removables() rules {
-	return slices.Collect(func(yield func(*rule) bool) {
-		for _, rule := range r {
-			if rule.removable && !yield(rule) {
-				return
-			}
+func (r *rules) removables() *rules {
+	result := []*rule{}
+	for _, item := range r.Slice() {
+		if item.removable {
+			rm := *item
+			result = append(result, &rm)
 		}
-	})
+	}
+
+	return &rules{
+		HashSet: set.HashSetFrom(result),
+		stampFn: r.stampFn,
+	}
 }
 
 // rule represents an iptables rule.

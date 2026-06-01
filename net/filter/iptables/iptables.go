@@ -1,4 +1,4 @@
-// Copyright IBM Corp. 2024, 2025
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package iptables
@@ -33,15 +33,11 @@ const (
 // that are currently used. This allows for easily swapping out
 // implementations for testing.
 type IPTables interface {
-	Append(table, chain string, rulespec ...string) error
 	AppendUnique(table, chain string, rulespec ...string) error
 	ChainExists(table, chain string) (bool, error)
 	ClearAndDeleteChain(table, chain string) error
-	ClearChain(table, chain string) error
-	Delete(table, chain string, rulespec ...string) error
 	DeleteChain(table, chain string) error
 	DeleteIfExists(table, chain string, rulespec ...string) error
-	Insert(table, chain string, pos int, rulespec ...string) error
 	InsertUnique(table, chain string, pos int, rulespec ...string) error
 	ListChains(table string) ([]string, error)
 	List(table, chain string) ([]string, error)

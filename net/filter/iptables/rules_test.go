@@ -1,4 +1,4 @@
-// Copyright IBM Corp. 2024, 2025
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package iptables
@@ -56,6 +56,20 @@ func TestRules_rules(t *testing.T) {
 			},
 		},
 		{
+			desc: "no spec",
+			Rules: Rules{
+				{"table-name", "chain-name"},
+				{"mock-name", "chain-name"},
+				{"table-name", "chain-name", "spec", "values"},
+			},
+			result: []*rule{
+				{
+					table: "table-name", chain: "chain-name",
+					spec: []string{"spec", "values"},
+				},
+			},
+		},
+		{
 			desc:   "empty",
 			Rules:  Rules{{}},
 			result: []*rule{},
@@ -82,12 +96,15 @@ func Test_chains_sort(t *testing.T) {
 
 	// Create a shuffled chains to sort.
 	p := rand.Perm(len(orig))
-	list := make(chains, len(orig))
+	mixed := make([]*chain, len(orig))
 	for i, j := range p {
-		list[i] = orig[j]
+		mixed[i] = orig[j]
 	}
 
-	must.Eq(t, orig, list.sort())
+	list := newChains(nil)
+	list.InsertSlice(mixed)
+
+	must.Eq(t, orig, list.Slice())
 }
 
 func Test_chain_Equal(t *testing.T) {
@@ -168,19 +185,21 @@ func Test_rules_sort(t *testing.T) {
 
 	// Create a shuffled rules to sort.
 	p := rand.Perm(len(orig))
-	list := make(rules, len(orig))
+	mixed := make([]*rule, len(orig))
 	for i, j := range p {
-		list[i] = orig[j]
+		mixed[i] = orig[j]
 	}
 
-	must.Eq(t, orig, list.sort())
+	list := newRules(nil)
+	list.InsertSlice(mixed)
+	must.Eq(t, orig, list.Slice())
 }
 
 func Test_rules_removables(t *testing.T) {
-	removables := make(rules, 16)
-	list := make(rules, 50)
-	for i := range len(list) {
-		list[i] = &rule{
+	removables := make([]*rule, 16)
+	src := make([]*rule, 50)
+	for i := range len(src) {
+		src[i] = &rule{
 			table: "test-table",
 			chain: "test-chain",
 			spec:  []string{fmt.Sprintf("rule-%d", i)},
@@ -188,12 +207,15 @@ func Test_rules_removables(t *testing.T) {
 		}
 
 		if i > 0 && i%3 == 0 {
-			list[i].removable = true
-			removables[(i/3)-1] = list[i]
+			src[i].removable = true
+			removables[(i/3)-1] = src[i]
 		}
 	}
 
-	must.Eq(t, removables, list.removables())
+	list := newRules(nil)
+	list.InsertSlice(src)
+
+	must.Eq(t, removables, list.removables().Slice())
 }
 
 func Test_rule_Equal(t *testing.T) {

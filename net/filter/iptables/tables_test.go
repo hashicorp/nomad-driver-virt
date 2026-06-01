@@ -1,4 +1,4 @@
-// Copyright IBM Corp. 2024, 2025
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package iptables
@@ -190,7 +190,7 @@ func Test_virtTables_Configure(t *testing.T) {
 			}
 
 			_, err := vt.Configure(resources, cfg, taskIP)
-			must.ErrorContains(t, err, "loopback port forwarding not enabled")
+			must.ErrorIs(t, err, errLoopbackNotEnabled)
 		})
 	})
 
@@ -539,7 +539,7 @@ func Test_virtTables_add(t *testing.T) {
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChain([]*chain{
+			req.chains.InsertSlice([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -548,8 +548,8 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			}...)
-			req.addRule(&rule{
+			})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -574,7 +574,7 @@ func Test_virtTables_add(t *testing.T) {
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChain([]*chain{
+			req.chains.InsertSlice([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -583,8 +583,8 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			}...)
-			req.addRule([]*rule{
+			})
+			req.rules.InsertSlice([]*rule{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -596,7 +596,7 @@ func Test_virtTables_add(t *testing.T) {
 					position: 1,
 					spec:     []string{"-p", "tcp", "-j", "ACCEPT"},
 				},
-			}...)
+			})
 
 			must.NoError(t, vt.add(req))
 		})
@@ -615,7 +615,7 @@ func Test_virtTables_add(t *testing.T) {
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChain([]*chain{
+			req.chains.InsertSlice([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -624,8 +624,8 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			}...)
-			req.addRule(&rule{
+			})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -647,7 +647,7 @@ func Test_virtTables_add(t *testing.T) {
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChain([]*chain{
+			req.chains.InsertSlice([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -656,8 +656,8 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			}...)
-			req.addRule(&rule{
+			})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -676,7 +676,7 @@ func Test_virtTables_add(t *testing.T) {
 			t.Cleanup(chainRemover(t, vt.ipt, nomadTest1, nomadTest2))
 
 			req := newRequest()
-			req.addChain([]*chain{
+			req.chains.InsertSlice([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -685,8 +685,8 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			}...)
-			req.addRule(&rule{
+			})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -703,7 +703,7 @@ func Test_virtTables_add(t *testing.T) {
 			t.Cleanup(chainRemover(t, vt.ipt, nomadTest1, nomadTest2))
 
 			req := newRequest()
-			req.addChain([]*chain{
+			req.chains.InsertSlice([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -712,8 +712,8 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			}...)
-			req.addRule([]*rule{
+			})
+			req.rules.InsertSlice([]*rule{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -725,7 +725,7 @@ func Test_virtTables_add(t *testing.T) {
 					position: 1,
 					spec:     []string{"-p", "tcp", "-j", "ACCEPT"},
 				},
-			}...)
+			})
 
 			must.NoError(t, vt.add(req))
 
@@ -753,7 +753,7 @@ func Test_virtTables_add(t *testing.T) {
 			must.NoError(t, vt.ipt.NewChain("nat", nomadTest2))
 
 			req := newRequest()
-			req.addChain([]*chain{
+			req.chains.InsertSlice([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -762,8 +762,8 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			}...)
-			req.addRule(&rule{
+			})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -790,10 +790,10 @@ func Test_virtTables_add(t *testing.T) {
 			// Create both chains and rule so no changes are needed.
 			must.NoError(t, vt.ipt.NewChain("nat", nomadTest1))
 			must.NoError(t, vt.ipt.NewChain("nat", nomadTest2))
-			must.NoError(t, vt.ipt.Append("nat", nomadTest1, "-p", "tcp", "-j", "ACCEPT"))
+			must.NoError(t, vt.ipt.AppendUnique("nat", nomadTest1, "-p", "tcp", "-j", "ACCEPT"))
 
 			req := newRequest()
-			req.addChain([]*chain{
+			req.chains.InsertSlice([]*chain{
 				{
 					table: "nat",
 					chain: nomadTest1,
@@ -802,8 +802,8 @@ func Test_virtTables_add(t *testing.T) {
 					table: "nat",
 					chain: nomadTest2,
 				},
-			}...)
-			req.addRule(&rule{
+			})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -837,8 +837,8 @@ func Test_virtTables_remove(t *testing.T) {
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChain(&chain{table: "nat", chain: nomadTest2})
-			req.addRule(&rule{
+			req.chains.Insert(&chain{table: "nat", chain: nomadTest2})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -857,7 +857,7 @@ func Test_virtTables_remove(t *testing.T) {
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addRule(&rule{
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -876,7 +876,7 @@ func Test_virtTables_remove(t *testing.T) {
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChain(&chain{table: "nat", chain: nomadTest1})
+			req.chains.Insert(&chain{table: "nat", chain: nomadTest1})
 
 			must.NoError(t, vt.remove(req))
 		})
@@ -901,8 +901,8 @@ func Test_virtTables_remove(t *testing.T) {
 
 			vt, _ := TestNew(t, WithIPTables(ipt))
 			req := newRequest()
-			req.addChain(&chain{table: "nat", chain: nomadTest1})
-			req.addRule(&rule{
+			req.chains.Insert(&chain{table: "nat", chain: nomadTest1})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -922,11 +922,11 @@ func Test_virtTables_remove(t *testing.T) {
 
 			must.NoError(t, vt.ipt.NewChain("nat", nomadTest1))
 			must.NoError(t, vt.ipt.NewChain("nat", nomadTest2))
-			must.NoError(t, vt.ipt.Append("nat", nomadTest1, "-p", "tcp", "-j", "ACCEPT"))
+			must.NoError(t, vt.ipt.AppendUnique("nat", nomadTest1, "-p", "tcp", "-j", "ACCEPT"))
 
 			req := newRequest()
-			req.addChain(&chain{table: "nat", chain: nomadTest2})
-			req.addRule(&rule{
+			req.chains.Insert(&chain{table: "nat", chain: nomadTest2})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -954,8 +954,8 @@ func Test_virtTables_remove(t *testing.T) {
 			must.NoError(t, vt.ipt.NewChain("nat", nomadTest2))
 
 			req := newRequest()
-			req.addChain(&chain{table: "nat", chain: nomadTest2})
-			req.addRule(&rule{
+			req.chains.Insert(&chain{table: "nat", chain: nomadTest2})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},
@@ -979,8 +979,8 @@ func Test_virtTables_remove(t *testing.T) {
 			vt, _ := TestNew(t)
 
 			req := newRequest()
-			req.addChain(&chain{table: "nat", chain: nomadTest2})
-			req.addRule(&rule{
+			req.chains.Insert(&chain{table: "nat", chain: nomadTest2})
+			req.rules.Insert(&rule{
 				table: "nat",
 				chain: nomadTest1,
 				spec:  []string{"-p", "tcp", "-j", "ACCEPT"},

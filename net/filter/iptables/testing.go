@@ -1,4 +1,4 @@
-// Copyright IBM Corp. 2024, 2025
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package iptables
@@ -99,7 +99,7 @@ func TestNew(t must.T, opts ...testOption) (*virtTables, func()) {
 	return nt, func() { nt.cleanup(t) }
 }
 
-// NewNames creates a new instance with all nomad chain name values
+// TestNewNames creates a new instance with all nomad chain name values
 // set to generated testing names.
 func TestNewNames() *names {
 	return &names{

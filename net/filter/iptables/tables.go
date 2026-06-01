@@ -1,4 +1,4 @@
-// Copyright IBM Corp. 2024, 2025
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package iptables
@@ -18,6 +18,8 @@ import (
 	virtnet "github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
+
+var errLoopbackNotEnabled = errors.New("loopback port forwarding not enabled")
 
 // virtTables implements the filter.Filter interface.
 type virtTables struct {
@@ -121,11 +123,11 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 			// Check if loopback port forwarding is even available before starting.
 			if !n.loopbackPortForwardsSupported(dstIface) {
 				n.logger.Error(fmt.Sprintf("loopback port forwarding requires kernel runtime configuration - net.ipv4.conf.%s.route_localnet=1", dstIface))
-				return nil, fmt.Errorf("loopback port forwarding not enabled for device - %s", dstIface)
+				return nil, fmt.Errorf("%w for device - %s", errLoopbackNotEnabled, dstIface)
 			}
 
 			// Add chains required for loopback port forwarding.
-			req.addChain([]*chain{
+			req.chains.InsertSlice([]*chain{
 				{
 					table: n.names.tables.NAT,
 					chain: n.names.chains.Nomad.Output,
@@ -134,10 +136,10 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 					table: n.names.tables.NAT,
 					chain: n.names.chains.Nomad.Postrouting,
 				},
-			}...)
+			})
 
 			// Add the rules.
-			req.addRule([]*rule{
+			req.rules.InsertSlice([]*rule{
 				// Jump rules for the new chains.
 				{
 					table:    n.names.tables.NAT,
@@ -167,10 +169,10 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 						"--dport", strconv.Itoa(reservedPort.Value), "-j", "DNAT", "--to-destination",
 						fmt.Sprintf("%s:%d", ip, reservedPort.To)},
 				},
-			}...)
+			})
 		} else {
 			// Add prerouting and filtering rule to enable the forward.
-			req.addRule([]*rule{
+			req.rules.InsertSlice([]*rule{
 				{
 					table:     n.names.tables.NAT,
 					chain:     n.names.chains.Nomad.Prerouting,
@@ -186,7 +188,7 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 					spec: []string{"-d", ip, "-p", "tcp", "-m", "state", "--state", "NEW", "-m", "tcp",
 						"--dport", strconv.Itoa(reservedPort.To), "-j", "ACCEPT"},
 				},
-			}...)
+			})
 		}
 	}
 
@@ -215,7 +217,7 @@ func (n *virtTables) Teardown(removal *virtnet.FilterRemoval) error {
 		return fmt.Errorf("invalid teardown data, cannot remove iptables rules")
 	}
 	req := newRequest()
-	req.addRule(rules.rules().Slice()...)
+	req.rules.InsertSet(rules.rules())
 
 	return n.remove(req)
 }
@@ -230,7 +232,7 @@ func (n *virtTables) setup() error {
 	req := newRequest()
 
 	// Add the custom NAT and filter chains.
-	req.addChain([]*chain{
+	req.chains.InsertSlice([]*chain{
 		{
 			table: n.names.tables.NAT,
 			chain: n.names.chains.Nomad.Prerouting,
@@ -239,9 +241,9 @@ func (n *virtTables) setup() error {
 			table: n.names.tables.Filter,
 			chain: n.names.chains.Nomad.Forward,
 		},
-	}...)
+	})
 	// Add the jump rules to the custom chains.
-	req.addRule([]*rule{
+	req.rules.InsertSlice([]*rule{
 		{
 			table:    n.names.tables.NAT,
 			chain:    n.names.chains.Prerouting,
@@ -254,7 +256,7 @@ func (n *virtTables) setup() error {
 			position: 1,
 			spec:     []string{"-j", n.names.chains.Nomad.Forward},
 		},
-	}...)
+	})
 
 	// Apply any updates that are required.
 	if err := n.add(req); err != nil {
@@ -272,7 +274,7 @@ func (n *virtTables) add(req *request) error {
 	defer n.m.Unlock()
 
 	// Start with creating any needed chains.
-	for _, c := range req.sortedChains() {
+	for _, c := range req.chains.Slice() {
 		exists, err := n.ipt.ChainExists(c.table, c.chain)
 		if err != nil {
 			return fmt.Errorf("failed to check chain existence: %w", err)
@@ -287,7 +289,7 @@ func (n *virtTables) add(req *request) error {
 
 	// Now add any rules that remain. If a position is defined, then the rule
 	// is inserted, otherwise it is appended.
-	for _, r := range req.sortedRules() {
+	for _, r := range req.rules.Slice() {
 		var err error
 		if r.position > 0 {
 			err = n.ipt.InsertUnique(r.table, r.chain, r.position, r.spec...)
@@ -322,7 +324,7 @@ func (n *virtTables) remove(req *request) error {
 	var mErr *multierror.Error
 
 	// Remove rules in the request.
-	for _, r := range req.sortedRules() {
+	for _, r := range req.rules.Slice() {
 		if err := n.ipt.DeleteIfExists(r.table, r.chain, r.spec...); err != nil {
 			// NOTE: attempting to delete jump rules that don't exist will
 			// cause a does not exist error. Check error and ignore.
@@ -333,7 +335,7 @@ func (n *virtTables) remove(req *request) error {
 	}
 
 	// Remove chains in the request.
-	for _, c := range req.sortedChains() {
+	for _, c := range req.chains.Slice() {
 		// Clear and delete the chain. This function will check that
 		// the chain exists so we don't need to do that here.
 		if err := n.ipt.ClearAndDeleteChain(c.table, c.chain); err != nil {
@@ -387,8 +389,6 @@ func getInterfaceByIP(ip net.IP) (string, error) {
 					if iip.Equal(ip) {
 						return iface.Name, nil
 					}
-				} else {
-					continue
 				}
 			}
 		}
