@@ -51,7 +51,7 @@ type Virtualizer interface {
 
 	// GenerateMountCommands generates the commands required to mount
 	// the provided mount configurations in the virtual machine.
-	GenerateMountCommands([]*vm.MountFileConfig) ([]string, error)
+	GenerateMountCommands(config *vm.Config, mounts []*vm.MountFileConfig) ([]string, error)
 
 	VMGetter
 }

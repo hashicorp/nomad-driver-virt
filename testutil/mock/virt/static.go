@@ -121,7 +121,7 @@ func (s *StaticVirt) GetNetworkInterfaces(string) ([]vm.NetworkInterface, error)
 	return []vm.NetworkInterface{}, nil
 }
 
-func (s *StaticVirt) GenerateMountCommands([]*vm.MountFileConfig) ([]string, error) {
+func (s *StaticVirt) GenerateMountCommands(*vm.Config, []*vm.MountFileConfig) ([]string, error) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	s.incrCount()

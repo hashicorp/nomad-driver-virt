@@ -6,3 +6,8 @@ nomad-driver-virt
 .vscode/
 *.code-workspace
 *.so
+
+# Testing helper executables
+providers/libvirt/testdata/fs-virtio/fs-virtio
+providers/libvirt/testdata/fs-virtio-9p/fs-virtio-9p
+providers/libvirt/testdata/fs-err/fs-err

@@ -91,8 +91,16 @@ test-tools: ## Install the tools used to run tests
 	go install gotest.tools/gotestsum@v1.13.0
 	@echo "==> Done"
 
+.PHONY: test-bins
+test-bins: ## Builds executables used in tests
+	@echo "==> Building helper binaries for tests..."
+	@go build -C providers/libvirt/testdata/fs-virtio
+	@go build -C providers/libvirt/testdata/fs-virtio-9p
+	@go build -C providers/libvirt/testdata/fs-err
+	@echo "==> Done"
+
 .PHONY: test
-test: ## Test the source code
+test: test-bins ## Test the source code
 	@echo "==> Testing source code..."
 	$(GO_TEST_CMD) -race -trimpath -cover -count=1 ./...
 	@echo "==> Done"

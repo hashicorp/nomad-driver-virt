@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/hashicorp/go-set/v3"
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
@@ -36,6 +37,7 @@ import (
 	"github.com/hashicorp/nomad/plugins/drivers"
 	driver_testutils "github.com/hashicorp/nomad/plugins/drivers/testutils"
 	"github.com/shoenig/test/must"
+	"libvirt.org/go/libvirtxml"
 )
 
 const (
@@ -45,11 +47,6 @@ const (
 
 func testHarness(t *testing.T, config *virt.Config, p providers.Providers, ci cloudinit.CloudInit, task *drivers.TaskConfig, timeout time.Duration) *driver_testutils.DriverHarness {
 	t.Helper()
-
-	libvirt.ModifyMountFsAvailability(func() (map[string]struct{}, error) {
-		return map[string]struct{}{"virtio-9p-device": {}}, nil
-	})
-	t.Cleanup(func() { libvirt.ModifyMountFsAvailability(nil) })
 
 	// Setup the testing logger
 	logger := testlog.HCLogger(t)
@@ -903,7 +900,14 @@ func TestVirtDriver_Libvirt(t *testing.T) {
 	} else {
 		logger.SetLevel(hclog.Info)
 	}
-	prv := providers.New(t.Context(), logger)
+
+	guests := map[string]*libvirt.CapsGuest{
+		"x86_64": {
+			CapsGuest:        &libvirtxml.CapsGuest{OSType: "hvm"},
+			MountFilesystems: set.From([]libvirt.MountFilesystem{libvirt.MountFs9p}),
+		},
+	}
+	prv := providers.New(t.Context(), logger, libvirt.WithCaps(nil, guests))
 	driver := testHarness(t, config, prv, cloudinitMock, task, 5*time.Second)
 
 	// Stub the cloudinit generated file

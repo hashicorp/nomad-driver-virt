@@ -4,14 +4,11 @@
 package libvirt
 
 import (
-	"bufio"
-	"bytes"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/netip"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -39,8 +36,6 @@ const (
 	defaultInterfaceModel     = "virtio"
 	libvirtVirtioChannel      = "org.qemu.guest_agent.0" // This is is the only channel libvirt will use to connect to the qemu agent.
 	libvirtNoFlags            = 0
-	mountFsVirtiofs           = "vhost-user-fs-device"
-	mountFs9p                 = "virtio-9p-device"
 	virtiofsQueueSize         = 1024
 	virtiofsSecurityMode      = "passthrough"
 
@@ -105,6 +100,7 @@ type provider struct {
 	cancel           context.CancelFunc
 	availableMountFs map[string]struct{}
 	libvirtVersion   uint32
+	caps             *Capabilities
 	m                sync.Mutex
 
 	// insecureReadonlyMounts can be used to allow virtiofs to be used for read-only host
@@ -125,12 +121,12 @@ func (p *provider) Copy(ctx context.Context) *provider {
 	dCopy := &provider{
 		ctx:                    ctx,
 		cancel:                 cancel,
+		caps:                   p.caps,
 		closed:                 p.closed,
 		uri:                    p.uri,
 		logger:                 p.logger,
 		user:                   p.user,
 		password:               p.password,
-		availableMountFs:       p.availableMountFs,
 		libvirtVersion:         p.libvirtVersion,
 		insecureReadonlyMounts: p.insecureReadonlyMounts,
 	}
@@ -142,8 +138,10 @@ func (p *provider) Copy(ctx context.Context) *provider {
 	return dCopy
 }
 
+// Option defines an option to configure the provider.
 type Option func(*provider)
 
+// WithConfig sets the configuration on the provider.
 func WithConfig(c *Config) Option {
 	return func(p *provider) {
 		if c == nil {
@@ -165,16 +163,34 @@ func WithConfig(c *Config) Option {
 	}
 }
 
+// WithConnectionURI sets the connection URI on the provider.
 func WithConnectionURI(URI string) Option {
 	return func(p *provider) {
 		p.uri = URI
 	}
 }
 
+// WithAuth sets the libvirt username and password on the provider.
 func WithAuth(user, password string) Option {
 	return func(p *provider) {
 		p.user = user
 		p.password = password
+	}
+}
+
+// WithCaps sets the capabilities on the provider.
+func WithCaps(host *libvirtxml.CapsHost, guests map[string]*CapsGuest) Option {
+	return func(p *provider) {
+		if host == nil {
+			host = &libvirtxml.CapsHost{CPU: &libvirtxml.CapsHostCPU{Arch: "x86_64"}}
+		}
+		if guests == nil {
+			guests = make(map[string]*CapsGuest)
+		}
+		p.caps = &Capabilities{
+			Host:   host,
+			Guests: guests,
+		}
 	}
 }
 
@@ -304,16 +320,18 @@ func (p *provider) Init() error {
 		return err
 	}
 
+	// Cache the libvirt version for usability checks.
 	p.libvirtVersion, err = c.GetVersion()
 	if err != nil {
 		p.logger.Debug("unable to get libvirt version", "error", err)
 		return err
 	}
 
-	// Determine what filesystems are supported for mounting within
-	// the guest.
-	if p.availableMountFs, err = p.findAvailableMountFs(); err != nil {
-		return err
+	// Load and cache the capabilities if they haven't been set.
+	if p.caps == nil {
+		if err := p.loadCapabilities(); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -343,9 +361,9 @@ func (p *provider) CreateVM(config *vm.Config) error {
 	if config.XMLConfig != "" {
 		domXML = config.XMLConfig
 	} else {
-		domXML, err = p.parseConfiguration(config)
+		domXML, err = p.generateDomain(config)
 		if err != nil {
-			return fmt.Errorf("libvirt: unable to parse domain configuration %s: %w", config.Name, err)
+			return fmt.Errorf("libvirt: unable to generate domain configuration %s: %w", config.Name, err)
 		}
 	}
 
@@ -716,12 +734,18 @@ func (p *provider) Storage() storage.Storage {
 
 // GenerateMountCommands generates the commands required to mount the provided
 // mount configurations in the virtual machine. It will also set the driver
-// on the MountFileConfig based on file system usep.
+// on the MountFileConfig based on file system used.
 // implements virt.Virtualizer
-func (p *provider) GenerateMountCommands(mounts []*vm.MountFileConfig) ([]string, error) {
+func (p *provider) GenerateMountCommands(config *vm.Config, mounts []*vm.MountFileConfig) ([]string, error) {
+	guest, err := p.findGuestCaps(config)
+	if err != nil {
+		return nil, err
+	}
+
 	cmds := []string{}
 	// read-only volumes are not supported in libvirt until 11.0.0
 	virtiofsRO := p.requiresLibvirtVersion("11.0.0")
+
 	// if virtiofs does not support read-only mounts, check if insecure
 	// mounts have been enabled to bypass the version restriction.
 	if !virtiofsRO && p.insecureReadonlyMounts {
@@ -732,7 +756,7 @@ func (p *provider) GenerateMountCommands(mounts []*vm.MountFileConfig) ([]string
 	for _, m := range mounts {
 		// if the mount is read-only, only 9p is supported (unless insecure mounts enabled).
 		if m.ReadOnly && !virtiofsRO {
-			if !p.mountFsAvailable(mountFs9p) {
+			if !guest.MountFilesystems.Contains(MountFs9p) {
 				return nil, fmt.Errorf("read-only virtiofs mount %w - libvirt version 11.0.0 or greater required", errs.ErrNotSupported)
 			}
 
@@ -741,13 +765,13 @@ func (p *provider) GenerateMountCommands(mounts []*vm.MountFileConfig) ([]string
 		}
 
 		// Prefer using virtiofs if available
-		if p.mountFsAvailable(mountFsVirtiofs) {
+		if guest.MountFilesystems.Contains(MountFsVirtiofs) {
 			cmds = append(cmds, p.generateVirtiofsMountCmds(m)...)
 			continue
 		}
 
 		// Use 9pfs if virtiofs was not avaialble
-		if p.mountFsAvailable(mountFs9p) {
+		if guest.MountFilesystems.Contains(MountFs9p) {
 			cmds = append(cmds, p.generate9pMountCmds(m)...)
 			continue
 		}
@@ -1070,7 +1094,7 @@ func (p *provider) mountFsAvailable(name string) bool {
 
 // generateVirtiofsMountCmds generates mounts commands for virtiofs.
 func (p *provider) generateVirtiofsMountCmds(m *vm.MountFileConfig) []string {
-	m.Driver = mountFsVirtiofs
+	m.Driver = MountFsVirtiofs.String()
 
 	var readonly string
 	if m.ReadOnly {
@@ -1085,7 +1109,7 @@ func (p *provider) generateVirtiofsMountCmds(m *vm.MountFileConfig) []string {
 
 // generate9pMountCmds generates mount commands for 9pfs.
 func (p *provider) generate9pMountCmds(m *vm.MountFileConfig) []string {
-	m.Driver = mountFs9p
+	m.Driver = MountFs9p.String()
 
 	var readonly string
 	if m.ReadOnly {
@@ -1097,60 +1121,54 @@ func (p *provider) generate9pMountCmds(m *vm.MountFileConfig) []string {
 	}
 }
 
-// findAvailableMountFs will check for available guest filesystem device
-// support in the qemu emulator. It allows for overrides to be set which
-// are used in testing.
-func (p *provider) findAvailableMountFs() (map[string]struct{}, error) {
-	// If direct override values are set, return those.
-	if p.availableMountFsOverride != nil {
-		return p.availableMountFsOverride, nil
-	}
-
-	// If a function override is set, call that.
-	if mountFsAvailabilityOverride != nil {
-		return mountFsAvailabilityOverride()
-	}
-
-	c, err := p.connection()
+// loadCapabilities caches the capabilities returned from libvirt.
+func (p *provider) loadCapabilities() error {
+	conn, err := p.connection()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	capsRaw, err := c.GetCapabilities()
+	capsRaw, err := conn.GetCapabilities()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	caps := &libvirtxml.Caps{}
 	if err := caps.Unmarshal(capsRaw); err != nil {
-		return nil, err
+		return err
 	}
 
-	avail := map[string]struct{}{}
-
+	guests := map[string]*CapsGuest{}
 	for _, guest := range caps.Guests {
-		var stdout, stderr bytes.Buffer
-		cmd := exec.Command(guest.Arch.Emulator, "-device", "?")
-		cmd.Stdout = &stdout
-		cmd.Stderr = &stderr
-		if err := cmd.Run(); err != nil {
-			p.logger.Error("qemu device list failure", "stderr", stderr.String())
-			return nil, err
+		cap := new(CapsGuest)
+		cap.CapsGuest = &guest
+		if err := cap.LoadMountFilesystems(); err != nil {
+			return err
 		}
-
-		scanner := bufio.NewScanner(&stdout)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.HasPrefix(line, fmt.Sprintf(`name "%s"`, mountFs9p)) {
-				avail[mountFs9p] = struct{}{}
-			}
-			if strings.HasPrefix(line, fmt.Sprintf(`name "%s"`, mountFsVirtiofs)) {
-				avail[mountFsVirtiofs] = struct{}{}
-			}
-		}
+		guests[guest.Arch.Name] = cap
 	}
 
-	return avail, nil
+	p.caps = &Capabilities{
+		Host:   &caps.Host,
+		Guests: guests,
+	}
+
+	return nil
+}
+
+// findGuestCaps will find the guest capabilities appropriate for the
+// provided configuration.
+func (p *provider) findGuestCaps(config *vm.Config) (*CapsGuest, error) {
+	var arch string
+	// If the os variant architecture is not defined, we default to
+	// the detected host architecture.
+	if config.OsVariant == nil || config.OsVariant.Arch == "" {
+		arch = p.caps.Host.CPU.Arch
+	} else {
+		arch = config.OsVariant.Arch
+	}
+
+	return p.caps.Guest(arch)
 }
 
 // requiresLibvirtVersion returns true if the version of libvirt
@@ -1195,28 +1213,3 @@ func computeVersion(version uint32) string {
 
 	return fmt.Sprintf("%d.%d.%d", major, minor, version)
 }
-
-// ModifyMountFsAvailability is provided for testing to override the
-// available filesystems for guest mounts.
-func ModifyMountFsAvailability(fn mountFsAvailabilityFn) {
-	logger := hclog.L()
-	if fn != nil {
-		logger.Warn("mount filesystem availability function override set")
-	} else {
-		logger.Warn("mount filesystem availability function override removed")
-	}
-
-	mountFsAvailabilityLock.Lock()
-	mountFsAvailabilityOverride = fn
-	mountFsAvailabilityLock.Unlock()
-}
-
-type mountFsAvailabilityFn func() (map[string]struct{}, error)
-
-// mountFsAvailabilityOverride is an override to manually set available guest
-// filesystem support. It is used for testing and can be set outside of the
-// package using the [ModifyMountFsAvailability] function.
-var (
-	mountFsAvailabilityOverride mountFsAvailabilityFn
-	mountFsAvailabilityLock     sync.Mutex
-)
