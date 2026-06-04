@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nomad-driver-virt/internal/errs"
@@ -39,6 +38,7 @@ var (
 		"default_user_authorized_ssh_key": hclspec.NewAttr("default_user_authorized_ssh_key", "string", false),
 		"default_user_password":           hclspec.NewAttr("default_user_password", "string", false),
 		"cmds":                            hclspec.NewAttr("cmds", "list(string)", false),
+		"timezone":                        hclspec.NewAttr("timezone", "string", false),
 		"os": hclspec.NewBlock("os", false, hclspec.NewObject(map[string]*hclspec.Spec{
 			"arch":    hclspec.NewAttr("arch", "string", false),
 			"machine": hclspec.NewAttr("machine", "string", false),
@@ -62,14 +62,14 @@ func TaskConfigSpec() *hclspec.Spec {
 // TaskConfig contains configuration information for a task that runs within
 // this plugin.
 type TaskConfig struct {
-	Hostname            string         `codec:"hostname"`
-	OS                  *OS            `codec:"os"`
-	UserData            string         `codec:"user_data"`
-	TimeZone            *time.Location `codec:"timezone"`
-	CMDs                []string       `codec:"cmds"`
-	DefaultUserSSHKey   string         `codec:"default_user_authorized_ssh_key"`
-	DefaultUserPassword string         `codec:"default_user_password"`
-	Disks               disks.Disks    `codec:"disk"`
+	Hostname            string      `codec:"hostname"`
+	OS                  *OS         `codec:"os"`
+	UserData            string      `codec:"user_data"`
+	Timezone            string      `codec:"timezone"`
+	CMDs                []string    `codec:"cmds"`
+	DefaultUserSSHKey   string      `codec:"default_user_authorized_ssh_key"`
+	DefaultUserPassword string      `codec:"default_user_password"`
+	Disks               disks.Disks `codec:"disk"`
 	// The list of network interfaces that should be added to the VM.
 	net.NetworkInterfacesConfig `codec:"network_interface"`
 }

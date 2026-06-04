@@ -9,7 +9,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
@@ -97,7 +96,7 @@ type Config struct {
 	CPUs              uint
 	OsVariant         *OSVariant
 	HostName          string
-	Timezone          *time.Location
+	Timezone          string
 	Mounts            []MountFileConfig
 	Files             []File
 	SSHKey            string
@@ -160,6 +159,7 @@ func (vm *Config) Copy() *Config {
 		CMDs:              slices.Clone(vm.CMDs),
 		BOOTCMDs:          slices.Clone(vm.BOOTCMDs),
 		CIUserData:        vm.CIUserData,
+		Timezone:          vm.Timezone,
 	}
 
 	if vm.OsVariant != nil {
@@ -167,10 +167,6 @@ func (vm *Config) Copy() *Config {
 			Arch:    vm.OsVariant.Arch,
 			Machine: vm.OsVariant.Machine,
 		}
-	}
-
-	if vm.Timezone != nil {
-		*copy.Timezone = *vm.Timezone
 	}
 
 	return copy

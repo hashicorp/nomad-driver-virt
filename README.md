@@ -262,6 +262,7 @@ plugin "nomad-driver-virt" {
 * **hostname** - Hostname assigned. Must be a valid DNS label according to RFC 1123. Defaults to a name based on the task name.
 * **network_interface** A list of network interfaces to be attached to the VM. Currently only a single entry is supported.
 * **os** - Configuration for specific machine and architecture to emulate. Default to match host machine.
+* **timezone** - Set time zone on the VM by time zone name. Example: `America/New_York`. 
 * **user_data** - Path to a cloud-init compliant user data file to be used as the user-data for the cloud-init configuration.
 
 _Note_: The driver currently has support for cpuSets or cores and memory. Every core will be treated as a vcpu. Do not use `resources.cpus`, they will be ignored.
