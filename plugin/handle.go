@@ -121,6 +121,8 @@ func (h *taskHandle) monitor(ctx context.Context, interval time.Duration, exitCh
 
 		case <-ctx.Done():
 			return
+		case <-h.ctx.Done():
+			return
 		}
 	}
 }

@@ -4,6 +4,8 @@
 package main
 
 import (
+	"context"
+
 	"github.com/hashicorp/nomad-driver-virt/plugin"
 
 	"github.com/hashicorp/go-hclog"
@@ -13,10 +15,10 @@ import (
 func main() {
 
 	// Serve the plugin
-	plugins.Serve(factory)
+	plugins.ServeCtx(factory)
 }
 
 // factory returns a new instance of a nomad driver plugin
-func factory(log hclog.Logger) interface{} {
-	return plugin.NewPlugin(log)
+func factory(ctx context.Context, log hclog.Logger) interface{} {
+	return plugin.NewPlugin(ctx, log)
 }

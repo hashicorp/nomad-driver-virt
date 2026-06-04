@@ -4,7 +4,6 @@
 package libvirt
 
 import (
-	"context"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -54,7 +53,7 @@ func testNew(t *testing.T, modifiers ...Option) (*provider, string) {
 	poolName := strings.ReplaceAll(t.Name(), "/", "_")
 
 	l := New(
-		context.Background(),
+		t.Context(),
 		hclog.NewNullLogger(),
 		WithConnectionURI(TestURI),
 	)

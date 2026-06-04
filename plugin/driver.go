@@ -119,26 +119,31 @@ type VirtDriverPlugin struct {
 	config         *virt.Config
 	nomadConfig    *base.ClientDriverConfig
 	tasks          *taskStore
-	signalShutdown context.CancelFunc
+	ctx            context.Context
 	logger         hclog.Logger
 	dataDir        string
 	ci             cloudinit.CloudInit
+	signalShutdown context.CancelFunc
 }
 
 // NewPlugin returns a new driver plugin
-func NewPlugin(logger hclog.Logger) drivers.DriverPlugin {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewPlugin(ctx context.Context, logger hclog.Logger) drivers.DriverPlugin {
 	logger = logger.Named(pluginName)
+	ctx, cancel := context.WithCancel(ctx)
+	context.AfterFunc(ctx, func() {
+		logger.Info("global plugin context done, shutting down")
+	})
 
 	// Should we check if extentions and kernel modules are there?
 	// grep -E 'svm|vmx' /proc/cpuinfo
 	// lsmod | grep kvm -> kvm_intel, kvm_amd, nvme-tcp
 	return &VirtDriverPlugin{
+		ctx:            ctx,
+		signalShutdown: cancel,
 		providers:      providers.New(ctx, logger),
 		eventer:        eventer.NewEventer(ctx, logger),
 		config:         &virt.Config{},
 		tasks:          newTaskStore(),
-		signalShutdown: cancel,
 		logger:         logger,
 	}
 }
@@ -151,6 +156,13 @@ func (d *VirtDriverPlugin) PluginInfo() (*base.PluginInfoResponse, error) {
 // ConfigSchema returns the plugin configuration schema.
 func (d *VirtDriverPlugin) ConfigSchema() (*hclspec.Spec, error) {
 	return virt.ConfigSpec(), nil
+}
+
+// Shutdown is called when the plugin is going to terminate. Use this to
+// signal the shutdown by canceling the context.
+func (d *VirtDriverPlugin) Shutdown(context.Context) error {
+	d.signalShutdown()
+	return nil
 }
 
 // SetConfig is called by the client to pass the configuration for the plugin.
@@ -226,6 +238,8 @@ func (d *VirtDriverPlugin) handleFingerprint(ctx context.Context, ch chan<- *dri
 		select {
 		case <-ctx.Done():
 			return
+		case <-d.ctx.Done():
+			return
 		case <-ticker.C:
 			ch <- d.buildFingerprint()
 		}
@@ -288,7 +302,7 @@ func (d *VirtDriverPlugin) StopTask(taskID string, timeout time.Duration, signal
 	handle.cancelFn()
 
 	vmname := vmNameFromTaskID(taskID)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(d.ctx)
 	defer cancel()
 	virtualizer, err := d.providers.GetProviderForVM(ctx, vmname)
 	if err != nil {
@@ -321,7 +335,7 @@ func (d *VirtDriverPlugin) DestroyTask(taskID string, force bool) error {
 	handle.cancelFn()
 
 	vmname := vmNameFromTaskID(taskID)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(d.ctx)
 	defer cancel()
 	virtualizer, err := d.providers.GetProviderForVM(ctx, vmname)
 	if err != nil {
@@ -393,6 +407,8 @@ func (d *VirtDriverPlugin) publishStats(ctx context.Context, interval time.Durat
 			sch <- stats
 
 		case <-ctx.Done():
+			return
+		case <-d.ctx.Done():
 			return
 		}
 	}
@@ -512,7 +528,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 	cpuSet := idset.Parse[hw.CoreID](cfg.Resources.LinuxResources.CpusetCpus)
 
 	// Create context for this task
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(d.ctx)
 	defer func() {
 		if err != nil {
 			cancel()
@@ -749,7 +765,7 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 			handle.Config.ID, err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(d.ctx)
 	h := &taskHandle{
 		name:        vmNameFromTaskID(handle.Config.ID),
 		logger:      d.logger.Named("handle").With("alloc-id", handle.Config.AllocID),

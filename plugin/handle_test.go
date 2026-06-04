@@ -65,6 +65,7 @@ func Test_GetStats(t *testing.T) {
 			dgm.Expect(tt.info)
 
 			th := &taskHandle{
+				ctx:        t.Context(),
 				name:       "test-vm",
 				taskGetter: dgm,
 			}
@@ -90,6 +91,7 @@ func Test_Monitor(t *testing.T) {
 	)
 
 	th := &taskHandle{
+		ctx:        t.Context(),
 		logger:     hclog.NewNullLogger(),
 		name:       "test-vm",
 		taskGetter: dgm,
