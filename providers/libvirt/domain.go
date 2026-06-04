@@ -5,11 +5,8 @@ package libvirt
 
 import (
 	"fmt"
-	"slices"
 
-	"github.com/hashicorp/go-set/v3"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
-	"github.com/hashicorp/nomad-driver-virt/storage"
 	"libvirt.org/go/libvirtxml"
 )
 
@@ -42,7 +39,6 @@ func (p *provider) generateDomain(config *vm.Config) (string, error) {
 		p.configureDomainDeviceConsoles,
 		p.configureDomainDeviceChannels,
 		p.generateDomainDeviceDisks,
-		p.generateDomainDeviceControllers,
 		p.generateDomainDeviceFilesystems,
 		p.generateDomainDeviceInterfaces,
 		p.configureDomainDeviceRNG,
@@ -208,33 +204,6 @@ func (p *provider) configureDomainDeviceConsoles(config *vm.Config, dom *libvirt
 			},
 		},
 	}
-
-	return nil
-}
-
-// generateDomainDeviceControllers configure the required controllers.
-func (p *provider) generateDomainDeviceControllers(config *vm.Config, dom *libvirtxml.Domain) error {
-	if dom.Devices == nil {
-		dom.Devices = &libvirtxml.DomainDeviceList{}
-	}
-
-	zero := uint(0)
-	types := set.New[string](0)
-	for _, v := range config.Volumes {
-		switch v.BusType {
-		case storage.BusTypeVirtio:
-			types.Insert("virtio-serial")
-		default:
-			types.Insert(v.BusType)
-		}
-	}
-
-	controllers := make([]libvirtxml.DomainController, 0)
-	for _, t := range slices.Sorted(types.Items()) {
-		controllers = append(controllers, libvirtxml.DomainController{Type: t, Index: &zero})
-	}
-
-	dom.Devices.Controllers = controllers
 
 	return nil
 }

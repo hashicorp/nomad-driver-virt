@@ -13,50 +13,6 @@ import (
 	"libvirt.org/go/libvirtxml"
 )
 
-func Test_generateDomainDeviceControllers(t *testing.T) {
-	zero := uint(0)
-	testCases := []struct {
-		desc    string
-		volumes []storage.Volume
-		result  []libvirtxml.DomainController
-	}{
-		{
-			desc: "ok",
-			volumes: []storage.Volume{
-				{BusType: storage.BusTypeUsb},
-				{BusType: storage.BusTypeVirtio},
-			},
-			result: []libvirtxml.DomainController{
-				{Type: "usb", Index: &zero},
-				{Type: "virtio-serial", Index: &zero},
-			},
-		},
-		{
-			desc: "duplicates",
-			volumes: []storage.Volume{
-				{BusType: storage.BusTypeUsb},
-				{BusType: storage.BusTypeVirtio},
-				{BusType: storage.BusTypeUsb},
-				{BusType: storage.BusTypeVirtio},
-			},
-			result: []libvirtxml.DomainController{
-				{Type: "usb", Index: &zero},
-				{Type: "virtio-serial", Index: &zero},
-			},
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.desc, func(t *testing.T) {
-			p, _ := testNew(t, overrideFs(defaultArch, MountFs9p))
-			config := &vm.Config{Volumes: tc.volumes}
-			dom := &libvirtxml.Domain{Devices: &libvirtxml.DomainDeviceList{}}
-			must.NoError(t, p.generateDomainDeviceControllers(config, dom))
-			must.Eq(t, tc.result, dom.Devices.Controllers)
-		})
-	}
-}
-
 func Test_generateDomainDeviceDisks(t *testing.T) {
 	testCases := []struct {
 		desc    string
