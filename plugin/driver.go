@@ -165,9 +165,6 @@ func (d *VirtDriverPlugin) SetConfig(cfg *base.Config) error {
 	// Save the configuration to the plugin
 	d.config = &config
 
-	// Apply any required configuration updates
-	d.config.Compat()
-
 	// Validate the configuration
 	if err := d.config.Validate(); err != nil {
 		return err
@@ -585,12 +582,6 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 
 	dc.Mounts = mounts
 	dc.BOOTCMDs = bootCMDs
-
-	// Compat to add old config into disks
-	if driverConfig.ImagePath != "" {
-		vdisks = vdisks.CompatAddImage(driverConfig.ImagePath, int64(driverConfig.PrimaryDiskSize),
-			driverConfig.UseThinCopy)
-	}
 
 	// Fix up the image paths
 	vdisks.ResolveImages(imagePaths)

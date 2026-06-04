@@ -20,25 +20,20 @@ func TestConfig_Task(t *testing.T) {
 	parser := hclutils.NewConfigParser(taskConfigSpec)
 
 	expectedHostname := "test-hostname"
-	expectedImg := "/path/to/image/here"
 	expectedUserData := "/path/to/user/data"
 	expectedCmds := []string{"redis"}
 	expectedDefaultUserSSHKey := "ssh-ed25519 testtesttest..."
 	expectedDefaultUserPassword := "password"
-	expectedUseThinCopy := true
 	expectedARCH := "arm78"
 	expectedMachine := "R2D2"
 
 	validHCL := `
 config {
-	image = "/path/to/image/here"
-	primary_disk_size = 26000
 	cmds = ["redis"]
 	hostname = "test-hostname"
 	user_data = "/path/to/user/data"
 	default_user_authorized_ssh_key =  "ssh-ed25519 testtesttest..."
 	default_user_password = "password"
-	use_thin_copy = true
 	os {
 		arch = "arm78"
 		machine = "R2D2"
@@ -49,15 +44,12 @@ config {
 	var tc *TaskConfig
 	parser.ParseHCL(t, validHCL, &tc)
 	must.SliceContainsAll(t, expectedCmds, tc.CMDs)
-	must.StrContains(t, expectedImg, tc.ImagePath)
-	must.Eq(t, expectedUseThinCopy, tc.UseThinCopy)
 	must.StrContains(t, expectedDefaultUserSSHKey, tc.DefaultUserSSHKey)
 	must.StrContains(t, expectedDefaultUserPassword, tc.DefaultUserPassword)
 	must.StrContains(t, expectedHostname, tc.Hostname)
 	must.StrContains(t, expectedUserData, tc.UserData)
 	must.StrContains(t, expectedARCH, tc.OS.Arch)
 	must.StrContains(t, expectedMachine, tc.OS.Machine)
-	must.Eq(t, 26000, tc.PrimaryDiskSize)
 }
 
 func TestConfig_Plugin(t *testing.T) {
@@ -75,7 +67,6 @@ func TestConfig_Plugin(t *testing.T) {
 				},
 			},
 			ImagePaths: []string{"/path/one", "/path/two"},
-			DataDir:    "/path/to/blah",
 			StoragePools: &storage.Config{
 				Default: "test-pool",
 				Directory: map[string]storage.Directory{
@@ -96,7 +87,6 @@ func TestConfig_Plugin(t *testing.T) {
 
 		validHCL := `
 config {
-	data_dir = "/path/to/blah"
 	image_paths = ["/path/one", "/path/two"]
 	provider "libvirt" {
 		uri = "qemu:///user"
@@ -124,48 +114,6 @@ config {
 		parser.ParseHCL(t, validHCL, &result)
 		must.Eq(t, expected, result)
 	})
-
-	t.Run("compat", func(t *testing.T) {
-		expected := &Config{
-			Emulator: &Emulator{
-				URI:      "qemu:///user",
-				User:     "test-user",
-				Password: "test-password",
-			},
-			Provider: &Provider{
-				Libvirt: &libvirt.Config{
-					URI:      "qemu:///user",
-					User:     "test-user",
-					Password: "test-password",
-				},
-			},
-			ImagePaths: []string{"/path/one", "/path/two"},
-			DataDir:    "/path/to/blah",
-			StoragePools: &storage.Config{
-				Directory: map[string]storage.Directory{
-					"virt-sp": {Path: "/path/to/blah/virt-sp"},
-				},
-				Ceph: make(map[string]storage.Ceph),
-			},
-		}
-
-		validHCL := `
-config {
-	data_dir = "/path/to/blah"
-	image_paths = ["/path/one", "/path/two"]
-    emulator {
-		uri = "qemu:///user"
-		user = "test-user"
-		password = "test-password"
-    
-    }
-}
-`
-		var result *Config
-		parser.ParseHCL(t, validHCL, &result)
-		result.Compat()
-		must.Eq(t, expected, result)
-	})
 }
 
 func Test_taskConfigSpec(t *testing.T) {
@@ -178,8 +126,6 @@ func Test_taskConfigSpec(t *testing.T) {
 			name: "network interface with required",
 			inputConfig: `
 config {
-	image = "/path/to/image/here"
-	primary_disk_size = 26000
 	os {
 		arch    = "x86_64"
 		machine = "pc-i440fx-jammy"
@@ -193,8 +139,6 @@ config {
 }
 `,
 			expectedOutput: TaskConfig{
-				ImagePath:       "/path/to/image/here",
-				PrimaryDiskSize: 26000,
 				OS: &OS{
 					Arch:    "x86_64",
 					Machine: "pc-i440fx-jammy",
