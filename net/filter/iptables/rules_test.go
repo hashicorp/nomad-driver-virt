@@ -65,6 +65,12 @@ func TestRules_rules(t *testing.T) {
 			result: []*rule{
 				{
 					table: "table-name", chain: "chain-name",
+				},
+				{
+					table: "mock-name", chain: "chain-name",
+				},
+				{
+					table: "table-name", chain: "chain-name",
 					spec: []string{"spec", "values"},
 				},
 			},
@@ -72,7 +78,7 @@ func TestRules_rules(t *testing.T) {
 		{
 			desc:   "empty",
 			Rules:  Rules{{}},
-			result: []*rule{},
+			result: []*rule{{}},
 		},
 	}
 

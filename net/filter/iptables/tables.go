@@ -322,6 +322,7 @@ func (n *virtTables) remove(req *request) error {
 			// NOTE: attempting to delete jump rules that don't exist will
 			// cause a "does not exist" error. Check error and ignore.
 			if !isNotExistErr(err) {
+				n.logger.Error("failed to delete iptables rule", "error", err, "rule", *r)
 				mErr = multierror.Append(mErr, err)
 			}
 		}
@@ -332,6 +333,7 @@ func (n *virtTables) remove(req *request) error {
 		// Clear and delete the chain. This function will check that
 		// the chain exists so we don't need to do that here.
 		if err := n.ipt.ClearAndDeleteChain(c.table, c.chain); err != nil {
+			n.logger.Error("failed to delete iptables chain", "error", err, "chain", *c)
 			mErr = multierror.Append(mErr, err)
 		}
 	}

@@ -23,15 +23,18 @@ func (r Rules) Empty() bool {
 func (r Rules) rules() set.Collection[*rule] {
 	result := set.NewHashSet[*rule](0)
 	for _, entry := range r {
-		if len(entry) < 3 {
-			// invalid rule so skip.
-			continue
+		var newRule *rule
+		switch len(entry) {
+		case 0:
+			newRule = new(rule)
+		case 1:
+			newRule = &rule{table: entry[0]}
+		case 2:
+			newRule = &rule{table: entry[0], chain: entry[1]}
+		default:
+			newRule = &rule{table: entry[0], chain: entry[1], spec: entry[2:]}
 		}
-		result.Insert(&rule{
-			table: entry[0],
-			chain: entry[1],
-			spec:  entry[2:],
-		})
+		result.Insert(newRule)
 	}
 
 	return result
