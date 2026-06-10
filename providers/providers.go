@@ -146,7 +146,7 @@ func (p *providers) Fingerprint() (*drivers.Fingerprint, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(p.ctx)
 	defer cancel()
 
 	// Start with marking the virt driver in the attributes:
@@ -222,7 +222,7 @@ func (p *providers) GetVM(name string) (*vm.Info, error) {
 	p.l.RLock()
 	defer p.l.RUnlock()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(p.ctx)
 	defer cancel()
 
 	for _, dispense := range p.dispensers {

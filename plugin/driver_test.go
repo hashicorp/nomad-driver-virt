@@ -62,7 +62,7 @@ func testHarness(t *testing.T, config *virt.Config, p providers.Providers, ci cl
 		must.Sprint("could not encode plugin configuration"))
 
 	// Create the plugin and set the passed interfaces
-	d := NewPlugin(logger).(*VirtDriverPlugin)
+	d := NewPlugin(t.Context(), logger).(*VirtDriverPlugin)
 	d.providers = p
 	d.ci = ci
 

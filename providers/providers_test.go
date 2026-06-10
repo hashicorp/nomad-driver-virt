@@ -18,20 +18,19 @@ import (
 )
 
 func TestProviders(t *testing.T) {
-	ctx := context.Background()
 	logger := hclog.NewNullLogger()
 	stub := mock_virtualizers.NewStatic()
 	vstub := virt.Virtualizer(stub)
 
 	t.Run("Setup", func(t *testing.T) {
 		t.Run("without config", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			err := p.Setup(nil)
 			must.ErrorIs(t, err, ErrNoProvidersEnabled)
 		})
 
 		t.Run("with empty config", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			err := p.Setup(&virt.Config{})
 			must.ErrorIs(t, err, ErrNoProvidersEnabled)
 		})
@@ -43,7 +42,7 @@ func TestProviders(t *testing.T) {
 	})
 
 	t.Run("Get", func(t *testing.T) {
-		p := New(ctx, logger)
+		p := New(t.Context(), logger)
 		stubProvider(p, "test-virt", stub)
 
 		t.Run("existing provider", func(t *testing.T) {
@@ -61,14 +60,14 @@ func TestProviders(t *testing.T) {
 
 	t.Run("Default", func(t *testing.T) {
 		t.Run("no providers", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			pv, err := p.Default(t.Context())
 			must.ErrorIs(t, err, ErrUnavailableProvider)
 			must.Nil(t, pv)
 		})
 
 		t.Run("with providers", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			stubProvider(p, "test-virt", stub)
 			pv, err := p.Default(t.Context())
 			must.NoError(t, err)
@@ -78,14 +77,14 @@ func TestProviders(t *testing.T) {
 
 	t.Run("GetVM", func(t *testing.T) {
 		t.Run("no providers", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			v, err := p.GetVM("test")
 			must.ErrorIs(t, err, errs.ErrNotFound)
 			must.Nil(t, v)
 		})
 
 		t.Run("with providers", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			stubProvider(p, "v1", mock_virtualizers.NewStatic())
 			v2 := mock_virtualizers.NewStatic()
 			stubProvider(p, "v2", v2)
@@ -108,14 +107,14 @@ func TestProviders(t *testing.T) {
 
 	t.Run("GetProviderForVM", func(t *testing.T) {
 		t.Run("no providers", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			v, err := p.GetProviderForVM(t.Context(), "test-vm")
 			must.ErrorIs(t, err, errs.ErrNotFound)
 			must.Nil(t, v)
 		})
 
 		t.Run("no matching providers", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			stubProvider(p, "test-virt", mock_virtualizers.NewStatic())
 			stubProvider(p, "other-virt", mock_virtualizers.NewStatic())
 			v, err := p.GetProviderForVM(t.Context(), "test-vm")
@@ -124,7 +123,7 @@ func TestProviders(t *testing.T) {
 		})
 
 		t.Run("with matching provider", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			stubProvider(p, "test-virt", mock_virtualizers.NewStatic())
 			stub := &mock_virtualizers.StaticVirt{GetVMResult: &vm.Info{}}
 			stubProvider(p, "other-virt", stub)
@@ -149,7 +148,7 @@ func TestProviders(t *testing.T) {
 		}
 
 		t.Run("with single provider", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			stubProvider(p, "first-stub", first_stub)
 			res, err := p.Fingerprint()
 			must.NoError(t, err)
@@ -165,7 +164,7 @@ func TestProviders(t *testing.T) {
 		})
 
 		t.Run("with multiple providers", func(t *testing.T) {
-			p := New(ctx, logger)
+			p := New(t.Context(), logger)
 			stubProvider(p, "first-stub", first_stub)
 			stubProvider(p, "second-stub", second_stub)
 			res, err := p.Fingerprint()
