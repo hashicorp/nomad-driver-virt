@@ -136,6 +136,7 @@ config {
 			ports = ["ssh"]
 		}
 	}
+	timezone = "America/New_York",
 }
 `,
 			expectedOutput: TaskConfig{
@@ -151,7 +152,9 @@ config {
 							Ports: []string{"ssh"},
 						},
 					},
-				}},
+				},
+				Timezone: "America/New_York",
+			},
 		},
 	}
 

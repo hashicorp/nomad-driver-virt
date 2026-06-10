@@ -53,3 +53,7 @@ bootcmd:
   - {{.}}
   {{- end }}
 {{- end }}
+
+{{- if .VendorData.Timezone}}
+timezone: {{.VendorData.Timezone}}
+{{- end }}

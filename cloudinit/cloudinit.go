@@ -54,9 +54,10 @@ type VendorData struct {
 	// RunCMD will be run inside the VM once it has started.
 	RunCMD []string
 	// BootCMD will be run inside the VM at booting time.
-	BootCMD []string
-	Mounts  []MountFileConfig
-	Files   []File
+	BootCMD  []string
+	Mounts   []MountFileConfig
+	Files    []File
+	Timezone string
 }
 
 type File struct {

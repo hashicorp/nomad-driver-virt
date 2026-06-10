@@ -204,6 +204,19 @@ func TestExecuteTemplate(t *testing.T) {
 			expectedContent: "#cloud-config\n",
 		},
 		{
+			name: "with_timezone",
+			config: &Config{
+				VendorData: VendorData{
+					Timezone: "America/Los_Angeles",
+				},
+			},
+			templatePath: "vendor-data.tmpl",
+			expectError:  false,
+			expectedContent: `#cloud-config
+timezone: America/Los_Angeles
+`,
+		},
+		{
 			name: "vendor_data_without_user_data",
 			config: &Config{
 				VendorData: VendorData{

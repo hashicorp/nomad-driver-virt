@@ -536,6 +536,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 		SSHKey:            driverConfig.DefaultUserSSHKey,
 		Files:             []vm.File{createEnvsFile(cfg.Env)},
 		NetworkInterfaces: driverConfig.NetworkInterfacesConfig,
+		Timezone:          driverConfig.Timezone,
 	}
 
 	// Run validation
