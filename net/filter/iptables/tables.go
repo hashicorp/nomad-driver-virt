@@ -52,9 +52,6 @@ func (n *virtTables) SetLogger(logger hclog.Logger) {
 // Configure configures iptables to enable port forwards based on the passed
 // resources and returns a collection of rules that can be used to remove
 // the configuration with Teardown function.
-// NOTE: When adding iptable rules that include IP addresses, include the
-// subnet mask. This is important for properly matching existing rules since
-// iptables adds the mask.
 func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInterfaceBridgeConfig, ip string) (rules *virtnet.FilterRemoval, err error) {
 	// Check that received values are suitable for configuration.
 	if res == nil {
@@ -266,9 +263,7 @@ func (n *virtTables) setup() error {
 	return nil
 }
 
-// add adds chains and rules to iptables. The request will be inspected
-// and compared to existing chains and rules defined in iptables and only
-// add what does not already exist.
+// add adds chains and rules to iptables.
 func (n *virtTables) add(req *request) error {
 	n.m.Lock()
 	defer n.m.Unlock()
@@ -305,9 +300,7 @@ func (n *virtTables) add(req *request) error {
 	return nil
 }
 
-// remove removes chains and rules from iptables. The request will be
-// inspected and compared to existing chains and rules defined in iptables
-// and only remove what does not already exist.
+// remove removes chains and rules from iptables.
 // NOTE: Removal errors are _not_ immediately fatal allowing as much to
 // be removed as possible. The errors will be collected and returned as
 // a multierror.
@@ -315,8 +308,8 @@ func (n *virtTables) remove(req *request) error {
 	n.m.Lock()
 	defer n.m.Unlock()
 
-	// Prune any rules that are on chains to be deleted since the
-	// rules will be cleared before the chain is deleted.
+	// ClearAndDeleteChain below will delete all the rules on the
+	// chain, so those rules don't need to be deleted individually.
 	req.rules.RemoveFunc(func(r *rule) bool {
 		return req.chains.Contains(r.mkchain())
 	})
@@ -327,7 +320,7 @@ func (n *virtTables) remove(req *request) error {
 	for _, r := range req.rules.Slice() {
 		if err := n.ipt.DeleteIfExists(r.table, r.chain, r.spec...); err != nil {
 			// NOTE: attempting to delete jump rules that don't exist will
-			// cause a does not exist error. Check error and ignore.
+			// cause a "does not exist" error. Check error and ignore.
 			if !isNotExistErr(err) {
 				mErr = multierror.Append(mErr, err)
 			}

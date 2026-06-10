@@ -26,7 +26,7 @@ type request struct {
 }
 
 // removalInstructions returns the raw collection of rules from the
-// request that have been flagged as teardown.
+// request that have been flagged as removeable.
 func (r *request) removalInstructions() Rules {
 	result := make(Rules, 0)
 	for _, r := range r.rules.removables().Slice() {

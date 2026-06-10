@@ -54,7 +54,7 @@ func newChains(fn stampFn) *chains {
 	}
 }
 
-// chains is a slice of chain pointers.
+// chains is a collection of chain pointers.
 type chains struct {
 	*set.HashSet[*chain, string]
 	stampFn
@@ -134,7 +134,7 @@ func newRules(fn stampFn) *rules {
 	}
 }
 
-// rules is a slice of rule pointers.
+// rules is a collection of rule pointers.
 type rules struct {
 	*set.HashSet[*rule, string]
 	stampFn
