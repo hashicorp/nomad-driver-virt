@@ -121,6 +121,19 @@ type TeardownSpec struct {
 	Network string
 }
 
+// FilterRemoval contains the information required to remove any configuration
+// applied to the packet filter for routing to/from the task Virtual Machine.
+type FilterRemoval struct {
+	// Name is the name of the package that created the
+	// FilterRemoval information.
+	Name string
+
+	// Data is an encodable type that provides the required information
+	// to remove any packet filtering configuration related to the task.
+	// The actual type will be dependent on the underlying package in use.
+	Data any
+}
+
 // Equal returns if the given TeardownSpec is equal.
 func (t *TeardownSpec) Equal(rhs *TeardownSpec) bool {
 	if t == nil && rhs == nil {

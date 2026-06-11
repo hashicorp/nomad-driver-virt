@@ -1,0 +1,18 @@
+// Copyright IBM Corp. 2024, 2026
+// SPDX-License-Identifier: MPL-2.0
+
+package filter
+
+import (
+	"github.com/hashicorp/go-hclog"
+	virtnet "github.com/hashicorp/nomad-driver-virt/virt/net"
+	"github.com/hashicorp/nomad/plugins/drivers"
+)
+
+// Filter is the interface to add and remove packet filtering
+// configuration for virt tasks.
+type Filter interface {
+	SetLogger(hclog.Logger)
+	Configure(*drivers.Resources, *virtnet.NetworkInterfaceBridgeConfig, string) (*virtnet.FilterRemoval, error)
+	Teardown(*virtnet.FilterRemoval) error
+}
