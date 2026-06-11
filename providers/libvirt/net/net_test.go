@@ -19,5 +19,4 @@ func Test_NewController(t *testing.T) {
 	c := NewController(hclog.NewNullLogger(), nil)
 	must.Eq(t, c.dhcpLeaseDiscoveryInterval, defaultDHCPLeaseDiscoveryInterval)
 	must.Eq(t, c.dhcpLeaseDiscoveryTimeout, defaultDHCPLeaseDiscoveryTimeout)
-	must.NotNil(t, c.interfaceByIPGetter)
 }

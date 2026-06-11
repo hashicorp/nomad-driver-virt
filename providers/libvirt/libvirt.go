@@ -16,6 +16,7 @@ import (
 
 	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/net/filter"
 	libvirtnet "github.com/hashicorp/nomad-driver-virt/providers/libvirt/net"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	libvirt_storage "github.com/hashicorp/nomad-driver-virt/providers/libvirt/storage"
@@ -191,6 +192,13 @@ func WithCaps(host *libvirtxml.CapsHost, guests map[string]*CapsGuest) Option {
 			Host:   host,
 			Guests: guests,
 		}
+	}
+}
+
+// WithNetworkFilter sets the filter on the networking.
+func WithNetworkFilter(f filter.Filter) Option {
+	return func(p *provider) {
+		p.networking.SetFilter(f)
 	}
 }
 
@@ -1084,12 +1092,6 @@ func (p *provider) getDomainVolumes(dom *libvirt.Domain) ([]storage.Volume, erro
 	}
 
 	return p.storage.DiscoverVolumes(info.Devices.Disks)
-}
-
-// mountFsAvailable returns if the requested filesystems support is available.
-func (p *provider) mountFsAvailable(name string) bool {
-	_, ok := p.availableMountFs[name]
-	return ok
 }
 
 // generateVirtiofsMountCmds generates mounts commands for virtiofs.
