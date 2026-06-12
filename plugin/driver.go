@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
@@ -98,6 +99,10 @@ var (
 	ErrStartingLibvirt = errors.New("unable to start libvirt")
 	ErrImageNotFound   = errors.New("disk image not found at path")
 	ErrTaskCrashed     = errors.New("task has crashed")
+
+	// loggerMu is used for synchronizing the setting of the default
+	// logger. It only matters for testing.
+	loggerMu sync.Mutex
 )
 
 // TaskState is the runtime state which is encoded in the handle returned to
@@ -135,7 +140,7 @@ func NewPlugin(ctx context.Context, logger hclog.Logger) drivers.DriverPlugin {
 	})
 
 	// Set the default logger.
-	hclog.SetDefault(logger)
+	setDefaultLogger(logger)
 
 	// Should we check if extentions and kernel modules are there?
 	// grep -E 'svm|vmx' /proc/cpuinfo
@@ -804,4 +809,14 @@ func (d *VirtDriverPlugin) volumeCleanup(s storage.Storage, vols []storage.Volum
 			d.logger.Error("volume cleanup failure", "pool", v.Pool, "volume", v.Name, "error", err)
 		}
 	}
+}
+
+// setDefaultLogger synchronizes the setting of the default hclog
+// logger. It is used to prevent race conditions from being detected
+// when testing.
+func setDefaultLogger(logger hclog.Logger) {
+	loggerMu.Lock()
+	defer loggerMu.Unlock()
+
+	hclog.SetDefault(logger)
 }
