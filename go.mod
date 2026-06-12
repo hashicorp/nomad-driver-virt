@@ -19,7 +19,9 @@ require (
 	github.com/hashicorp/go-set v0.1.14
 	github.com/hashicorp/go-set/v3 v3.0.1
 	github.com/hashicorp/nomad v1.11.3
+	github.com/jsimonetti/rtnetlink/v2 v2.2.0
 	github.com/shoenig/test v1.13.2
+	golang.org/x/sys v0.44.0
 	libvirt.org/go/libvirt v1.12003.0
 	libvirt.org/go/libvirtxml v1.12002.0
 )
@@ -98,6 +100,8 @@ require (
 	github.com/lufia/plan9stats v0.0.0-20250317134145-8bc96cf8fc35 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/mdlayher/netlink v1.8.0 // indirect
+	github.com/mdlayher/socket v0.5.1 // indirect
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
@@ -138,7 +142,6 @@ require (
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/sync v0.20.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
 	golang.org/x/tools v0.44.0 // indirect
