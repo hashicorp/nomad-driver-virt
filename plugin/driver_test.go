@@ -17,6 +17,7 @@ import (
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
 	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/net/filter/iptables"
 	"github.com/hashicorp/nomad-driver-virt/providers"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt"
 	"github.com/hashicorp/nomad-driver-virt/storage"
@@ -907,7 +908,14 @@ func TestVirtDriver_Libvirt(t *testing.T) {
 			MountFilesystems: set.From([]libvirt.MountFilesystem{libvirt.MountFs9p}),
 		},
 	}
-	prv := providers.New(t.Context(), logger, libvirt.WithCaps(nil, guests))
+	// Use a testing iptables that has generated names to prevent
+	// clobbering local iptables configuration.
+	ipt, cleanup := iptables.TestNew(t)
+	t.Cleanup(cleanup)
+	prv := providers.New(t.Context(), logger,
+		libvirt.WithCaps(nil, guests),
+		libvirt.WithNetworkFilter(ipt),
+	)
 	driver := testHarness(t, config, prv, cloudinitMock, task, 5*time.Second)
 
 	// Stub the cloudinit generated file

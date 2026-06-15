@@ -6,6 +6,8 @@ package net
 import (
 	"slices"
 
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
@@ -104,13 +106,9 @@ type VMTerminatedTeardownResponse struct{}
 // process.
 type TeardownSpec struct {
 
-	// IPTablesRules specifies the rules used to build the initial VM
-	// networking. Each entry is a rule, the rule is a list of strings which
-	// mimics how iptables is called.
-	//   i[0] is the table name.
-	//   i[1] is the chain name.
-	//   i[2:] is the rule args.
-	IPTablesRules [][]string
+	// FilterRemoval contains the information to remove packet filtering
+	// configuration for the virtual machine.
+	FilterRemoval *FilterRemoval
 
 	// DHCPReservation specifies the reservation string used for registering
 	// a DHCP address for a virtual machine.
@@ -136,8 +134,8 @@ type FilterRemoval struct {
 
 // Equal returns if the given TeardownSpec is equal.
 func (t *TeardownSpec) Equal(rhs *TeardownSpec) bool {
-	if t == nil && rhs == nil {
-		return true
+	if t == nil || rhs == nil {
+		return t == rhs
 	}
 
 	if t.DHCPReservation != rhs.DHCPReservation {
@@ -148,17 +146,7 @@ func (t *TeardownSpec) Equal(rhs *TeardownSpec) bool {
 		return false
 	}
 
-	if len(t.IPTablesRules) != len(rhs.IPTablesRules) {
-		return false
-	}
-
-	for i, lhs := range t.IPTablesRules {
-		if slices.Compare(lhs, rhs.IPTablesRules[i]) != 0 {
-			return false
-		}
-	}
-
-	if t == nil || rhs == nil {
+	if !cmp.Equal(t.FilterRemoval, rhs.FilterRemoval, cmp.Options{cmpopts.IgnoreUnexported()}) {
 		return false
 	}
 

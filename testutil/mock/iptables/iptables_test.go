@@ -1,4 +1,4 @@
-// Copyright IBM Corp. 2024, 2025
+// Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
 package iptables
@@ -6,8 +6,13 @@ package iptables
 import (
 	"testing"
 
+	"github.com/hashicorp/nomad-driver-virt/net/filter/iptables"
 	"github.com/hashicorp/nomad-driver-virt/testutil/mock"
 	"github.com/shoenig/test/must"
+)
+
+var (
+	_ iptables.IPTables = (*mockIPTables)(nil)
 )
 
 func TestIPTables_Append(t *testing.T) {
