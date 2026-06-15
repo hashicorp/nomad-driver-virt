@@ -177,12 +177,10 @@ func (s *Storage) ImageHandler() image_tools.ImageHandler {
 func (s *Storage) GenerateDeviceName(busType string, existingNames []string) string {
 	var prefix string
 	switch busType {
-	case "ide":
-		prefix = "hd"
 	case "virtio":
 		prefix = "vd"
 	default:
-		prefix = "sr"
+		prefix = "sd"
 	}
 	validNames := []string{}
 	for _, n := range existingNames {
