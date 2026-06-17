@@ -12,7 +12,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strings"
 	"text/template"
+
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 
 	"github.com/hashicorp/go-hclog"
 )
@@ -23,16 +27,33 @@ const (
 
 var (
 	//go:embed templates
-	templateFS         embed.FS
-	vendorDataTemplate = "vendor-data.tmpl"
-	userDataTemplate   = "user-data.tmpl"
-	metaDataTemplate   = "meta-data.tmpl"
+	templateFS            embed.FS
+	vendorDataTemplate    = "vendor-data.tmpl"
+	userDataTemplate      = "user-data.tmpl"
+	metaDataTemplate      = "meta-data.tmpl"
+	loggingConfigTemplate = "logging-cfg.tmpl"
 
 	validFilenamePattern = `^[^<>:"/\\|?*\x00-\x1F]+$`
+
+	allowedLoggingLevels = []string{
+		"DEBUG",
+		"INFO",
+		"WARNING",
+		"ERROR",
+		"CRITICAL",
+		"NOTSET",
+	}
 )
 
 type CloudInit interface {
+	// Apply used the provided config to generate the cloudinit ISO
+	// file and writes it to the provided path.
 	Apply(ci *Config, path string) error
+	// LoggingConfig generates the configuration to configure cloudinit
+	// logging sending output to the stdout and stderr paths. If level
+	// is set, cloudinit logger messages with that level or higher will
+	// be sent to the stdout path.
+	LoggingConfig(stdoutPath, stderrPath, level string) (string, error)
 }
 
 type Config struct {
@@ -184,23 +205,52 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 	return nil
 }
 
-func executeTemplate(config *Config, in string, out io.Writer) error {
+// LoggingConfig generates the cloudinit configuration to log the
+// output of the run commands to the provided stdout and stderr
+// paths. If the level value is set, the logs from cloudinit with
+// the provided value and higher will be sent to the stdout path.
+func (c *Controller) LoggingConfig(stdoutPath, stderrPath, level string) (string, error) {
+	if level != "" {
+		level = strings.ToUpper(level) // ensure the level is in all uppercase
+		if !slices.Contains(allowedLoggingLevels, level) {
+			return "", fmt.Errorf("%w unknown logging level %q, supported: %s", errs.ErrInvalidConfiguration, level,
+				strings.Join(allowedLoggingLevels, ", "))
+		}
+	}
+	opts := struct {
+		StdoutPath  string
+		StderrPath  string
+		Level       string
+		SendLogging bool
+	}{
+		StdoutPath:  stdoutPath,
+		StderrPath:  stderrPath,
+		Level:       level,
+		SendLogging: level != "",
+	}
+
+	buf := bytes.NewBuffer([]byte{})
+	if err := executeTemplate(opts, loggingConfigTemplate, buf); err != nil {
+		return "", err
+	}
+
+	return buf.String(), nil
+}
+
+func executeTemplate(opts any, in string, out io.Writer) error {
 	fsys, err := fs.Sub(templateFS, templateFSRoot)
 	if err != nil {
-		return fmt.Errorf("cloudinit: unable to get templates fs %s: %w",
-			config.MetaData.InstanceID, err)
+		return fmt.Errorf("cloudinit: unable to get templates fs: %w", err)
 	}
 
 	tmpl, err := template.ParseFS(fsys, in)
 	if err != nil {
-		return fmt.Errorf("cloudinit: unable to parse template %s: %w",
-			config.MetaData.InstanceID, err)
+		return fmt.Errorf("cloudinit: unable to parse template: %w", err)
 	}
 
-	err = tmpl.Execute(out, config)
+	err = tmpl.Execute(out, opts)
 	if err != nil {
-		return fmt.Errorf("cloudinit: unable to execute template %s: %w",
-			config.MetaData.InstanceID, err)
+		return fmt.Errorf("cloudinit: unable to execute template: %w", err)
 	}
 	return nil
 }

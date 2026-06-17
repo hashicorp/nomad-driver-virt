@@ -36,8 +36,8 @@ func (p *provider) generateDomain(config *vm.Config) (string, error) {
 		p.configureDomainPowerManagement,
 		p.configureDomainFeatures,
 		p.configureDomainDeviceConsoles,
-		p.configureDomainDeviceConsoles,
 		p.configureDomainDeviceChannels,
+		p.configureDomainDeviceSerials,
 		p.generateDomainDeviceDisks,
 		p.generateDomainDeviceFilesystems,
 		p.generateDomainDeviceInterfaces,
@@ -194,13 +194,63 @@ func (p *provider) configureDomainDeviceConsoles(config *vm.Config, dom *libvirt
 		{
 			TTY: "pty",
 			Target: &libvirtxml.DomainConsoleTarget{
-				Type: "serial",
+				Type: "virtio",
+				Port: new(uint(0)),
+			},
+		},
+	}
+
+	return nil
+}
+
+// configureDomainDeviceSerials configures the domain serial devices.
+func (p *provider) configureDomainDeviceSerials(config *vm.Config, dom *libvirtxml.Domain) error {
+	if config.StdoutSocket == "" {
+		return nil
+	}
+
+	if dom.Devices == nil {
+		dom.Devices = &libvirtxml.DomainDeviceList{}
+	}
+
+	dom.Devices.Serials = []libvirtxml.DomainSerial{
+		{
+			Target: &libvirtxml.DomainSerialTarget{
+				Type: "isa-serial",
+				Port: new(uint(0)),
+				Model: &libvirtxml.DomainSerialTargetModel{
+					Name: "isa-serial",
+				},
 			},
 		},
 		{
-			TTY: "pty",
-			Target: &libvirtxml.DomainConsoleTarget{
-				Type: "virtio",
+			Source: &libvirtxml.DomainChardevSource{
+				UNIX: &libvirtxml.DomainChardevSourceUNIX{
+					Mode: "bind",
+					Path: config.StdoutSocket,
+				},
+			},
+			Target: &libvirtxml.DomainSerialTarget{
+				Type: "isa-serial",
+				Port: new(uint(1)),
+				Model: &libvirtxml.DomainSerialTargetModel{
+					Name: "isa-serial",
+				},
+			},
+		},
+		{
+			Source: &libvirtxml.DomainChardevSource{
+				UNIX: &libvirtxml.DomainChardevSourceUNIX{
+					Mode: "bind",
+					Path: config.StderrSocket,
+				},
+			},
+			Target: &libvirtxml.DomainSerialTarget{
+				Type: "isa-serial",
+				Port: new(uint(2)),
+				Model: &libvirtxml.DomainSerialTargetModel{
+					Name: "isa-serial",
+				},
 			},
 		},
 	}

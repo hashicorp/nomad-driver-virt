@@ -1,6 +1,6 @@
 module github.com/hashicorp/nomad-driver-virt
 
-go 1.25.8
+go 1.26.4
 
 // Fix error tidying due to Nomad downstream dependencies and the recent
 // migration of the metrics library and maintain the version required by Nomad.
