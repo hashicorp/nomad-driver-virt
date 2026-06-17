@@ -391,7 +391,7 @@ func (p *provider) CreateVM(config *vm.Config) error {
 }
 
 // StopVM stops the named virtual machine. The domain will be shutoff, but will still
-// be present as inactive and can be restartep.
+// be present as inactive and can be restarted.
 // implements virt.Virtualizer
 func (p *provider) StopVM(name string) error {
 	p.logger.Warn("stopping domain", "name", name)
@@ -401,6 +401,16 @@ func (p *provider) StopVM(name string) error {
 		return err
 	}
 	defer dom.Free()
+
+	// Attempt a graceful shutdown of the VM (destroy in libvirt means stop).
+	err = dom.DestroyFlags(libvirt.DOMAIN_DESTROY_GRACEFUL)
+	if err == nil {
+		return nil
+	}
+
+	// If an error was encountered during shutdown, destroy it
+	// directly without flags so it will be foricbly shutdown.
+	p.logger.Warn("failed to stop domain, attempting to force", "error", err)
 
 	err = dom.Destroy()
 	if err != nil {
@@ -427,11 +437,12 @@ func (p *provider) DestroyVM(name string) error {
 		return err
 	}
 
+	// Destroy stops the domain.
 	err = dom.Destroy()
 	if err != nil {
 		// In case we want to destroy a domain that was previoulsy stopped, destroy
 		// is not idempotent and will throw the error operation invalid if the
-		// domain is already stoppep.
+		// domain is already stopped.
 		lverr, ok := err.(libvirt.Error)
 		if ok {
 			if lverr.Code != libvirt.ERR_OPERATION_INVALID {
@@ -440,6 +451,7 @@ func (p *provider) DestroyVM(name string) error {
 		}
 	}
 
+	// Undefine actually removes the domain.
 	err = dom.Undefine()
 	if err != nil {
 		return fmt.Errorf("libvirt: unable to undefine domain %s: %w", name, err)
