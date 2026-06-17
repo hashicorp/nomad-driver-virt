@@ -78,7 +78,7 @@ func NewNames() *names {
 	return &names{
 		chains: &ChainNames{
 			Forward:     defaultChainNameForward,
-			Output:      defaultChainNameNomadOutput,
+			Output:      defaultChainNameOutput,
 			Postrouting: defaultChainNamePostrouting,
 			Prerouting:  defaultChainNamePrerouting,
 			Nomad: &NomadChainNames{
