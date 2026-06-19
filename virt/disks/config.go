@@ -205,14 +205,13 @@ func (s *Source) Equal(rhs *Source) bool {
 }
 
 // ApplyCloudInit will add a disk entry as a cdrom for cloud-init
-// TODO: adjust this to return errors so stat errors can be surfaced.
 func (d Disks) ApplyCloudInit(isoPath string) Disks {
 	if d == nil {
 		d = Disks{}
 	}
 
 	newDisk := &Disk{
-		BusType: storage.BusTypeIde,
+		BusType: storage.BusTypeScsi,
 		Kind:    storage.DiskKindCdrom,
 		Format:  "raw",
 		Source: &Source{
