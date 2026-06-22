@@ -36,7 +36,6 @@ func (p *provider) generateDomain(config *vm.Config) (string, error) {
 		p.configureDomainPowerManagement,
 		p.configureDomainFeatures,
 		p.configureDomainDeviceConsoles,
-		p.configureDomainDeviceConsoles,
 		p.configureDomainDeviceChannels,
 		p.generateDomainDeviceDisks,
 		p.generateDomainDeviceFilesystems,
@@ -57,10 +56,17 @@ func (p *provider) generateDomain(config *vm.Config) (string, error) {
 
 // configureDomainFeatures configures the domain features.
 func (p *provider) configureDomainFeatures(config *vm.Config, dom *libvirtxml.Domain) error {
-	dom.Features = &libvirtxml.DomainFeatureList{
-		VMPort: &libvirtxml.DomainFeatureState{
-			State: "off",
-		},
+	caps, err := p.findGuestCaps(config)
+	if err != nil {
+		return err
+	}
+
+	// If ACPI is an available feature enable it. The feature allows for
+	// graceful shutdowns when stopping a domain.
+	if caps.Features != nil && caps.Features.ACPI != nil {
+		dom.Features = &libvirtxml.DomainFeatureList{
+			ACPI: &libvirtxml.DomainFeature{},
+		}
 	}
 
 	return nil
@@ -68,13 +74,19 @@ func (p *provider) configureDomainFeatures(config *vm.Config, dom *libvirtxml.Do
 
 // configureDomainPowerManagement configures the domain power management settings.
 func (p *provider) configureDomainPowerManagement(config *vm.Config, dom *libvirtxml.Domain) error {
-	dom.PM = &libvirtxml.DomainPM{
-		SuspendToMem: &libvirtxml.DomainPMPolicy{
-			Enabled: "no",
-		},
-		SuspendToDisk: &libvirtxml.DomainPMPolicy{
-			Enabled: "no",
-		},
+	if p.caps.Host.PowerManagement != nil {
+		dom.PM = &libvirtxml.DomainPM{}
+		if p.caps.Host.PowerManagement.SuspendMem != nil {
+			dom.PM.SuspendToMem = &libvirtxml.DomainPMPolicy{
+				Enabled: "no",
+			}
+		}
+
+		if p.caps.Host.PowerManagement.SuspendDisk != nil {
+			dom.PM.SuspendToDisk = &libvirtxml.DomainPMPolicy{
+				Enabled: "no",
+			}
+		}
 	}
 
 	return nil

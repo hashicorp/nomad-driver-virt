@@ -220,7 +220,7 @@ func TestVirtDriver(t *testing.T) {
 			mock_storage.DefaultPool{Result: pl},
 			mock_storage.DefaultPool{Result: pl},
 			mock_storage.GenerateDeviceName{BusType: "virtio", ExistingDevices: []string{}, Result: "sda"},
-			mock_storage.GenerateDeviceName{BusType: "ide", ExistingDevices: []string{"sda"}, Result: "hda"},
+			mock_storage.GenerateDeviceName{BusType: "scsi", ExistingDevices: []string{"sda"}, Result: "hda"},
 			mock_storage.DefaultDiskDriver{Result: "test-driver"},
 			mock_storage.DefaultDiskDriver{Result: "test-driver"},
 		)
@@ -300,7 +300,7 @@ func TestVirtDriver(t *testing.T) {
 							Driver:     "test-driver",
 							Format:     "raw",
 							DeviceName: "hda",
-							BusType:    "ide",
+							BusType:    "scsi",
 						},
 					},
 				},
