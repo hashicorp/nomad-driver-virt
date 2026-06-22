@@ -200,11 +200,11 @@ func (a *arper) handleRequest(ctx context.Context, req *request) {
 	// Increment the active requests count.
 	a.requestStarted()
 
-	// Decrement the active requests count on the way out.
-	defer a.requestComplete()
-
 	// Close the request channel when done handling the request.
 	defer close(req.ch)
+
+	// Decrement the active requests count on the way out.
+	defer a.requestComplete()
 
 	// Remember seen addresses so we only send them once.
 	seenAddrs := set.NewTreeSet(bytes.Compare)
