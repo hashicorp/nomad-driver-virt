@@ -10,9 +10,9 @@ import (
 	"github.com/shoenig/test/must"
 )
 
-// New returns a new mock compatible with net.IPTables
-func New(t must.T) *mockIPTables {
-	return &mockIPTables{t: t}
+// New returns a new iptables mock.
+func New(t must.T) *MockIPTables {
+	return &MockIPTables{t: t}
 }
 
 type Append struct {
@@ -46,6 +46,12 @@ type ClearChain struct {
 type Delete struct {
 	Table, Chain string
 	RuleSpec     []string
+	Err          error
+}
+
+type DeleteById struct {
+	Table, Chain string
+	ID           int
 	Err          error
 }
 
@@ -92,13 +98,14 @@ type NewChain struct {
 	Err          error
 }
 
-type mockIPTables struct {
+type MockIPTables struct {
 	appends              []Append
 	appendUniques        []AppendUnique
 	chainExists          []ChainExists
 	clearAndDeleteChains []ClearAndDeleteChain
 	clearChains          []ClearChain
 	deletes              []Delete
+	deleteByIds          []DeleteById
 	deleteChains         []DeleteChain
 	deleteIfExists       []DeleteIfExists
 	inserts              []Insert
@@ -111,7 +118,7 @@ type mockIPTables struct {
 }
 
 // Expect adds a list of expected calls.
-func (m *mockIPTables) Expect(calls ...any) *mockIPTables {
+func (m *MockIPTables) Expect(calls ...any) *MockIPTables {
 	for _, call := range calls {
 		switch c := call.(type) {
 		case Append:
@@ -126,6 +133,8 @@ func (m *mockIPTables) Expect(calls ...any) *mockIPTables {
 			m.ExpectClearChain(c)
 		case Delete:
 			m.ExpectDelete(c)
+		case DeleteById:
+			m.ExpectDeleteById(c)
 		case DeleteChain:
 			m.ExpectDeleteChain(c)
 		case DeleteIfExists:
@@ -149,7 +158,7 @@ func (m *mockIPTables) Expect(calls ...any) *mockIPTables {
 }
 
 // ExpectAppend adds an expected Append call.
-func (m *mockIPTables) ExpectAppend(app Append) *mockIPTables {
+func (m *MockIPTables) ExpectAppend(app Append) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -158,7 +167,7 @@ func (m *mockIPTables) ExpectAppend(app Append) *mockIPTables {
 }
 
 // ExpectAppendUnique adds an expected AppendUnique call.
-func (m *mockIPTables) ExpectAppendUnique(app AppendUnique) *mockIPTables {
+func (m *MockIPTables) ExpectAppendUnique(app AppendUnique) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -167,7 +176,7 @@ func (m *mockIPTables) ExpectAppendUnique(app AppendUnique) *mockIPTables {
 }
 
 // ExpectChainExists adds an expected ChainExists call.
-func (m *mockIPTables) ExpectChainExists(c ChainExists) *mockIPTables {
+func (m *MockIPTables) ExpectChainExists(c ChainExists) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -176,7 +185,7 @@ func (m *mockIPTables) ExpectChainExists(c ChainExists) *mockIPTables {
 }
 
 // ExpectClearAndDeleteChain adds an expected ClearAndDeleteChain call.
-func (m *mockIPTables) ExpectClearAndDeleteChain(c ClearAndDeleteChain) *mockIPTables {
+func (m *MockIPTables) ExpectClearAndDeleteChain(c ClearAndDeleteChain) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -185,7 +194,7 @@ func (m *mockIPTables) ExpectClearAndDeleteChain(c ClearAndDeleteChain) *mockIPT
 }
 
 // ExpectClearChain adds an expected ClearChain call.
-func (m *mockIPTables) ExpectClearChain(clear ClearChain) *mockIPTables {
+func (m *MockIPTables) ExpectClearChain(clear ClearChain) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -194,7 +203,7 @@ func (m *mockIPTables) ExpectClearChain(clear ClearChain) *mockIPTables {
 }
 
 // ExpectDelete adds an expected Delete call.
-func (m *mockIPTables) ExpectDelete(del Delete) *mockIPTables {
+func (m *MockIPTables) ExpectDelete(del Delete) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -202,8 +211,17 @@ func (m *mockIPTables) ExpectDelete(del Delete) *mockIPTables {
 	return m
 }
 
+// ExpectDeleteById adds an expected DeleteById call.
+func (m *MockIPTables) ExpectDeleteById(del DeleteById) *MockIPTables {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.deleteByIds = append(m.deleteByIds, del)
+	return m
+}
+
 // ExpectDeleteChain adds an expected DeleteChain call.
-func (m *mockIPTables) ExpectDeleteChain(del DeleteChain) *mockIPTables {
+func (m *MockIPTables) ExpectDeleteChain(del DeleteChain) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -212,7 +230,7 @@ func (m *mockIPTables) ExpectDeleteChain(del DeleteChain) *mockIPTables {
 }
 
 // ExpectDeleteIfExists adds an expected DeleteIfExists call.
-func (m *mockIPTables) ExpectDeleteIfExists(del DeleteIfExists) *mockIPTables {
+func (m *MockIPTables) ExpectDeleteIfExists(del DeleteIfExists) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -221,7 +239,7 @@ func (m *mockIPTables) ExpectDeleteIfExists(del DeleteIfExists) *mockIPTables {
 }
 
 // ExpectInsert adds an expected Insert call.
-func (m *mockIPTables) ExpectInsert(ins Insert) *mockIPTables {
+func (m *MockIPTables) ExpectInsert(ins Insert) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -230,7 +248,7 @@ func (m *mockIPTables) ExpectInsert(ins Insert) *mockIPTables {
 }
 
 // ExpectInsertUnique adds an expected InsertUnique call.
-func (m *mockIPTables) ExpectInsertUnique(ins InsertUnique) *mockIPTables {
+func (m *MockIPTables) ExpectInsertUnique(ins InsertUnique) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -239,7 +257,7 @@ func (m *mockIPTables) ExpectInsertUnique(ins InsertUnique) *mockIPTables {
 }
 
 // ExpectList adds an expected List call.
-func (m *mockIPTables) ExpectList(list List) *mockIPTables {
+func (m *MockIPTables) ExpectList(list List) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -248,7 +266,7 @@ func (m *mockIPTables) ExpectList(list List) *mockIPTables {
 }
 
 // ExpectListChains adds an expected ListChains call.
-func (m *mockIPTables) ExpectListChains(list ListChains) *mockIPTables {
+func (m *MockIPTables) ExpectListChains(list ListChains) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -257,7 +275,7 @@ func (m *mockIPTables) ExpectListChains(list ListChains) *mockIPTables {
 }
 
 // ExpectNewChain adds an expected NewChain call.
-func (m *mockIPTables) ExpectNewChain(new NewChain) *mockIPTables {
+func (m *MockIPTables) ExpectNewChain(new NewChain) *MockIPTables {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -265,7 +283,7 @@ func (m *mockIPTables) ExpectNewChain(new NewChain) *mockIPTables {
 	return m
 }
 
-func (m *mockIPTables) Append(table, chain string, rulespec ...string) error {
+func (m *MockIPTables) Append(table, chain string, rulespec ...string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -287,7 +305,7 @@ func (m *mockIPTables) Append(table, chain string, rulespec ...string) error {
 	return call.Err
 }
 
-func (m *mockIPTables) AppendUnique(table, chain string, rulespec ...string) error {
+func (m *MockIPTables) AppendUnique(table, chain string, rulespec ...string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -309,7 +327,7 @@ func (m *mockIPTables) AppendUnique(table, chain string, rulespec ...string) err
 	return call.Err
 }
 
-func (m *mockIPTables) ChainExists(table, chain string) (bool, error) {
+func (m *MockIPTables) ChainExists(table, chain string) (bool, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -331,7 +349,7 @@ func (m *mockIPTables) ChainExists(table, chain string) (bool, error) {
 	return call.Result, call.Err
 }
 
-func (m *mockIPTables) ClearAndDeleteChain(table, chain string) error {
+func (m *MockIPTables) ClearAndDeleteChain(table, chain string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -352,7 +370,7 @@ func (m *mockIPTables) ClearAndDeleteChain(table, chain string) error {
 	return call.Err
 }
 
-func (m *mockIPTables) ClearChain(table, chain string) error {
+func (m *MockIPTables) ClearChain(table, chain string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -373,7 +391,7 @@ func (m *mockIPTables) ClearChain(table, chain string) error {
 	return call.Err
 }
 
-func (m *mockIPTables) Delete(table, chain string, rulespec ...string) error {
+func (m *MockIPTables) Delete(table, chain string, rulespec ...string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -395,7 +413,29 @@ func (m *mockIPTables) Delete(table, chain string, rulespec ...string) error {
 	return call.Err
 }
 
-func (m *mockIPTables) DeleteChain(table, chain string) error {
+func (m *MockIPTables) DeleteById(table, chain string, id int) error {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.deleteByIds,
+		must.Sprintf("Unexpected call to DeleteById - DeleteById(%q, %q, %d)", table, chain, id))
+	call := m.deleteByIds[0]
+	m.deleteByIds = m.deleteByIds[1:]
+	received := DeleteById{
+		Table: table,
+		Chain: chain,
+		ID:    id,
+		Err:   call.Err,
+	}
+	must.Eq(m.t, call, received,
+		must.Sprint("DeleteById received incorrect arguments"))
+
+	return call.Err
+}
+
+func (m *MockIPTables) DeleteChain(table, chain string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -416,7 +456,7 @@ func (m *mockIPTables) DeleteChain(table, chain string) error {
 	return call.Err
 }
 
-func (m *mockIPTables) DeleteIfExists(table, chain string, rulespec ...string) error {
+func (m *MockIPTables) DeleteIfExists(table, chain string, rulespec ...string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -438,14 +478,14 @@ func (m *mockIPTables) DeleteIfExists(table, chain string, rulespec ...string) e
 	return call.Err
 }
 
-func (m *mockIPTables) Insert(table, chain string, pos int, rulespec ...string) error {
+func (m *MockIPTables) Insert(table, chain string, pos int, rulespec ...string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.inserts,
-		must.Sprintf("Unexpected call to Insert - Insert(%q, %q, %q, %q)", table, chain, pos, rulespec))
+		must.Sprintf("Unexpected call to Insert - Insert(%q, %q, %d, %q)", table, chain, pos, rulespec))
 	call := m.inserts[0]
 	m.inserts = m.inserts[1:]
 	received := Insert{
@@ -461,14 +501,14 @@ func (m *mockIPTables) Insert(table, chain string, pos int, rulespec ...string) 
 	return call.Err
 }
 
-func (m *mockIPTables) InsertUnique(table, chain string, pos int, rulespec ...string) error {
+func (m *MockIPTables) InsertUnique(table, chain string, pos int, rulespec ...string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.insertUniques,
-		must.Sprintf("Unexpected call to InsertUnique - InsertUnique(%q, %q, %q, %q)", table, chain, pos, rulespec))
+		must.Sprintf("Unexpected call to InsertUnique - InsertUnique(%q, %q, %d, %q)", table, chain, pos, rulespec))
 	call := m.insertUniques[0]
 	m.insertUniques = m.insertUniques[1:]
 	received := InsertUnique{
@@ -484,7 +524,7 @@ func (m *mockIPTables) InsertUnique(table, chain string, pos int, rulespec ...st
 	return call.Err
 }
 
-func (m *mockIPTables) List(table, chain string) ([]string, error) {
+func (m *MockIPTables) List(table, chain string) ([]string, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -506,7 +546,7 @@ func (m *mockIPTables) List(table, chain string) ([]string, error) {
 	return call.Result, call.Err
 }
 
-func (m *mockIPTables) ListChains(table string) ([]string, error) {
+func (m *MockIPTables) ListChains(table string) ([]string, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -522,7 +562,7 @@ func (m *mockIPTables) ListChains(table string) ([]string, error) {
 	return call.Result, call.Err
 }
 
-func (m *mockIPTables) NewChain(table, chain string) error {
+func (m *MockIPTables) NewChain(table, chain string) error {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -545,7 +585,7 @@ func (m *mockIPTables) NewChain(table, chain string) error {
 
 // AssertExpectations verifies that all expected invocations
 // have been called.
-func (m *mockIPTables) AssertExpectations() {
+func (m *MockIPTables) AssertExpectations() {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -563,6 +603,8 @@ func (m *mockIPTables) AssertExpectations() {
 		must.Sprintf("ClearChain expecting %d more invocations", len(m.clearChains)))
 	must.SliceEmpty(m.t, m.deletes,
 		must.Sprintf("Delete expecting %d more invocations", len(m.deletes)))
+	must.SliceEmpty(m.t, m.deleteByIds,
+		must.Sprintf("DeleteById expecting %d more invocations", len(m.deleteByIds)))
 	must.SliceEmpty(m.t, m.deleteChains,
 		must.Sprintf("DeleteChain expecting %d more invocations", len(m.deleteChains)))
 	must.SliceEmpty(m.t, m.deleteIfExists,

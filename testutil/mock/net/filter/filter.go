@@ -11,7 +11,6 @@ import (
 
 	"github.com/hashicorp/go-hclog"
 	virtnet "github.com/hashicorp/nomad-driver-virt/virt/net"
-	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/shoenig/test/must"
 )
 
@@ -56,7 +55,7 @@ func (s *StaticFilter) CallCount(fnName string) int {
 	return s.counts[fnName]
 }
 
-func (s *StaticFilter) Configure(*drivers.Resources, *virtnet.NetworkInterfaceBridgeConfig, string) (*virtnet.FilterRemoval, error) {
+func (s *StaticFilter) Configure(virtnet.PortMappings, *virtnet.NetworkInterfaceBridgeConfig, string, string) (*virtnet.FilterRemoval, error) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	s.incrCount()
@@ -83,9 +82,10 @@ func NewMock(t must.T) *MockFilter {
 }
 
 type Configure struct {
-	Resources     *drivers.Resources
+	Mappings      virtnet.PortMappings
 	NetworkConfig *virtnet.NetworkInterfaceBridgeConfig
 	IP            string
+	Identifier    string
 	Result        *virtnet.FilterRemoval
 	Err           error
 }
@@ -146,31 +146,22 @@ func (m *MockFilter) ExpectSetLogger(c SetLogger) *MockFilter {
 	return m
 }
 
-func (m *MockFilter) Configure(resources *drivers.Resources, config *virtnet.NetworkInterfaceBridgeConfig, ip string) (*virtnet.FilterRemoval, error) {
+func (m *MockFilter) Configure(mappings virtnet.PortMappings, config *virtnet.NetworkInterfaceBridgeConfig, ip, identifier string) (*virtnet.FilterRemoval, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.configures,
-		must.Sprintf("Unexpected call to Configure - Configure(%v, %q, %q)", resources, config, ip))
+		must.Sprintf("Unexpected call to Configure - Configure(%v, %q, %q)", mappings, config, ip))
 	call := m.configures[0]
 	m.configures = m.configures[1:]
-
-	// We only care about the ports value within the resources
-	// so break down expectations.
-	if call.Resources.Ports == nil || resources.Ports == nil {
-		must.Eq(m.t, call.Resources.Ports, resources.Ports,
-			must.Sprint("Configured received incorrect arguments for resources Ports"))
-	} else {
-		must.Equal(m.t, *call.Resources.Ports, *resources.Ports,
-			must.Sprint("Configured received incorrect arguments for resources Ports"))
-	}
 
 	received := Configure{
 		NetworkConfig: config,
 		IP:            ip,
-		Resources:     call.Resources,
+		Identifier:    identifier,
+		Mappings:      mappings,
 		Result:        call.Result,
 		Err:           call.Err,
 	}

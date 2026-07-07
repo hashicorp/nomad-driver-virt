@@ -1,26 +1,30 @@
 // Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
-package iptables
+package linux
 
 const (
-	// defaultChainNameNomadPostrouting is the IPTables chain name used by the
+	// defaultHolderName is used by the nftables backend for the name of the
+	// table holding all the nomad virt packet filtering rules.
+	defaultHolderName = "nomadvirt"
+
+	// defaultChainNameNomadPostrouting is the chain name used by the
 	// driver for postrouting rules. This is currently used for entries within
 	// the nat table specifically for handling the special case of loopback
 	// addresses.
 	defaultChainNameNomadPostrouting = "NOMAD_VT_PST"
 
-	// defaultChainNameNomadPrerouting is the IPTables chain name used by the
+	// defaultChainNameNomadPrerouting is the chain name used by the
 	// driver for prerouting rules. This is currently used for entries within
 	// the nat table.
 	defaultChainNameNomadPrerouting = "NOMAD_VT_PRT"
 
-	// defaultChainNameNomadForward is the IPTables chain name used by the driver
+	// defaultChainNameNomadForward is the chain name used by the driver
 	// for forwarding rules. This is currently used for entries within the
 	// filter table.
 	defaultChainNameNomadForward = "NOMAD_VT_FW"
 
-	// defaultChainNameNomadOutput is the IPTables chain name used by the driver
+	// defaultChainNameNomadOutput is the chain name used by the driver
 	// for output rules. This is currently used for entries within the nat
 	// table specifically for handling the special case of loopback addresses.
 	defaultChainNameNomadOutput = "NOMAD_VT_OUT"
@@ -44,19 +48,20 @@ const (
 	defaultTableNameFilter = "filter"
 )
 
-// names holds the names for tables and chains used in iptables.
+// names holds the names for tables and chains used for filtering.
 type names struct {
+	holder string
 	chains *ChainNames
 	tables *TableNames
 }
 
-// TableNames holds the names of tables used in iptables.
+// TableNames holds the names of tables used for filtering.
 type TableNames struct {
 	Filter string
 	NAT    string
 }
 
-// ChainNames holds the name of chains used in iptables.
+// ChainNames holds the name of chains used for filtering.
 type ChainNames struct {
 	Forward     string
 	Nomad       *NomadChainNames
@@ -65,7 +70,7 @@ type ChainNames struct {
 	Prerouting  string
 }
 
-// NomadChainNames holds the names of nomad specific chains used in iptables.
+// NomadChainNames holds the names of nomad specific chains used for filtering.
 type NomadChainNames struct {
 	Forward     string
 	Postrouting string
@@ -76,6 +81,7 @@ type NomadChainNames struct {
 // NewNames creates a new instance with all values set to defaults.
 func NewNames() *names {
 	return &names{
+		holder: defaultHolderName,
 		chains: &ChainNames{
 			Forward:     defaultChainNameForward,
 			Output:      defaultChainNameOutput,

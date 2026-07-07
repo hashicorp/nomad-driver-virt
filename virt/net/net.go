@@ -27,6 +27,46 @@ const (
 	NetworkStateInactive = "inactive"
 )
 
+type PortMapping struct {
+	Label           string
+	Value           int
+	To              int
+	HostIP          string
+	IgnoreCollision bool
+}
+
+type PortMappings []PortMapping
+
+func (p PortMappings) Get(label string) (PortMapping, bool) {
+	for _, port := range p {
+		if port.Label == label {
+			return port, true
+		}
+	}
+
+	return PortMapping{}, false
+}
+
+func GenerateMappings(res *drivers.Resources) PortMappings {
+	var mappings PortMappings
+	if res == nil || res.Ports == nil {
+		return mappings
+	}
+
+	mappings = make(PortMappings, len(*res.Ports))
+	for i, p := range *res.Ports {
+		mappings[i] = PortMapping{
+			Label:           p.Label,
+			Value:           p.Value,
+			To:              p.To,
+			HostIP:          p.HostIP,
+			IgnoreCollision: p.IgnoreCollision,
+		}
+	}
+
+	return mappings
+}
+
 // VMStartedBuildRequest is the request object used to ask the network
 // sub-system to perform its configuration, once a VM has been started.
 type VMStartedBuildRequest struct {
