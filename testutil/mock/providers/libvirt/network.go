@@ -191,7 +191,7 @@ func (m *MockNetwork) Update(cmd libvirt.NetworkUpdateCommand, section libvirt.N
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.updates,
-		must.Sprintf("Unexpected call to Update - Update(%q, %q, %q, %q, %q)", cmd, section, parentIndex, xml, flags))
+		must.Sprintf("Unexpected call to Update - Update(%v, %v, %d, %q, %v)", cmd, section, parentIndex, xml, flags))
 	call := m.updates[0]
 	m.updates = m.updates[1:]
 	received := Update{
@@ -215,7 +215,7 @@ func (m *MockNetwork) GetXMLDesc(flags libvirt.NetworkXMLFlags) (string, error) 
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.getXMLDescs,
-		must.Sprintf("Unexpected call to GetXMLDesc - GetXMLDesc(%q)", flags))
+		must.Sprintf("Unexpected call to GetXMLDesc - GetXMLDesc(%v)", flags))
 	call := m.getXMLDescs[0]
 	m.getXMLDescs = m.getXMLDescs[1:]
 	must.Eq(m.t, call.Flags, flags,

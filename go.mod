@@ -1,6 +1,6 @@
 module github.com/hashicorp/nomad-driver-virt
 
-go 1.25.8
+go 1.26.4
 
 // Fix error tidying due to Nomad downstream dependencies and the recent
 // migration of the metrics library and maintain the version required by Nomad.
@@ -11,7 +11,6 @@ require (
 	github.com/coreos/go-iptables v0.8.0
 	github.com/diskfs/go-diskfs v1.9.4
 	github.com/docker/distribution v2.8.3+incompatible
-	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/google/go-cmp v0.7.0
 	github.com/gopacket/gopacket v1.7.0
 	github.com/hashicorp/go-hclog v1.6.3
@@ -52,6 +51,7 @@ require (
 	github.com/go-jose/go-jose/v3 v3.0.5 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
+	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/gojuno/minimock/v3 v3.4.5 // indirect
 	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect

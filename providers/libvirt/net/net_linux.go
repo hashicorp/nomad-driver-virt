@@ -18,7 +18,6 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/hashicorp/go-set"
 	"github.com/hashicorp/nomad-driver-virt/net/filter"
-	"github.com/hashicorp/nomad-driver-virt/net/filter/iptables"
 	"github.com/hashicorp/nomad-driver-virt/providers/libvirt/shims"
 	"github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/plugins/drivers"
@@ -52,7 +51,7 @@ func (c *Controller) Copy(conn shims.Connect) *Controller {
 func (c *Controller) Init() error {
 	// Set the filter if unset.
 	if c.filter == nil {
-		f, err := iptables.New()
+		f, err := filter.New()
 		if err != nil {
 			return err
 		}
@@ -160,7 +159,9 @@ func (c *Controller) VMStartedBuild(req *net.VMStartedBuildRequest) (*net.VMStar
 			req.Hostname, "mac", macAddr, "error", err)
 	}
 
-	teardownRules, err := c.filter.Configure(req.Resources, netInterface.Bridge, ipAddr)
+	mappings := net.GenerateMappings(req.Resources)
+
+	teardownRules, err := c.filter.Configure(mappings, netInterface.Bridge, ipAddr, req.VMName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure port mapping: %w", err)
 	}
