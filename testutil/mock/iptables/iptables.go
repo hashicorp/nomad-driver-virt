@@ -445,7 +445,7 @@ func (m *mockIPTables) Insert(table, chain string, pos int, rulespec ...string) 
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.inserts,
-		must.Sprintf("Unexpected call to Insert - Insert(%q, %q, %q, %q)", table, chain, pos, rulespec))
+		must.Sprintf("Unexpected call to Insert - Insert(%q, %q, %d, %q)", table, chain, pos, rulespec))
 	call := m.inserts[0]
 	m.inserts = m.inserts[1:]
 	received := Insert{
@@ -468,7 +468,7 @@ func (m *mockIPTables) InsertUnique(table, chain string, pos int, rulespec ...st
 	m.t.Helper()
 
 	must.SliceNotEmpty(m.t, m.insertUniques,
-		must.Sprintf("Unexpected call to InsertUnique - InsertUnique(%q, %q, %q, %q)", table, chain, pos, rulespec))
+		must.Sprintf("Unexpected call to InsertUnique - InsertUnique(%q, %q, %d, %q)", table, chain, pos, rulespec))
 	call := m.insertUniques[0]
 	m.insertUniques = m.insertUniques[1:]
 	received := InsertUnique{

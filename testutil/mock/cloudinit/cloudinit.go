@@ -21,6 +21,8 @@ func NewStaticCloudInit() *StaticCloudInit {
 }
 
 type StaticCloudInit struct {
+	LoggingConfigResult string
+
 	counts map[string]int
 	m      sync.Mutex
 	o      sync.Once
@@ -63,9 +65,25 @@ func (s *StaticCloudInit) Apply(*cloudinit.Config, string) error {
 	return nil
 }
 
+func (s *StaticCloudInit) LoggingConfig(stdout, stderr, level string) (string, error) {
+	s.m.Lock()
+	defer s.m.Unlock()
+	s.incrCount()
+
+	return s.LoggingConfigResult, nil
+}
+
 type Apply struct {
 	Config *cloudinit.Config
 	Path   string
+	Err    error
+}
+
+type LoggingConfig struct {
+	Stdout string
+	Stderr string
+	Level  string
+	Result string
 	Err    error
 }
 
@@ -73,7 +91,8 @@ type MockCloudInit struct {
 	t must.T
 	m sync.Mutex
 
-	apply []Apply
+	apply         []Apply
+	loggingConfig []LoggingConfig
 }
 
 func (m *MockCloudInit) Expect(calls ...any) *MockCloudInit {
@@ -81,6 +100,8 @@ func (m *MockCloudInit) Expect(calls ...any) *MockCloudInit {
 		switch c := call.(type) {
 		case Apply:
 			m.ExpectApply(c)
+		case LoggingConfig:
+			m.ExpectLoggingConfig(c)
 		default:
 			m.t.Fatalf("unsupported type for mock expectation: %T", c)
 		}
@@ -94,6 +115,14 @@ func (m *MockCloudInit) ExpectApply(c Apply) *MockCloudInit {
 	defer m.m.Unlock()
 
 	m.apply = append(m.apply, c)
+	return m
+}
+
+func (m *MockCloudInit) ExpectLoggingConfig(c LoggingConfig) *MockCloudInit {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.loggingConfig = append(m.loggingConfig, c)
 	return m
 }
 
@@ -117,6 +146,29 @@ func (m *MockCloudInit) Apply(config *cloudinit.Config, path string) error {
 	return call.Err
 }
 
+func (m *MockCloudInit) LoggingConfig(stdout, stderr, level string) (string, error) {
+	m.m.Lock()
+	defer m.m.Unlock()
+
+	m.t.Helper()
+
+	must.SliceNotEmpty(m.t, m.loggingConfig,
+		must.Sprint("Unexpected call to LoggingConfig"))
+	call := m.loggingConfig[0]
+	m.loggingConfig = m.loggingConfig[1:]
+
+	must.Eq(m.t, call, LoggingConfig{
+		Stdout: stdout,
+		Stderr: stderr,
+		Level:  level,
+		Result: call.Result,
+		Err:    call.Err,
+	}, must.Sprint("LoggingConfig received incorrect arguments"))
+
+	return call.Result, call.Err
+
+}
+
 func (m *MockCloudInit) AssertExpectations() {
 	m.m.Lock()
 	defer m.m.Unlock()
@@ -125,4 +177,6 @@ func (m *MockCloudInit) AssertExpectations() {
 
 	must.SliceEmpty(m.t, m.apply,
 		must.Sprintf("Apply expecting %d more invocations", len(m.apply)))
+	must.SliceEmpty(m.t, m.loggingConfig,
+		must.Sprintf("LoggingConfig expecting %d more invocations", len(m.loggingConfig)))
 }

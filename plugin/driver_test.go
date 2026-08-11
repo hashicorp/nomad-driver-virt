@@ -125,6 +125,7 @@ func testTaskConfig() *drivers.TaskConfig {
 		ID:        fmt.Sprintf("%s/%s/%s", allocID[:7], "test-task", uuid.Generate()[:8]),
 		AllocID:   allocID,
 		Resources: testResources(),
+		Env:       make(map[string]string),
 	}
 }
 
@@ -152,6 +153,9 @@ func testVirtTaskConfig(t *testing.T, imgDir string) virt.TaskConfig {
 		OS: &virt.OS{
 			Arch:    testOsArch,
 			Machine: testOsMachine,
+		},
+		Logging: virt.Logging{
+			Disable: true,
 		},
 	}
 }
@@ -265,7 +269,7 @@ func TestVirtDriver(t *testing.T) {
 							Tag:         "_testing_path_guest",
 						},
 					},
-					Files: []vm.File{
+					Files: []*vm.File{
 						{
 							Path:        "/etc/profile.d/virt.sh",
 							Permissions: "777",
@@ -474,7 +478,7 @@ func TestVirtDriver(t *testing.T) {
 							Tag:         "secretsDir",
 						},
 					},
-					Files: []vm.File{
+					Files: []*vm.File{
 						{
 							Path:        "/etc/profile.d/virt.sh",
 							Permissions: "777",
@@ -633,7 +637,7 @@ func TestVirtDriver(t *testing.T) {
 							Tag:         "secretsDir",
 						},
 					},
-					Files: []vm.File{
+					Files: []*vm.File{
 						{
 							Path:        "/etc/profile.d/virt.sh",
 							Permissions: "777",
@@ -799,7 +803,7 @@ func TestVirtDriver(t *testing.T) {
 							Tag:         "secretsDir",
 						},
 					},
-					Files: []vm.File{
+					Files: []*vm.File{
 						{
 							Path:        "/etc/profile.d/virt.sh",
 							Permissions: "777",
@@ -992,4 +996,93 @@ func TestVirtDriver_Libvirt(t *testing.T) {
 	must.Eq(t, "directory", *print.Attributes["driver.virt.storage_pool.default-pool"].String)
 	must.True(t, *print.Attributes["driver.virt.storage_pool.default-pool.default"].Bool)
 	must.True(t, *print.Attributes["driver.virt.storage_pool.default-pool.provider.libvirt"].Bool)
+}
+
+func TestDriver_StartTask(t *testing.T) {
+	setup := func(t *testing.T, withLogging *virt.Logging) (*drivers.TaskConfig, *VirtDriverPlugin) {
+		ctx, cancel := context.WithCancel(t.Context())
+		dir := t.TempDir()
+		virtcfg := testVirtTaskConfig(t, filepath.Join(dir, "images"))
+		if withLogging != nil {
+			virtcfg.Logging = *withLogging
+		}
+		task := testTaskConfig()
+		virtcfg.Disks[0].Source.Format = "testing-image-format"
+		must.NoError(t, task.EncodeConcreteDriverConfig(virtcfg))
+		task.AllocDir = t.TempDir()
+
+		// Stub in the cloudinit ISO so it's always available
+		f, err := os.Create(filepath.Join(task.AllocDir, "cloudinit.iso"))
+		must.NoError(t, err)
+		f.Close()
+
+		return task, &VirtDriverPlugin{
+			providers:      mock_providers.NewStatic(mock_virt.NewStatic()),
+			config:         &virt.Config{ImagePaths: []string{dir}},
+			tasks:          newTaskStore(),
+			ctx:            ctx,
+			logger:         testlog.HCLogger(t),
+			ci:             mock_cloudinit.NewStaticCloudInit(),
+			signalShutdown: cancel,
+		}
+	}
+
+	// The main purpose of this test is to ensure that the mocked
+	// driver and generated task work.
+	t.Run("ok", func(t *testing.T) {
+		task, driver := setup(t, nil)
+		_, _, err := driver.StartTask(task)
+		must.NoError(t, err)
+	})
+
+	// Check the different permutations of logging.
+	t.Run("logging", func(t *testing.T) {
+		loggingProvider := func(t *testing.T, taskID string, checkFn func(must.T, *vm.Config)) *mock_providers.StaticProviders {
+			s := mock_storage.NewStaticStorage()
+			return mock_providers.NewStatic(
+				mock_virt.NewMock(t).Expect(
+					mock_virt.GenerateMountCommands{},
+					mock_virt.UseCloudInit{Result: true},
+					mock_virt.Storage{Result: s},
+					mock_virt.Storage{Result: s},
+					mock_virt.Storage{Result: s},
+					mock_virt.Networking{Result: mock_virt_net.NewStatic()},
+					mock_virt.CreateVM{TestFn: checkFn},
+					mock_virt.GetNetworkInterfaces{Name: vmNameFromTaskID(taskID)},
+				),
+			)
+		}
+
+		t.Run("default", func(t *testing.T) {
+			task, driver := setup(t, &virt.Logging{})
+			driver.providers = loggingProvider(t, task.ID, func(t must.T, c *vm.Config) {
+				// Check that the logging configuration file was generated.
+				must.SliceContainsFunc(t, c.Files, &vm.File{Path: logConfigFilePath},
+					func(a, b *vm.File) bool { return a.Path == b.Path })
+
+				// Check that the paths for the serial device sockets are set.
+				must.NotEq(t, "", c.StdoutSocket, must.Sprint("expected stdout socket to be set"))
+				must.NotEq(t, "", c.StderrSocket, must.Sprint("expected stderr socket to be set"))
+			})
+
+			_, _, err := driver.StartTask(task)
+			must.NoError(t, err)
+		})
+
+		t.Run("disabled", func(t *testing.T) {
+			task, driver := setup(t, &virt.Logging{Disable: true})
+			driver.providers = loggingProvider(t, task.ID, func(t must.T, c *vm.Config) {
+				// Logging configuration should not exist.
+				must.SliceNotContainsFunc(t, c.Files, &vm.File{Path: logConfigFilePath},
+					func(a, b *vm.File) bool { return a.Path == b.Path })
+
+				// Paths for serial sockets should be unset.
+				must.Eq(t, "", c.StdoutSocket, must.Sprint("expected stdout socket not to be set"))
+				must.Eq(t, "", c.StderrSocket, must.Sprint("expected stderr socket not to be set"))
+			})
+
+			_, _, err := driver.StartTask(task)
+			must.NoError(t, err)
+		})
+	})
 }

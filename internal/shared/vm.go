@@ -98,13 +98,15 @@ type Config struct {
 	HostName          string
 	Timezone          string
 	Mounts            []MountFileConfig
-	Files             []File
+	Files             []*File
 	SSHKey            string
 	Password          string
 	CMDs              []string
 	BOOTCMDs          []string
 	CIUserData        string
 	Volumes           []storage.Volume
+	StdoutSocket      string
+	StderrSocket      string
 	NetworkInterfaces net.NetworkInterfacesConfig
 }
 

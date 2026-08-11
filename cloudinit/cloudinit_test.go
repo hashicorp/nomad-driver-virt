@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/hashicorp/nomad-driver-virt/internal/errs"
+
 	"github.com/docker/distribution/uuid"
 	"github.com/hashicorp/go-hclog"
 	"github.com/shoenig/test/must"
@@ -377,6 +379,76 @@ func Test_IsValidPathSyntax(t *testing.T) {
 
 			r := c.isValidFilePathSyntax(tc.path)
 			must.True(t, tc.result == r)
+		})
+	}
+}
+
+func Test_LoggingConfig(t *testing.T) {
+	testCases := []struct {
+		name               string
+		stdoutPath         string
+		stderrPath         string
+		level              string
+		expectedContents   []string
+		unexpectedContents []string
+		err                error
+	}{
+		{
+			name:       "ok",
+			stdoutPath: "/dev/null/stdout",
+			stderrPath: "/dev/null/stderr",
+			level:      "INFO",
+			expectedContents: []string{
+				"output: /dev/null/stdout",
+				"args=('/dev/null/stdout',)",
+			},
+		},
+		{
+			name:       "output only",
+			stdoutPath: "/dev/null/stdout",
+			stderrPath: "/dev/null/stderr",
+			expectedContents: []string{
+				"output: /dev/null/stdout",
+			},
+			unexpectedContents: []string{
+				"args=('/dev/null/stdout',)",
+			},
+		},
+		{
+			name:       "invalid level",
+			stdoutPath: "/dev/null/stdout",
+			stderrPath: "/dev/null/stderr",
+			level:      "trace",
+			err:        errs.ErrInvalidConfiguration,
+		},
+		{
+			name:             "lowercase level",
+			stdoutPath:       "/dev/null/stdout",
+			stderrPath:       "/dev/null/stderr",
+			level:            "debug",
+			expectedContents: []string{"level=DEBUG"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewController(hclog.NewNullLogger())
+			must.NoError(t, err)
+
+			result, err := c.LoggingConfig(tc.stdoutPath, tc.stderrPath, tc.level)
+			if tc.err != nil {
+				must.ErrorIs(t, err, tc.err)
+			} else {
+				must.NoError(t, err)
+			}
+
+			for _, content := range tc.expectedContents {
+				must.StrContains(t, result, content)
+			}
+
+			for _, content := range tc.unexpectedContents {
+				must.StrNotContains(t, result, content)
+			}
 		})
 	}
 }

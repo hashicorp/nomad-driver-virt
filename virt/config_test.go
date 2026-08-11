@@ -156,6 +156,25 @@ config {
 				Timezone: "America/New_York",
 			},
 		},
+		{
+			name: "logging",
+			inputConfig: `
+config {
+	logging {
+		disable   = false
+		cloudinit = true
+		level     = "info"
+	}
+}`,
+			expectedOutput: TaskConfig{
+				Disks: disks.NewDisks(),
+				Logging: Logging{
+					Disable:   false,
+					Cloudinit: true,
+					Level:     "info",
+				},
+			},
+		},
 	}
 
 	for _, tc := range testCases {

@@ -43,6 +43,14 @@ var (
 			"arch":    hclspec.NewAttr("arch", "string", false),
 			"machine": hclspec.NewAttr("machine", "string", false),
 		})),
+		"logging": hclspec.NewBlock("logging", false, hclspec.NewObject(map[string]*hclspec.Spec{
+			"cloudinit": hclspec.NewAttr("cloudinit", "bool", false),
+			"disable":   hclspec.NewAttr("disable", "bool", false),
+			"level": hclspec.NewDefault(
+				hclspec.NewAttr("level", "string", false),
+				hclspec.NewLiteral(`"INFO"`),
+			),
+		})),
 	})
 
 	// validProviders is a list of valid provider names.
@@ -70,8 +78,15 @@ type TaskConfig struct {
 	DefaultUserSSHKey   string      `codec:"default_user_authorized_ssh_key"`
 	DefaultUserPassword string      `codec:"default_user_password"`
 	Disks               disks.Disks `codec:"disk"`
+	Logging             Logging     `codec:"logging"`
 	// The list of network interfaces that should be added to the VM.
 	net.NetworkInterfacesConfig `codec:"network_interface"`
+}
+
+type Logging struct {
+	Cloudinit bool   `codec:"cloudinit"`
+	Disable   bool   `codec:"disable"`
+	Level     string `codec:"level"`
 }
 
 type OS struct {
