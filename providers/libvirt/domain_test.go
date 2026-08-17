@@ -15,9 +15,10 @@ import (
 
 func Test_generateDomainDeviceDisks(t *testing.T) {
 	testCases := []struct {
-		desc    string
-		volumes []storage.Volume
-		result  []libvirtxml.DomainDisk
+		desc        string
+		volumes     []storage.Volume
+		result      []libvirtxml.DomainDisk
+		controllers []libvirtxml.DomainController
 	}{
 		{
 			desc: "ok",
@@ -40,6 +41,39 @@ func Test_generateDomainDeviceDisks(t *testing.T) {
 					},
 					Target: &libvirtxml.DomainDiskTarget{},
 					Driver: &libvirtxml.DomainDiskDriver{},
+				},
+			},
+		},
+		{
+			desc: "scsi",
+			volumes: []storage.Volume{
+				{
+					Name:    "primary",
+					Primary: true,
+					Block:   "/dev/null",
+					BusType: storage.BusTypeScsi,
+				},
+			},
+			result: []libvirtxml.DomainDisk{
+				{
+					Source: &libvirtxml.DomainDiskSource{
+						Block: &libvirtxml.DomainDiskSourceBlock{
+							Dev: "/dev/null",
+						},
+					},
+					Boot: &libvirtxml.DomainDeviceBoot{
+						Order: 1,
+					},
+					Target: &libvirtxml.DomainDiskTarget{
+						Bus: "scsi",
+					},
+					Driver: &libvirtxml.DomainDiskDriver{},
+				},
+			},
+			controllers: []libvirtxml.DomainController{
+				{
+					Type:  "scsi",
+					Model: "virtio-scsi",
 				},
 			},
 		},
@@ -89,6 +123,7 @@ func Test_generateDomainDeviceDisks(t *testing.T) {
 			dom := &libvirtxml.Domain{}
 			must.NoError(t, p.generateDomainDeviceDisks(config, dom))
 			must.Eq(t, tc.result, dom.Devices.Disks)
+			must.Eq(t, tc.controllers, dom.Devices.Controllers)
 		})
 	}
 }
