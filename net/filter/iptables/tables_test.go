@@ -16,8 +16,6 @@ import (
 	mock_iptables "github.com/hashicorp/nomad-driver-virt/testutil/mock/iptables"
 	virtnet "github.com/hashicorp/nomad-driver-virt/virt/net"
 	"github.com/hashicorp/nomad/helper/uuid"
-	"github.com/hashicorp/nomad/nomad/structs"
-	"github.com/hashicorp/nomad/plugins/drivers"
 	"github.com/shoenig/test/must"
 )
 
@@ -57,20 +55,18 @@ func Test_virtTables_Configure(t *testing.T) {
 				WithNames(t, n),
 				WithInterfaceByIPGetter(func(net.IP) (string, error) { return ifaceName, nil }),
 			)
-			resources := &drivers.Resources{
-				Ports: &structs.AllocatedPorts{
-					{
-						Label:  "http",
-						To:     8000,
-						HostIP: hostIP,
-						Value:  22222,
-					},
-					{
-						Label:  "ssh",
-						To:     2222,
-						HostIP: hostIP,
-						Value:  22223,
-					},
+			ports := virtnet.PortMappings{
+				{
+					Label:  "http",
+					To:     8000,
+					HostIP: hostIP,
+					Value:  22222,
+				},
+				{
+					Label:  "ssh",
+					To:     2222,
+					HostIP: hostIP,
+					Value:  22223,
 				},
 			}
 			cfg := &virtnet.NetworkInterfaceBridgeConfig{
@@ -98,7 +94,7 @@ func Test_virtTables_Configure(t *testing.T) {
 				},
 			}
 
-			teardownRules, err := vt.Configure(resources, cfg, taskIP)
+			teardownRules, err := vt.Configure(ports, cfg, taskIP)
 			must.NoError(t, err)
 			must.Eq(t, expected, teardownRules.Data.(Rules))
 		})
@@ -133,14 +129,12 @@ func Test_virtTables_Configure(t *testing.T) {
 				WithRoutingInterfaceByIPGetter(func(string) (string, error) { return dstIfaceName, nil }),
 				WithRoutingLocalnetPathTemplate(enableLocalnetRouting(t, dstIfaceName)),
 			)
-			resources := &drivers.Resources{
-				Ports: &structs.AllocatedPorts{
-					{
-						Label:  "http",
-						To:     8000,
-						HostIP: hostIP,
-						Value:  22222,
-					},
+			ports := virtnet.PortMappings{
+				{
+					Label:  "http",
+					To:     8000,
+					HostIP: hostIP,
+					Value:  22222,
 				},
 			}
 			cfg := &virtnet.NetworkInterfaceBridgeConfig{
@@ -154,7 +148,7 @@ func Test_virtTables_Configure(t *testing.T) {
 				},
 			}
 
-			teardownRules, err := vt.Configure(resources, cfg, taskIP)
+			teardownRules, err := vt.Configure(ports, cfg, taskIP)
 			must.NoError(t, err)
 			must.Eq(t, expected, teardownRules.Data.(Rules))
 		})
@@ -175,21 +169,19 @@ func Test_virtTables_Configure(t *testing.T) {
 				WithInterfaceByIPGetter(func(net.IP) (string, error) { return ifaceName, nil }),
 				WithRoutingInterfaceByIPGetter(func(string) (string, error) { return dstIfaceName, nil }),
 			)
-			resources := &drivers.Resources{
-				Ports: &structs.AllocatedPorts{
-					{
-						Label:  "http",
-						To:     8000,
-						HostIP: hostIP,
-						Value:  22222,
-					},
+			ports := virtnet.PortMappings{
+				{
+					Label:  "http",
+					To:     8000,
+					HostIP: hostIP,
+					Value:  22222,
 				},
 			}
 			cfg := &virtnet.NetworkInterfaceBridgeConfig{
 				Ports: []string{"http"},
 			}
 
-			_, err := vt.Configure(resources, cfg, taskIP)
+			_, err := vt.Configure(ports, cfg, taskIP)
 			must.ErrorIs(t, err, errLoopbackNotEnabled)
 		})
 	})
@@ -213,20 +205,18 @@ func Test_virtTables_Configure(t *testing.T) {
 			// Run setup so required chains exist.
 			must.NoError(t, vt.setup())
 
-			resources := &drivers.Resources{
-				Ports: &structs.AllocatedPorts{
-					{
-						Label:  "http",
-						To:     8000,
-						HostIP: hostIP,
-						Value:  22222,
-					},
-					{
-						Label:  "ssh",
-						To:     2222,
-						HostIP: hostIP,
-						Value:  22223,
-					},
+			ports := virtnet.PortMappings{
+				{
+					Label:  "http",
+					To:     8000,
+					HostIP: hostIP,
+					Value:  22222,
+				},
+				{
+					Label:  "ssh",
+					To:     2222,
+					HostIP: hostIP,
+					Value:  22223,
 				},
 			}
 			cfg := &virtnet.NetworkInterfaceBridgeConfig{
@@ -254,7 +244,7 @@ func Test_virtTables_Configure(t *testing.T) {
 				},
 			}
 
-			teardownRules, err := vt.Configure(resources, cfg, taskIP)
+			teardownRules, err := vt.Configure(ports, cfg, taskIP)
 			must.NoError(t, err)
 			must.Eq(t, expected, teardownRules.Data.(Rules))
 
@@ -295,14 +285,12 @@ func Test_virtTables_Configure(t *testing.T) {
 				WithRoutingInterfaceByIPGetter(func(string) (string, error) { return dstIfaceName, nil }),
 				WithRoutingLocalnetPathTemplate(enableLocalnetRouting(t, dstIfaceName)),
 			)
-			resources := &drivers.Resources{
-				Ports: &structs.AllocatedPorts{
-					{
-						Label:  "http",
-						To:     8000,
-						HostIP: hostIP,
-						Value:  22222,
-					},
+			ports := virtnet.PortMappings{
+				{
+					Label:  "http",
+					To:     8000,
+					HostIP: hostIP,
+					Value:  22222,
 				},
 			}
 			cfg := &virtnet.NetworkInterfaceBridgeConfig{
@@ -316,7 +304,7 @@ func Test_virtTables_Configure(t *testing.T) {
 				},
 			}
 
-			teardownRules, err := vt.Configure(resources, cfg, taskIP)
+			teardownRules, err := vt.Configure(ports, cfg, taskIP)
 			must.NoError(t, err)
 			must.Eq(t, expected, teardownRules.Data.(Rules))
 
@@ -360,20 +348,18 @@ func Test_virtTables_Configure(t *testing.T) {
 			// Run setup so required chains exist.
 			must.NoError(t, vt.setup())
 
-			resources := &drivers.Resources{
-				Ports: &structs.AllocatedPorts{
-					{
-						Label:  "http",
-						To:     8000,
-						HostIP: hostIP,
-						Value:  22222,
-					},
-					{
-						Label:  "ssh",
-						To:     2222,
-						HostIP: hostIP,
-						Value:  22223,
-					},
+			ports := virtnet.PortMappings{
+				{
+					Label:  "http",
+					To:     8000,
+					HostIP: hostIP,
+					Value:  22222,
+				},
+				{
+					Label:  "ssh",
+					To:     2222,
+					HostIP: hostIP,
+					Value:  22223,
 				},
 			}
 			cfg := &virtnet.NetworkInterfaceBridgeConfig{
@@ -381,7 +367,7 @@ func Test_virtTables_Configure(t *testing.T) {
 			}
 
 			// Apply the updates.
-			teardownRules, err := vt.Configure(resources, cfg, taskIP)
+			teardownRules, err := vt.Configure(ports, cfg, taskIP)
 			must.NoError(t, err)
 
 			// Now remove the updates.

@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/go-hclog"
 	"github.com/hashicorp/go-multierror"
 	virtnet "github.com/hashicorp/nomad-driver-virt/virt/net"
-	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
 var errLoopbackNotEnabled = errors.New("loopback port forwarding not enabled")
@@ -52,18 +51,14 @@ func (n *virtTables) SetLogger(logger hclog.Logger) {
 // Configure configures iptables to enable port forwards based on the passed
 // resources and returns a collection of rules that can be used to remove
 // the configuration with Teardown function.
-func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInterfaceBridgeConfig, ip string) (rules *virtnet.FilterRemoval, err error) {
+func (n *virtTables) Configure(ports virtnet.PortMappings, cfg *virtnet.NetworkInterfaceBridgeConfig, ip string) (rules *virtnet.FilterRemoval, err error) {
 	// Check that received values are suitable for configuration.
-	if res == nil {
-		return nil, errors.New("cannot configure iptables, resources not provided")
-	}
-
 	if cfg == nil {
 		return nil, errors.New("cannot configure iptables, bridge config not provided")
 	}
 
 	// If the ports are nil, there's nothing to do.
-	if res.Ports == nil {
+	if ports == nil {
 		return &virtnet.FilterRemoval{Name: removalName}, nil
 	}
 
@@ -77,7 +72,7 @@ func (n *virtTables) Configure(res *drivers.Resources, cfg *virtnet.NetworkInter
 	// Iterate the ports configured within the network interface and pull these
 	// from the task allocated ports.
 	for _, port := range cfg.Ports {
-		reservedPort, ok := res.Ports.Get(port)
+		reservedPort, ok := ports.Get(port)
 		if !ok {
 			n.logger.Error("failed to find reserved port", "port", port)
 			continue
