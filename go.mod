@@ -23,7 +23,7 @@ require (
 	github.com/shoenig/test v1.13.2
 	golang.org/x/sys v0.47.0
 	libvirt.org/go/libvirt v1.12007.0
-	libvirt.org/go/libvirtxml v1.12005.0
+	libvirt.org/go/libvirtxml v1.12007.0
 )
 
 require (
