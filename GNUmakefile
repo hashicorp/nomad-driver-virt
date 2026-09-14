@@ -81,8 +81,8 @@ lint: ## Lint and vet the codebase
 .PHONY: lint-tools
 lint-tools: ## Install the tools used to run lint and vet
 	@echo "==> Installing lint and vet tools..."
-	go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.2
-	go install github.com/hashicorp/go-hclog/hclogvet@feaf6d2ec20fd895e711195c99e3fde93a68afc5
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.2
+	go install github.com/hashicorp/go-hclog/hclogvet@e4c86b4cdbc417b598e03d5e4344ddff3419aea1
 	@echo "==> Done"
 
 .PHONY: test-tools
