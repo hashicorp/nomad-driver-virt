@@ -260,6 +260,7 @@ plugin "nomad-driver-virt" {
 * **default_user_password** - Initial password configured for the default user of the cloud image distribution.
 * **disk** - A list of disk configurations for volumes to be attached to the VM.
 * **hostname** - Hostname assigned. Must be a valid DNS label according to RFC 1123. Defaults to a name based on the task name.
+* **logging** - Configuration for task logging.
 * **network_interface** A list of network interfaces to be attached to the VM. Currently only a single entry is supported.
 * **os** - Configuration for specific machine and architecture to emulate. Default to match host machine.
 * **timezone** - Set time zone on the VM by time zone name. Example: `America/New_York`. 
@@ -417,6 +418,47 @@ currently include:
 * [Directory backed storage pool and disks][directory-examples].
 * [Ceph backed storage pool and disks][ceph-examples].
 * [Dynamic Host Volume disks][dhv-examples].
+
+### Logging Configuration
+
+The follwing configuration options are available within the `logging` block of the task's configuration block:
+
+* **cloudinit** - Enable sending cloud-init logs to standard output. Defaults to `false`.
+* **disable** - Disable logging to Nomad. Defaults to `false`.
+* **level** - Level of cloud-init logs to send. Only used if `cloudinit` is enabled. Valid values: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Defaults to `INFO`.
+
+#### Example
+
+The example below demonstrates the configuration to disable logging to Nomad:
+
+```hcl
+group "virt-group" {
+  task "virt-task" {
+    driver = "virt"
+    config {
+      logging {
+        disable = true
+      }
+    }
+  }
+}
+```
+
+The example below demonstrates the configuration to enable sending cloud-init debug logs to Nomad:
+
+``` hcl
+group "virt-group" {
+  task "virt-task" {
+    driver = "virt"
+    config {
+      logging {
+        cloudinit = true
+        level     = "INFO"
+      }
+    }
+  }
+}
+```
 
 ### Network Configuration
 

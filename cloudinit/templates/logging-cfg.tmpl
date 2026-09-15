@@ -1,0 +1,54 @@
+{{- if .SendLogging}}
+_log:
+ - &log_base |
+   [loggers]
+   keys=root,cloudinit
+
+   [handlers]
+   keys=consoleHandler,cloudLogHandler,nomadHandler
+
+   [formatters]
+   keys=simpleFormatter,arg0Formatter
+
+   [logger_root]
+   level=DEBUG
+   handlers=consoleHandler,cloudLogHandler,nomadHandler
+
+   [logger_cloudinit]
+   level=DEBUG
+   qualname=cloudinit
+   handlers=
+   propagate=1
+
+   [handler_consoleHandler]
+   class=StreamHandler
+   level=WARNING
+   formatter=arg0Formatter
+   args=(sys.stderr,)
+
+   [formatter_arg0Formatter]
+   format=%(asctime)s - %(filename)s[%(levelname)s]: %(message)s
+
+   [formatter_simpleFormatter]
+   format=[CLOUDINIT] %(filename)s[%(levelname)s]: %(message)s
+ - &log_file |
+   [handler_cloudLogHandler]
+   class=FileHandler
+   level=DEBUG
+   formatter=arg0Formatter
+   args=('/var/log/cloud-init.log',)
+ - &log_nomad |
+   [handler_nomadHandler]
+   class=FileHandler
+   level={{.Level}}
+   formatter=arg0Formatter
+   args=('{{.StdoutPath}}',)
+
+log_cfgs:
+ - [ *log_base, *log_file, *log_nomad ]
+ 
+{{- end}}
+output:
+  final:
+    output: {{.StdoutPath}}
+    error: {{.StderrPath}}

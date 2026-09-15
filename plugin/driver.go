@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
+	stdnet "net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"github.com/hashicorp/nomad-driver-virt/cloudinit"
+	"github.com/hashicorp/nomad-driver-virt/internal/ctxio"
 	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
 	"github.com/hashicorp/nomad-driver-virt/providers"
@@ -57,6 +60,12 @@ const (
 
 	envVariblesFilePath        = "/etc/profile.d/virt.sh" //Only valid for linux OS
 	envVariblesFilePermissions = "777"
+
+	logConfigFilePath        = "/etc/cloud/cloud.cfg.d/99_nomad.cfg"
+	logConfigFilePermissions = "644"
+
+	stdoutSerialDevicePath = "/dev/ttyS1"
+	stderrSerialDevicePath = "/dev/ttyS2"
 )
 
 var (
@@ -76,7 +85,7 @@ var (
 		// https://godoc.org/github.com/hashicorp/nomad/plugins/drivers#Capabilities
 		SendSignals:          false,
 		Exec:                 false,
-		DisableLogCollection: true,
+		DisableLogCollection: false,
 		FSIsolation:          fsisolation.Image,
 
 		// NetIsolationModes details that this driver only supports the network
@@ -112,6 +121,10 @@ var (
 type TaskState struct {
 	TaskConfig *drivers.TaskConfig
 	StartedAt  time.Time
+
+	// Paths to command output if logging is enabled.
+	StdoutSocket string
+	StderrSocket string
 
 	// NetTeardown is the specification used to delete all the network
 	// configuration associated to a VM.
@@ -476,18 +489,18 @@ func createAllocFileMounts(task *drivers.TaskConfig) []*vm.MountFileConfig {
 
 // To create the alloc env vars, they are all writtent into a script in
 // /etc/profile.d/virt.sh where the OS will take care of executing it at start.
-func createEnvsFile(envs map[string]string) vm.File {
+func createEnvsFile(envs map[string]string) *vm.File {
 	con := []string{}
 
 	for k, v := range envs {
-		con = append(con, fmt.Sprintf("export %s=%s", k, v))
+		con = append(con, fmt.Sprintf("export %s=%q", k, v))
 	}
 
-	return vm.File{
+	return &vm.File{
 		Encoding:    "b64",
 		Path:        envVariblesFilePath,
 		Permissions: envVariblesFilePermissions,
-		Content:     base64.StdEncoding.EncodeToString([]byte(strings.Join(con, "\n\t"))),
+		Content:     base64.StdEncoding.EncodeToString([]byte(strings.Join(con, "\n") + "\n")),
 	}
 }
 
@@ -558,9 +571,17 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 		CIUserData:        driverConfig.UserData,
 		Password:          driverConfig.DefaultUserPassword,
 		SSHKey:            driverConfig.DefaultUserSSHKey,
-		Files:             []vm.File{createEnvsFile(cfg.Env)},
+		Files:             []*vm.File{createEnvsFile(cfg.Env)},
 		NetworkInterfaces: driverConfig.NetworkInterfacesConfig,
 		Timezone:          driverConfig.Timezone,
+	}
+
+	// Unless logging has been disabled by the task, add the
+	// required configuration.
+	if !driverConfig.Logging.Disable {
+		if err := d.configureLogging(cfg, &driverConfig, dc); err != nil {
+			return nil, nil, fmt.Errorf("virt: failed to configure logging %s: %w", cfg.AllocID, err)
+		}
 	}
 
 	// Run validation
@@ -658,6 +679,13 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 		return nil, nil, fmt.Errorf("virt: failed to start task %s: %w", cfg.AllocID, err)
 	}
 
+	// With the VM created, start streaming logs unless logging has
+	// been disabled.
+	if !driverConfig.Logging.Disable {
+		go d.streamLogs(ctx, dc.StdoutSocket, cfg.StdoutPath)
+		go d.streamLogs(ctx, dc.StderrSocket, cfg.StderrPath)
+	}
+
 	ifaces, err := virtualizer.GetNetworkInterfaces(dc.Name)
 	if err != nil {
 		return nil, nil, fmt.Errorf("virt: failed to retrieve guest interfaces %s: %w", cfg.AllocID, err)
@@ -724,8 +752,10 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 	// information the driver will need to recover from failure and reattach
 	// to running VMs.
 	driverState := TaskState{
-		StartedAt:  h.startedAt,
-		TaskConfig: cfg,
+		StartedAt:    h.startedAt,
+		TaskConfig:   cfg,
+		StdoutSocket: dc.StdoutSocket,
+		StderrSocket: dc.StderrSocket,
 	}
 
 	// If the VM did not include any network configuration, there will not be a
@@ -792,6 +822,14 @@ func (d *VirtDriverPlugin) RecoverTask(handle *drivers.TaskHandle) error {
 
 	d.tasks.Set(handle.Config.ID, h)
 
+	// If logging is enabled for the task, stream.
+	if taskState.StdoutSocket != "" {
+		go d.streamLogs(ctx, taskState.StdoutSocket, handle.Config.StdoutPath)
+	}
+	if taskState.StderrSocket != "" {
+		go d.streamLogs(ctx, taskState.StderrSocket, handle.Config.StderrPath)
+	}
+
 	return nil
 }
 
@@ -819,4 +857,87 @@ func setDefaultLogger(logger hclog.Logger) {
 	defer loggerMu.Unlock()
 
 	hclog.SetDefault(logger)
+}
+
+// streamLogs streams the content from a source UNIX socket to a Nomad
+// log destination socket. This is meant to be run within a goroutine
+// using the task's context.
+func (d *VirtDriverPlugin) streamLogs(ctx context.Context, srcSocket string, dstLog string) {
+	// Open the VM unix socket for reading
+	src, err := stdnet.Dial("unix", srcSocket)
+	if err != nil {
+		d.logger.Error("failed to open source logging socket", "error", err)
+		return
+	}
+	defer src.Close()
+
+	// Open the Nomad log socket for writing
+	dst, err := os.OpenFile(dstLog, os.O_WRONLY, 0600)
+	if err != nil {
+		d.logger.Error("failed to open destination logging socket", "error", err)
+		return
+	}
+	defer dst.Close()
+
+	// Copy the data from the VM socket to the Nomad log socket. Wrap the
+	// source reader to be context aware so it can be canceled.
+	_, err = io.Copy(dst, ctxio.NewReader(ctx, src))
+	if err != nil {
+		d.logger.Error("failed to copy logging data", "error", err)
+	}
+}
+
+// configureLogging updates the VM configuration to include settings and cloudinit
+// customizations required for logging.
+func (d *VirtDriverPlugin) configureLogging(tCfg *drivers.TaskConfig, dCfg *virt.TaskConfig, vmCfg *vm.Config) error {
+	// Generate paths for the stdout and stderr sockets.
+	vmCfg.StdoutSocket = filepath.Join(tCfg.AllocDir, "stdout.sock")
+	vmCfg.StderrSocket = filepath.Join(tCfg.AllocDir, "stderr.sock")
+
+	var level string
+	// If cloudinit logging is enabled, set the level.
+	if dCfg.Logging.Cloudinit {
+		level = dCfg.Logging.Level
+		// The level should be defaulted to info if unset. If the value
+		// somehow ends up empty here, use the supported "NOTSET" value.
+		if level == "" {
+			level = "NOTSET"
+		}
+	}
+
+	// Generate the cloudinit logging configuration so the output of
+	// the commands (and optionally the cloudinit log itself) are
+	// sent to the sockets.
+	logCfg, err := d.ci.LoggingConfig(stdoutSerialDevicePath,
+		stderrSerialDevicePath, level)
+	if err != nil {
+		return err
+	}
+
+	// Add environment variables with the path to send logs
+	// within the VM to reach Nomad.
+	tCfg.Env["NOMAD_LOG_STDOUT"] = stdoutSerialDevicePath
+	tCfg.Env["NOMAD_LOG_STDERR"] = stderrSerialDevicePath
+
+	// Locate the environments variable file and update the contents.
+	for _, f := range vmCfg.Files {
+		if f.Path != envVariblesFilePath {
+			continue
+		}
+
+		f.Content = createEnvsFile(tCfg.Env).Content
+	}
+
+	// Define the logging file.
+	logFile := &vm.File{
+		Encoding:    "b64",
+		Path:        logConfigFilePath,
+		Permissions: logConfigFilePermissions,
+		Content:     base64.StdEncoding.EncodeToString([]byte(logCfg)),
+	}
+
+	// Add the logging configuration to the file collection.
+	vmCfg.Files = append(vmCfg.Files, logFile)
+
+	return nil
 }

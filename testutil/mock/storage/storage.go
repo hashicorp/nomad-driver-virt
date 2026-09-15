@@ -128,7 +128,11 @@ func (s *StaticStorage) GenerateDeviceName(string, []string) string {
 	defer s.m.Unlock()
 	s.incrCount()
 
-	return s.GenerateDeviceNameResult
+	if s.GenerateDeviceNameResult != "" {
+		return s.GenerateDeviceNameResult
+	}
+
+	return "vda"
 }
 
 func (s *StaticStorage) Fingerprint(attrs map[string]*structs.Attribute) {

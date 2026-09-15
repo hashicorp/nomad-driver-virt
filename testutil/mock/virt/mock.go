@@ -22,6 +22,10 @@ type Init struct {
 type CreateVM struct {
 	Config *vm.Config
 	Err    error
+
+	// If set the function will be called to perform
+	// the validation.
+	TestFn func(t must.T, actual *vm.Config)
 }
 
 type StopVM struct {
@@ -270,6 +274,17 @@ func (m *MockVirt) CreateVM(config *vm.Config) error {
 		must.Sprint("Unexpected call to CreateVM"))
 	call := m.createVm[0]
 	m.createVm = m.createVm[1:]
+
+	// If no expected config is defined, don't check.
+	if call.Config == nil && call.TestFn == nil {
+		return call.Err
+	}
+
+	// If the TestFn is defined, only that is used for validation.
+	if call.TestFn != nil {
+		call.TestFn(m.t, config)
+		return call.Err
+	}
 
 	// NOTE: ignore the content field for now until dynamic content
 	// can be handled better.

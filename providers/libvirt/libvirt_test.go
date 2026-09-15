@@ -197,7 +197,7 @@ func TestStartDomain(t *testing.T) {
 					Tag:         "tagTwo",
 					ReadOnly:    false},
 			},
-			Files: []vm.File{
+			Files: []*vm.File{
 				{
 					Path:        "/path/to/file/one",
 					Content:     "content",
