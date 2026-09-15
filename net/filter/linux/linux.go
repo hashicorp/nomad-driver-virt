@@ -1,13 +1,11 @@
 // Copyright IBM Corp. 2024, 2026
 // SPDX-License-Identifier: MPL-2.0
 
-//go:build linux
-
 package linux
 
 import (
-	"github.com/hashicorp/nomad-driver-virt/internal/errs"
 	plogger "github.com/hashicorp/nomad-driver-virt/internal/logger"
+	"github.com/hashicorp/nomad-driver-virt/net/filter/linux/iptables"
 	"github.com/hashicorp/nomad-driver-virt/net/filter/linux/shared"
 )
 
@@ -52,10 +50,13 @@ func New(opts ...option) (*tables, error) {
 		t.names = NewNames()
 	}
 
-	// TODO: create the backend here.
 	// Build the backend if one was not provided.
 	if t.backend == nil {
-		return nil, errs.ErrNotImplemented
+		backend, err := iptables.New(logger)
+		if err != nil {
+			return nil, err
+		}
+		t.backend = backend
 	}
 
 	// Now let the backend perform any required setup and be done.

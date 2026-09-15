@@ -6,13 +6,13 @@ package iptables
 import (
 	"testing"
 
-	"github.com/hashicorp/nomad-driver-virt/net/filter/iptables"
+	"github.com/hashicorp/nomad-driver-virt/net/filter/linux/iptables"
 	"github.com/hashicorp/nomad-driver-virt/testutil/mock"
 	"github.com/shoenig/test/must"
 )
 
 var (
-	_ iptables.IPTables = (*mockIPTables)(nil)
+	_ iptables.IPTables = (*MockIPTables)(nil)
 )
 
 func TestIPTables_Append(t *testing.T) {

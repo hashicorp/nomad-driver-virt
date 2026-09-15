@@ -55,7 +55,7 @@ func (s *StaticFilter) CallCount(fnName string) int {
 	return s.counts[fnName]
 }
 
-func (s *StaticFilter) Configure(virtnet.PortMappings, *virtnet.NetworkInterfaceBridgeConfig, string) (*virtnet.FilterRemoval, error) {
+func (s *StaticFilter) Configure(virtnet.PortMappings, *virtnet.NetworkInterfaceBridgeConfig, string, string) (*virtnet.FilterRemoval, error) {
 	s.m.Lock()
 	defer s.m.Unlock()
 	s.incrCount()
@@ -85,6 +85,7 @@ type Configure struct {
 	Mappings      virtnet.PortMappings
 	NetworkConfig *virtnet.NetworkInterfaceBridgeConfig
 	IP            string
+	Identifier    string
 	Result        *virtnet.FilterRemoval
 	Err           error
 }
@@ -145,7 +146,7 @@ func (m *MockFilter) ExpectSetLogger(c SetLogger) *MockFilter {
 	return m
 }
 
-func (m *MockFilter) Configure(mappings virtnet.PortMappings, config *virtnet.NetworkInterfaceBridgeConfig, ip string) (*virtnet.FilterRemoval, error) {
+func (m *MockFilter) Configure(mappings virtnet.PortMappings, config *virtnet.NetworkInterfaceBridgeConfig, ip, identifier string) (*virtnet.FilterRemoval, error) {
 	m.m.Lock()
 	defer m.m.Unlock()
 
@@ -159,6 +160,7 @@ func (m *MockFilter) Configure(mappings virtnet.PortMappings, config *virtnet.Ne
 	received := Configure{
 		NetworkConfig: config,
 		IP:            ip,
+		Identifier:    identifier,
 		Mappings:      mappings,
 		Result:        call.Result,
 		Err:           call.Err,
