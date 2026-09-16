@@ -90,7 +90,8 @@ func TestController_VMStartedBuild(t *testing.T) {
 				Name:  "virbr0",
 				Ports: []string{"ssh", "nomad"},
 			},
-			IP: "192.168.122.58",
+			IP:         "192.168.122.58",
+			Identifier: "nomad-0ea818bc",
 		},
 	)
 	defer mockFilter.AssertExpectations()
