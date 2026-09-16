@@ -216,6 +216,9 @@ func (n *nft) Add(req *shared.Request) error {
 	// Positioned rules will need to be added in a final pass.
 	positionedRules := make([]*nftables.Rule, 0)
 
+	// Create a holder to cache rule lookups while processing rules.
+	rulesCache := make(map[string][]*nftables.Rule, 0)
+
 	// Now create any rules that are defined.
 RULES_LOOP:
 	for _, r := range req.Rules() {
@@ -249,10 +252,16 @@ RULES_LOOP:
 		}
 
 		// Grab the existing rules on the chain.
-		existingRules, err := n.nft.GetRules(rule.Table, rule.Chain)
-		if err != nil {
-			n.logger.Error("cannot list existing rules", "table", rule.Table.Name, "chain", rule.Chain.Name)
-			return fmt.Errorf("%w - cannot list rules: %w", errs.ErrPacketFilter, err)
+		existingRules, ok := rulesCache[r.Chain.Hash()]
+		if !ok {
+			existingRules, err = n.nft.GetRules(rule.Table, rule.Chain)
+			if err != nil {
+				n.logger.Error("cannot list existing rules", "table", rule.Table.Name, "chain", rule.Chain.Name)
+				return fmt.Errorf("%w - cannot list rules: %w", errs.ErrPacketFilter, err)
+			}
+
+			// Cache the rules for later use.
+			rulesCache[r.Chain.Hash()] = existingRules
 		}
 
 		// Check if the rule already exists.
@@ -304,6 +313,11 @@ RULES_LOOP:
 		return nil
 	}
 
+	// Reset the rules cache if it has been used.
+	if len(rulesCache) > 0 {
+		rulesCache = make(map[string][]*nftables.Rule, 0)
+	}
+
 	// A position provided in a request is the position within the chain. We
 	// need the handle of an existing rule for relative positioning of the new
 	// rule when adding it. Reverse the order of positionedRules so the most
@@ -312,10 +326,16 @@ RULES_LOOP:
 
 	for _, rule := range positionedRules {
 		// Grab the existing rules on the chain.
-		existingRules, err := n.nft.GetRules(rule.Table, rule.Chain)
-		if err != nil {
-			n.logger.Error("cannot list existing rules", "table", rule.Table.Name, "chain", rule.Chain.Name)
-			return fmt.Errorf("%w - cannot list rules: %w", errs.ErrPacketFilter, err)
+		cacheKey := fmt.Sprintf("%s_%s", rule.Table.Name, rule.Chain.Name)
+		existingRules, ok := rulesCache[cacheKey]
+		if !ok {
+			existingRules, err = n.nft.GetRules(rule.Table, rule.Chain)
+			if err != nil {
+				n.logger.Error("cannot list existing rules", "table", rule.Table.Name, "chain", rule.Chain.Name)
+				return fmt.Errorf("%w - cannot list rules: %w", errs.ErrPacketFilter, err)
+			}
+
+			rulesCache[cacheKey] = existingRules
 		}
 
 		// If there are no existing rules, remove the position and just add
