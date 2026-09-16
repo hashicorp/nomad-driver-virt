@@ -16,8 +16,25 @@ var (
 	ErrNotImplemented       = errors.New("not implemented")
 	ErrNotSupported         = errors.New("not supported")
 	ErrInvalidConfiguration = errors.New("invalid configuration")
+	ErrNetworking           = errors.New("networking error")
+	ErrPacketFilter         = errors.New("packet filter error")
 
+	// Configuration errors
 	ErrMissingAttribute = fmt.Errorf("%w: missing required attribute", ErrInvalidConfiguration)
+
+	// Networking errors
+	ErrLoopbackNotEnabled = fmt.Errorf("%w: loopback port forwarding not enabled", ErrNetworking)
+
+	// Packet filter errors
+	ErrPacketFilterConfigure     = fmt.Errorf("%w: configure failure", ErrPacketFilter)
+	ErrPacketFilterTeardown      = fmt.Errorf("%w: teardown failure", ErrPacketFilter)
+	ErrPacketFilterCreateTable   = fmt.Errorf("%w: create table failure", ErrPacketFilter)
+	ErrPacketFilterCreateChain   = fmt.Errorf("%w: create chain failure", ErrPacketFilter)
+	ErrPacketFilterCreateRule    = fmt.Errorf("%w: create rule failure", ErrPacketFilter)
+	ErrPacketFilterDeleteTable   = fmt.Errorf("%w: delete table failure", ErrPacketFilter)
+	ErrPacketFilterDeleteChain   = fmt.Errorf("%w: delete chain failure", ErrPacketFilter)
+	ErrPacketFilterDeleteRule    = fmt.Errorf("%w: delete rule failure", ErrPacketFilter)
+	ErrPacketFilterConfiguration = fmt.Errorf("%w %w", ErrPacketFilter, ErrInvalidConfiguration)
 )
 
 // options are optional arguments used by helper functions.
@@ -78,4 +95,9 @@ func MissingAttribute(attrName string, value any, opts ...optionFn) error {
 
 	// Create and return the error.
 	return fmt.Errorf(strings.Join(tmpl, " "), args...)
+}
+
+// Error wraps a base error and a runtime error into a new error.
+func Error(baseErr, reportErr error) error {
+	return fmt.Errorf("%w - %w", baseErr, reportErr)
 }
