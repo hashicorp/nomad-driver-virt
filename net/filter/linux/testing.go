@@ -42,6 +42,7 @@ func WithBackendCleanup(in testingT) option {
 // set to generated testing names.
 func TestNewNames() *names {
 	return &names{
+		holder: genTestName(defaultHolderName),
 		chains: &ChainNames{
 			Forward:     defaultChainNameForward,
 			Output:      defaultChainNameOutput,

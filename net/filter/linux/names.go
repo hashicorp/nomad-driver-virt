@@ -6,6 +6,10 @@
 package linux
 
 const (
+	// defaultHolderName is used by the nftables backend for the name of the
+	// table holding all the nomad virt packet filtering rules.
+	defaultHolderName = "nomadvirt"
+
 	// defaultChainNameNomadPostrouting is the chain name used by the
 	// driver for postrouting rules. This is currently used for entries within
 	// the nat table specifically for handling the special case of loopback
@@ -48,6 +52,7 @@ const (
 
 // names holds the names for tables and chains used for filtering.
 type names struct {
+	holder string
 	chains *ChainNames
 	tables *TableNames
 }
@@ -78,6 +83,7 @@ type NomadChainNames struct {
 // NewNames creates a new instance with all values set to defaults.
 func NewNames() *names {
 	return &names{
+		holder: defaultHolderName,
 		chains: &ChainNames{
 			Forward:     defaultChainNameForward,
 			Output:      defaultChainNameOutput,

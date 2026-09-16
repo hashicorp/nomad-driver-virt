@@ -6,6 +6,7 @@ package linux
 import (
 	plogger "github.com/hashicorp/nomad-driver-virt/internal/logger"
 	"github.com/hashicorp/nomad-driver-virt/net/filter/linux/iptables"
+	"github.com/hashicorp/nomad-driver-virt/net/filter/linux/nftables"
 	"github.com/hashicorp/nomad-driver-virt/net/filter/linux/shared"
 )
 
@@ -52,9 +53,17 @@ func New(opts ...option) (*tables, error) {
 
 	// Build the backend if one was not provided.
 	if t.backend == nil {
-		backend, err := iptables.New(logger)
+		var backend Backend
+
+		// Prefer to use nftables for packet filtering.
+		backend, err := nftables.New(logger, t.names.holder)
 		if err != nil {
-			return nil, err
+			logger.Warn("failed to setup nftables, falling back to iptables", "error", err)
+			// Fallback to iptables.
+			backend, err = iptables.New(logger)
+			if err != nil {
+				return nil, err
+			}
 		}
 		t.backend = backend
 	}

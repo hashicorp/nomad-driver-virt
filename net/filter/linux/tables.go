@@ -55,9 +55,6 @@ type tables struct {
 
 // SetLogger sets the logger used.
 func (t *tables) SetLogger(logger hclog.Logger) {
-	t.m.Lock()
-	defer t.m.Unlock()
-
 	t.logger = logger
 }
 
@@ -345,6 +342,12 @@ func (t *tables) loopbackPortForwardsSupported(device string) bool {
 // cleanup is used to cleanup the backend during testing.
 func (t *tables) cleanup() {
 	if t.backend == nil {
+		return
+	}
+
+	// If the backend can destroy itself (nftables), then do that.
+	if destroyable, ok := t.backend.(interface{ Destroy() error }); ok {
+		destroyable.Destroy()
 		return
 	}
 
