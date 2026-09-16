@@ -6,13 +6,12 @@ package filter
 import (
 	"github.com/hashicorp/go-hclog"
 	virtnet "github.com/hashicorp/nomad-driver-virt/virt/net"
-	"github.com/hashicorp/nomad/plugins/drivers"
 )
 
 // Filter is the interface to add and remove packet filtering
 // configuration for virt tasks.
 type Filter interface {
 	SetLogger(hclog.Logger)
-	Configure(*drivers.Resources, *virtnet.NetworkInterfaceBridgeConfig, string) (*virtnet.FilterRemoval, error)
+	Configure(virtnet.PortMappings, *virtnet.NetworkInterfaceBridgeConfig, string) (*virtnet.FilterRemoval, error)
 	Teardown(*virtnet.FilterRemoval) error
 }

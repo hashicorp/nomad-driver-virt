@@ -72,7 +72,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 
 	mockFilter := filter_mock.NewMock(t).Expect(
 		filter_mock.Configure{
-			Resources: &drivers.Resources{Ports: &nomadstructs.AllocatedPorts{
+			Mappings: net.PortMappings{
 				{
 					Label:  "ssh",
 					To:     22,
@@ -85,7 +85,7 @@ func TestController_VMStartedBuild(t *testing.T) {
 					HostIP: "10.0.1.161",
 					Value:  27512,
 				},
-			}},
+			},
 			NetworkConfig: &net.NetworkInterfaceBridgeConfig{
 				Name:  "virbr0",
 				Ports: []string{"ssh", "nomad"},

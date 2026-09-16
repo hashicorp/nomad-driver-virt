@@ -160,7 +160,9 @@ func (c *Controller) VMStartedBuild(req *net.VMStartedBuildRequest) (*net.VMStar
 			req.Hostname, "mac", macAddr, "error", err)
 	}
 
-	teardownRules, err := c.filter.Configure(req.Resources, netInterface.Bridge, ipAddr)
+	mappings := net.GenerateMappings(req.Resources)
+
+	teardownRules, err := c.filter.Configure(mappings, netInterface.Bridge, ipAddr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to configure port mapping: %w", err)
 	}
