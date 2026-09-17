@@ -78,7 +78,6 @@ jobs:
         with:
           version-file: go.mod
       - uses: ./.github/actions/install-test-deps
-
       - name: "Compile binary"
         env:
           GOOS: ${{ matrix.goos }}

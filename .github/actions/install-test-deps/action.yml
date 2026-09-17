@@ -1,13 +1,22 @@
 name: install-test-deps
 description: install test depenency packages
+inputs:
+  ceph-version:
+    required: true
+    description: Ceph version to install
+    default: tentacle
 runs:
   using: composite
   steps:
   - name: install dependencies
     run: |-
-      set -x
+      set -eox
+
+      wget -q -O- 'https://download.ceph.com/keys/release.asc' | sudo tee /etc/apt/trusted.gpg.d/ceph.asc
+      sudo apt-add-repository "deb https://download.ceph.com/debian-${CEPH_VERSION}/ $(lsb_release -sc) main"
       
       sudo apt-get update
       sudo apt-get install libvirt-dev librados-dev librbd-dev qemu-utils
-
     shell: bash
+    env:
+      CEPH_VERSION: ${{ inputs.ceph-version }}
