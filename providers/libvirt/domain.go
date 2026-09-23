@@ -7,6 +7,7 @@ import (
 	"fmt"
 
 	vm "github.com/hashicorp/nomad-driver-virt/internal/shared"
+	"github.com/hashicorp/nomad-driver-virt/storage"
 	"libvirt.org/go/libvirtxml"
 )
 
@@ -226,6 +227,8 @@ func (p *provider) generateDomainDeviceDisks(config *vm.Config, dom *libvirtxml.
 		dom.Devices = &libvirtxml.DomainDeviceList{}
 	}
 
+	var needScsi bool
+
 	vols := config.Volumes
 	result := make([]libvirtxml.DomainDisk, len(vols))
 	for i, fd := range vols {
@@ -239,10 +242,29 @@ func (p *provider) generateDomainDeviceDisks(config *vm.Config, dom *libvirtxml.
 			disk.Boot = &libvirtxml.DomainDeviceBoot{Order: 1}
 		}
 
+		if fd.BusType == storage.BusTypeScsi {
+			needScsi = true
+		}
+
 		result[i] = *disk
 	}
 
 	dom.Devices.Disks = result
+
+	// If a scsi disk was found, manually add a controller to ensure
+	// that virtio-scsi is used. The auto detected controller may not
+	// be scsi which can result in cdrom support failing (and the generated
+	// cloud-init is always attached as scsi).
+	if needScsi {
+		if dom.Devices.Controllers == nil {
+			dom.Devices.Controllers = make([]libvirtxml.DomainController, 0)
+		}
+
+		dom.Devices.Controllers = append(dom.Devices.Controllers, libvirtxml.DomainController{
+			Type:  "scsi",
+			Model: "virtio-scsi",
+		})
+	}
 
 	return nil
 }
