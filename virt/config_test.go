@@ -33,7 +33,7 @@ config {
 	cmds = ["redis"]
 	hostname = "test-hostname"
 	user_data = "/path/to/user/data"
-	network_config: "/path/to/network/config",
+	network_config = "/path/to/network/config"
 	default_user_authorized_ssh_key =  "ssh-ed25519 testtesttest..."
 	default_user_password = "password"
 	os {
