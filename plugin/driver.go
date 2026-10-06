@@ -552,6 +552,7 @@ func (d *VirtDriverPlugin) StartTask(cfg *drivers.TaskConfig) (_ *drivers.TaskHa
 		HostName:          hostname,
 		CMDs:              driverConfig.CMDs,
 		CIUserData:        driverConfig.UserData,
+		CINetworkConfig:   driverConfig.NetworkConfig,
 		Password:          driverConfig.DefaultUserPassword,
 		SSHKey:            driverConfig.DefaultUserSSHKey,
 		Files:             []vm.File{createEnvsFile(cfg.Env)},

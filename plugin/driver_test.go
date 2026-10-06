@@ -138,6 +138,7 @@ func testVirtTaskConfig(t *testing.T, imgDir string) virt.TaskConfig {
 
 	return virt.TaskConfig{
 		UserData:            "/path/to/user/data",
+		NetworkConfig:       "/path/to/network/config",
 		CMDs:                []string{"cmd arg arg", "cmd arg arg"},
 		DefaultUserSSHKey:   "ssh-ed666 randomkey",
 		DefaultUserPassword: "password",
@@ -285,7 +286,8 @@ func TestVirtDriver(t *testing.T) {
 						"mkdir -p /testing/path/guest",
 						"mountpoint -q /testing/path/guest || mount -t 9p -o trans=virtio _testing_path_guest /testing/path/guest",
 					},
-					CIUserData: "/path/to/user/data",
+					CIUserData:      "/path/to/user/data",
+					CINetworkConfig: "/path/to/network/config",
 					Volumes: []storage.Volume{
 						{
 							Kind:       "disk",
@@ -492,7 +494,8 @@ func TestVirtDriver(t *testing.T) {
 						"mkdir -p /secrets",
 						"mountpoint -q /secrets || mount -t 9p -o trans=virtio secretsDir /secrets",
 					},
-					CIUserData: "/path/to/user/data",
+					CIUserData:      "/path/to/user/data",
+					CINetworkConfig: "/path/to/network/config",
 					Volumes: []storage.Volume{
 						{
 							Kind:       "disk",
@@ -651,7 +654,8 @@ func TestVirtDriver(t *testing.T) {
 						"mkdir -p /secrets",
 						"mountpoint -q /secrets || mount -t 9p -o trans=virtio secretsDir /secrets",
 					},
-					CIUserData: "/path/to/user/data",
+					CIUserData:      "/path/to/user/data",
+					CINetworkConfig: "/path/to/network/config",
 					Volumes: []storage.Volume{
 						{
 							Kind:       "disk",
@@ -817,7 +821,8 @@ func TestVirtDriver(t *testing.T) {
 						"mkdir -p /secrets",
 						"mountpoint -q /secrets || mount -t 9p -o trans=virtio secretsDir /secrets",
 					},
-					CIUserData: "/path/to/user/data",
+					CIUserData:      "/path/to/user/data",
+					CINetworkConfig: "/path/to/network/config",
 					Volumes: []storage.Volume{
 						{
 							Pool:       "default-pool",

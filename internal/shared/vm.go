@@ -104,6 +104,7 @@ type Config struct {
 	CMDs              []string
 	BOOTCMDs          []string
 	CIUserData        string
+	CINetworkConfig   string
 	Volumes           []storage.Volume
 	NetworkInterfaces net.NetworkInterfacesConfig
 }
@@ -212,7 +213,8 @@ func (vm *Config) CloudInitConfig() *cloudinit.Config {
 			Password: vm.Password,
 			SSHKey:   vm.SSHKey,
 		},
-		UserData: vm.CIUserData,
+		UserData:      vm.CIUserData,
+		NetworkConfig: vm.CINetworkConfig,
 	}
 }
 
