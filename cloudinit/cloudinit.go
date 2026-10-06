@@ -23,10 +23,11 @@ const (
 
 var (
 	//go:embed templates
-	templateFS         embed.FS
-	vendorDataTemplate = "vendor-data.tmpl"
-	userDataTemplate   = "user-data.tmpl"
-	metaDataTemplate   = "meta-data.tmpl"
+	templateFS            embed.FS
+	vendorDataTemplate    = "vendor-data.tmpl"
+	userDataTemplate      = "user-data.tmpl"
+	networkConfigTemplate = "network-config.tmpl"
+	metaDataTemplate      = "meta-data.tmpl"
 
 	validFilenamePattern = `^[^<>:"/\\|?*\x00-\x1F]+$`
 )
@@ -36,9 +37,10 @@ type CloudInit interface {
 }
 
 type Config struct {
-	VendorData VendorData
-	MetaData   MetaData
-	UserData   string
+	VendorData    VendorData
+	MetaData      MetaData
+	UserData      string
+	NetworkConfig string
 }
 
 type MetaData struct {
@@ -148,7 +150,7 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 
 			udb = udf
 		} else {
-			// If the provided userdata is not a path, asume it is a string containing the userdata.
+			// If the provided userdata is not a path, assume it is a string containing the userdata.
 			udb = bytes.NewBufferString(ci.UserData)
 		}
 	} else {
@@ -156,6 +158,30 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 		err = executeTemplate(ci, userDataTemplate, udb)
 		if err != nil {
 			return fmt.Errorf("cloudinit: unable to execute user data template %s: %w",
+				ci.MetaData.InstanceID, err)
+		}
+	}
+
+	var ncb io.ReadWriter
+	if ci.NetworkConfig != "" {
+		if c.isValidFilePathSyntax(ci.NetworkConfig) {
+			ncf, err := os.Open(ci.NetworkConfig)
+			if err != nil {
+				return fmt.Errorf("cloudinit: unable to open network config file %s: %w",
+					ci.MetaData.InstanceID, err)
+			}
+			defer ncf.Close()
+
+			ncb = ncf
+		} else {
+			// If the provided userdata is not a path, assume it is a string containing the userdata.
+			ncb = bytes.NewBufferString(ci.NetworkConfig)
+		}
+	} else {
+		ncb = &bytes.Buffer{}
+		err = executeTemplate(ci, networkConfigTemplate, ncb)
+		if err != nil {
+			return fmt.Errorf("cloudinit: unable to execute network config template %s: %w",
 				ci.MetaData.InstanceID, err)
 		}
 	}
@@ -173,6 +199,14 @@ func (c *Controller) Apply(ci *Config, ciPath string) error {
 			Path:   "/vendor-data",
 			Reader: vdb,
 		},
+	}
+
+	// Leave default network config if none provided
+	if ci.NetworkConfig != "" {
+		l = append(l, Entry{
+			Path:   "/network-config",
+			Reader: ncb,
+		})
 	}
 
 	err = Write(ciPath, "cidata", l)

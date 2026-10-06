@@ -21,6 +21,7 @@ func TestConfig_Task(t *testing.T) {
 
 	expectedHostname := "test-hostname"
 	expectedUserData := "/path/to/user/data"
+	expectedNetworkConfig := "/path/to/network/config"
 	expectedCmds := []string{"redis"}
 	expectedDefaultUserSSHKey := "ssh-ed25519 testtesttest..."
 	expectedDefaultUserPassword := "password"
@@ -32,6 +33,7 @@ config {
 	cmds = ["redis"]
 	hostname = "test-hostname"
 	user_data = "/path/to/user/data"
+	network_config: "/path/to/network/config",
 	default_user_authorized_ssh_key =  "ssh-ed25519 testtesttest..."
 	default_user_password = "password"
 	os {
@@ -48,6 +50,7 @@ config {
 	must.StrContains(t, expectedDefaultUserPassword, tc.DefaultUserPassword)
 	must.StrContains(t, expectedHostname, tc.Hostname)
 	must.StrContains(t, expectedUserData, tc.UserData)
+	must.StrContains(t, expectedNetworkConfig, tc.NetworkConfig)
 	must.StrContains(t, expectedARCH, tc.OS.Arch)
 	must.StrContains(t, expectedMachine, tc.OS.Machine)
 }
