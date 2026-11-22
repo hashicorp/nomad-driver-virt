@@ -329,7 +329,7 @@ func (p *provider) Init() error {
 	}
 
 	// Cache the libvirt version for usability checks.
-	p.libvirtVersion, err = c.GetVersion()
+	p.libvirtVersion, err = c.GetLibVersion()
 	if err != nil {
 		p.logger.Debug("unable to get libvirt version", "error", err)
 		return err
